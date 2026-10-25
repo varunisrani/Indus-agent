@@ -994,6 +994,16 @@ export const SCHEMAS = {
     response: secretsPolicyView,
   },
 
+  "indus:vault:detect": {
+    request: none,
+    response: z.object({
+      /** False when the backend runs elsewhere (a remote connection): nothing was looked up. */
+      checked: z.boolean(),
+      onepassword: z.boolean(),
+      bitwarden: z.boolean(),
+    }),
+  },
+
   "indus:journal:list": { request: none, response: z.object({ entries: z.array(journalEntry) }) },
   "indus:journal:prepare": {
     request: z.strictObject({ requestId: id, sessionId: id, payload: z.unknown() }),

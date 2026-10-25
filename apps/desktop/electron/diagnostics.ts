@@ -230,6 +230,9 @@ export interface DiagnosticsDeps {
   env: Readonly<Record<string, string | undefined>>;
   /** `process.resourcesPath` when packaged, else null. */
   resourcesPath: string | null;
+  /** A development run: the checkout root, whose own notices file the licences screen shows
+   * (W54-D2); null when packaged. */
+  devNoticesDir?: string | null;
   knownSecrets?: () => Iterable<string>;
   sections?: () => ReadonlyArray<{ title: string; lines: readonly string[] }>;
   now?: () => Date;
@@ -304,7 +307,9 @@ export function installDiagnostics(context: MainContext, deps: DiagnosticsDeps):
     rendererErrors.record(senderId, report);
   });
   registry.handle("indus:diagnostics:copy", () => copyDiagnostics());
-  registry.handle("indus:about:notices", () => ({ text: readNotices(deps.resourcesPath) }));
+  registry.handle("indus:about:notices", () => ({
+    text: readNotices(deps.resourcesPath) ?? readNotices(deps.devNoticesDir ?? null),
+  }));
   registry.handle("indus:clipboard:read-text", async () => ({
     text: await deps.clipboard.readText(),
   }));

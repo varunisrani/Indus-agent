@@ -55,6 +55,17 @@ function ModeCard(props: {
   );
 }
 
+/** The switch shows what this run really uses (`effective`), not the stored wish (`store`): with
+ * no usable keychain the secrets sit in private files, so the switch reads off and cannot be
+ * turned on, and the reason is a quiet line, not an error (W54-D2-2). */
+export function storageSwitchState(policy: IndusSecretsPolicyView | null): {
+  checked: boolean;
+  disabled: boolean;
+} {
+  if (policy === null) return { checked: false, disabled: true };
+  return { checked: policy.effective === "keychain", disabled: !policy.keychainUsable };
+}
+
 function StorageRow() {
   const t = useT();
   const { bridge, focusRow } = useSettings();
@@ -67,6 +78,7 @@ function StorageRow() {
       else setError(answer.code);
     });
   }, [secrets]);
+  const state = storageSwitchState(policy);
   return (
     <SettingRow
       rowId="secure-storage"
@@ -76,7 +88,7 @@ function StorageRow() {
         <>
           {t("settings.storage.body")}
           {policy !== null && !policy.keychainUsable && (
-            <span className="sb-status" data-error="true">
+            <span className="sb-status" data-testid="keychain-unusable">
               {t("settings.storage.unusable", { reason: policy.reason })}
             </span>
           )}
@@ -86,8 +98,8 @@ function StorageRow() {
         <>
           <Switch
             label={t("settings.storage.title")}
-            checked={policy?.store === "keychain"}
-            disabled={policy === null || (!policy.keychainUsable && policy.store === "file")}
+            checked={state.checked}
+            disabled={state.disabled}
             onChange={async (checked) => {
               const answer = await attempt(
                 secrets ? () => secrets.setPolicy({ store: checked ? "keychain" : "file" }) : null,

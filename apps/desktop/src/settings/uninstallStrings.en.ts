@@ -19,4 +19,8 @@ export const UNINSTALL_STRINGS = {
   "settings.uninstall.cancel": "Cancel",
   "settings.uninstall.ask": "Indus will quit now and then {what}.",
   "settings.uninstall.failed": "Uninstall did not start: {message}",
+  "settings.uninstall.dev":
+    "This window is a development run started from source, so there is no installed copy for it to remove.",
+  "settings.uninstall.manual":
+    "You can still remove Indus yourself: quit the app, then run one of these in a terminal.",
 } as const satisfies Record<string, string>;

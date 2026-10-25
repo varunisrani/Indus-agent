@@ -107,6 +107,22 @@ describe("ownership", () => {
   });
 
   it.each([
+    ["summary failed", { summaryText: null }, "gave no answer"],
+    ["not JSON", { summaryText: "Traceback ..." }, "could not be read"],
+    [
+      "no git checkout",
+      { summaryText: summary({ agent_installed: false }) },
+      "development checkout",
+    ],
+    ["another home", { summaryText: summary({ home: "/elsewhere" }) }, "/elsewhere"],
+    ["no receipt", { receipts: [] }, "install_receipts"],
+  ])("%s: the reason names what could not be confirmed (W54-D2-4)", (_label, extra, words) => {
+    const view = decideOwnership(input(extra as Partial<OwnershipInput>));
+    expect(view.reason).toContain("could not confirm how it was installed");
+    expect(view.reason).toContain(words);
+  });
+
+  it.each([
     ["docker kind", { summaryText: summary({ install_kind: "docker" }) }],
     ["bundled runtime", { summaryText: summary({ install_kind: "desktop" }) }],
     ["no git checkout", { summaryText: summary({ agent_installed: false }) }],

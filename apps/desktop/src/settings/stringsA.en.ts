@@ -267,6 +267,11 @@ export const SETTINGS_A_STRINGS = {
     "Besides this computer's own vault, the agent can fill logins from a password manager's command-line tool. It asks you to unlock it once per session.",
   "settingsA.sources.on": "On",
   "settingsA.sources.off": "Off",
+  "settingsA.sources.missing": "Not detected",
+  "settingsA.sources.onepasswordMissing":
+    "Not found on this computer. Install the 1Password command-line tool (op) and sign in to it; Indus finds it by itself.",
+  "settingsA.sources.bitwardenMissing":
+    "Not found on this computer. Install the Bitwarden command-line tool (bw) and sign in to it; Indus finds it by itself.",
   "settingsA.sources.local": "This computer",
   "settingsA.sources.localBody": "The encrypted vault Indus keeps in your profile.",
   "settingsA.sources.onepassword": "1Password",

@@ -114,4 +114,34 @@ describe("ProfilesOverlay", () => {
     expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
     expect(screen.getByText("2 profiles")).toBeTruthy();
   });
+
+  it("opens on the profile this window runs on, not a placeholder (W54-D2-7)", async () => {
+    const api = fakeRest();
+    api.route("GET", "/api/profiles", {
+      profiles: [
+        { name: "default", is_default: true, model: "m-0" },
+        { name: "coder", is_default: false, model: "m-1", provider: "alpha" },
+      ],
+      current: "coder",
+    });
+    api.route("GET", "/api/profiles/coder/persona", { content: "Be brief.", exists: true });
+    render(<ProfilesOverlay api={api} onClose={() => {}} changes={changes()} />);
+    await waitFor(() => expect(document.querySelector("[data-detail='coder']")).not.toBeNull());
+    expect(screen.queryByText(/Pick a profile/)).toBeNull();
+    expect(screen.getByText("m-1")).toBeTruthy();
+    const selected = document.querySelector("[data-profile='coder']");
+    expect(selected?.querySelector("[aria-current='true']")).not.toBeNull();
+  });
+
+  it("with no current profile named, the default one opens", async () => {
+    const api = fakeRest();
+    api.route("GET", "/api/profiles", {
+      profiles: [
+        { name: "coder", is_default: false },
+        { name: "default", is_default: true },
+      ],
+    });
+    render(<ProfilesOverlay api={api} onClose={() => {}} changes={changes()} />);
+    await waitFor(() => expect(document.querySelector("[data-detail='default']")).not.toBeNull());
+  });
 });

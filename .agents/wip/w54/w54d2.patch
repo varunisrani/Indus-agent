@@ -1,0 +1,1666 @@
+diff --git a/apps/desktop/electron/diagnostics.test.ts b/apps/desktop/electron/diagnostics.test.ts
+index a7e76cb..8bed50d 100644
+--- a/apps/desktop/electron/diagnostics.test.ts
++++ b/apps/desktop/electron/diagnostics.test.ts
+@@ -213,7 +213,7 @@ function memoryFs(files: Map<string, string>): LogFs {
+ 
+ type Handler = (payload: unknown, context: { senderId: number }) => unknown;
+ 
+-function harness() {
++function harness(extra: { devNoticesDir?: string | null } = {}) {
+   const files = new Map<string, string>();
+   const log = new DesktopLog({
+     file: "/logs/desktop.log",
+@@ -250,6 +250,7 @@ function harness() {
+     homeDir: "/u",
+     env: {},
+     resourcesPath: null,
++    ...extra,
+     knownSecrets: () => [SECRETS.serveToken],
+   });
+   return { files, log, handlers, clipboard, revealed, handle };
+@@ -278,6 +279,16 @@ describe("installDiagnostics", () => {
+     });
+   });
+ 
++  it("a development run reads the checkout's own notices file (W54-D2)", async () => {
++    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "indus-notices-dev-"));
++    dirs.push(dir);
++    fs.writeFileSync(path.join(dir, NOTICES_FILE), "# Third-party notices\n\ndev-lib MIT\n");
++    const { handlers } = harness({ devNoticesDir: dir });
++    expect(await handlers.get("indus:about:notices")?.({}, { senderId: 1 })).toEqual({
++      text: "# Third-party notices\n\ndev-lib MIT\n",
++    });
++  });
++
+   it("logs.recent returns the kept lines; logs.reveal shows the log file", async () => {
+     const { log, handlers, revealed } = harness();
+     for (let i = 0; i < 5; i += 1) log.write(`line ${i}`);
+diff --git a/apps/desktop/electron/diagnostics.ts b/apps/desktop/electron/diagnostics.ts
+index 6a09380..22194b0 100644
+--- a/apps/desktop/electron/diagnostics.ts
++++ b/apps/desktop/electron/diagnostics.ts
+@@ -230,6 +230,9 @@ export interface DiagnosticsDeps {
+   env: Readonly<Record<string, string | undefined>>;
+   /** `process.resourcesPath` when packaged, else null. */
+   resourcesPath: string | null;
++  /** A development run: the checkout root, whose own notices file the licences screen shows
++   * (W54-D2); null when packaged. */
++  devNoticesDir?: string | null;
+   knownSecrets?: () => Iterable<string>;
+   sections?: () => ReadonlyArray<{ title: string; lines: readonly string[] }>;
+   now?: () => Date;
+@@ -304,7 +307,9 @@ export function installDiagnostics(context: MainContext, deps: DiagnosticsDeps):
+     rendererErrors.record(senderId, report);
+   });
+   registry.handle("indus:diagnostics:copy", () => copyDiagnostics());
+-  registry.handle("indus:about:notices", () => ({ text: readNotices(deps.resourcesPath) }));
++  registry.handle("indus:about:notices", () => ({
++    text: readNotices(deps.resourcesPath) ?? readNotices(deps.devNoticesDir ?? null),
++  }));
+   registry.handle("indus:clipboard:read-text", async () => ({
+     text: await deps.clipboard.readText(),
+   }));
+diff --git a/apps/desktop/electron/ipc/channels.ts b/apps/desktop/electron/ipc/channels.ts
+index b02b398..36f67a9 100644
+--- a/apps/desktop/electron/ipc/channels.ts
++++ b/apps/desktop/electron/ipc/channels.ts
+@@ -611,6 +611,15 @@ export const CHANNELS = [
+     owner: "P20-07",
+   },
+ 
++  // password managers: which command-line tools this computer has (W54-D2)
++  {
++    name: "indus:vault:detect",
++    kind: "invoke",
++    group: "vault",
++    method: "detect",
++    owner: "W54-D2",
++  },
++
+   // prepared-submission journal
+   { name: "indus:journal:list", kind: "invoke", group: "journal", method: "list", owner: "P20-20" },
+   {
+diff --git a/apps/desktop/electron/ipc/schemas.ts b/apps/desktop/electron/ipc/schemas.ts
+index 4672128..559adab 100644
+--- a/apps/desktop/electron/ipc/schemas.ts
++++ b/apps/desktop/electron/ipc/schemas.ts
+@@ -994,6 +994,16 @@ export const SCHEMAS = {
+     response: secretsPolicyView,
+   },
+ 
++  "indus:vault:detect": {
++    request: none,
++    response: z.object({
++      /** False when the backend runs elsewhere (a remote connection): nothing was looked up. */
++      checked: z.boolean(),
++      onepassword: z.boolean(),
++      bitwarden: z.boolean(),
++    }),
++  },
++
+   "indus:journal:list": { request: none, response: z.object({ entries: z.array(journalEntry) }) },
+   "indus:journal:prepare": {
+     request: z.strictObject({ requestId: id, sessionId: id, payload: z.unknown() }),
+diff --git a/apps/desktop/electron/main.ts b/apps/desktop/electron/main.ts
+index e1bb0ab..76739db 100644
+--- a/apps/desktop/electron/main.ts
++++ b/apps/desktop/electron/main.ts
+@@ -62,6 +62,7 @@ import { installLinuxLauncher } from "./linuxLauncher.ts";
+ import { DesktopLog } from "./log.ts";
+ import { installMediaProtocol, MediaRoots, type MediaTarget } from "./mediaProtocol.ts";
+ import { installPanes, type PaneElectron, type PanesHandle } from "./panesInstall.ts";
++import { installPasswordManagersIpc } from "./passwordManagers.ts";
+ import { desktopPaths, resolveIndusHome, userDataOverride } from "./paths.ts";
+ import { installDiskPlugins } from "./plugins/diskPlugins.ts";
+ import { installPrefsIpc } from "./prefs.ts";
+@@ -467,6 +468,8 @@ async function boot(): Promise<void> {
+     homeDir: os.homedir(),
+     env: process.env,
+     resourcesPath: app.isPackaged ? process.resourcesPath : null,
++    // a development run reads the checkout's own notices (W54-D2)
++    devNoticesDir: app.isPackaged ? null : path.resolve(app.getAppPath(), "..", ".."),
+     // the serve session token or the remote token of the current connection, never in a bundle
+     knownSecrets: () => {
+       const token = backend.orchestrator.current()?.rest.token;
+@@ -474,6 +477,10 @@ async function boot(): Promise<void> {
+     },
+   }); // P20-39
+   const prefs = installPrefsIpc(context); // P20-32
++  installPasswordManagersIpc(registry, {
++    lookup: () => ({ env: process.env, platform: process.platform }),
++    remote: () => backend.orchestrator.current()?.descriptor.mode === "remote",
++  }); // W54-D2
+   installAmbient(context, ambientElectron(), backend, { prefs }); // P20-35, P20-36 (P20-32 prefs)
+   installUpdates(
+     context,
+diff --git a/apps/desktop/electron/passwordManagers.test.ts b/apps/desktop/electron/passwordManagers.test.ts
+new file mode 100644
+index 0000000..2fa59d6
+--- /dev/null
++++ b/apps/desktop/electron/passwordManagers.test.ts
+@@ -0,0 +1,95 @@
++import fs from "node:fs";
++import os from "node:os";
++import path from "node:path";
++import { afterAll, describe, expect, it } from "vitest";
++import { detectManagers, findProgram, installPasswordManagersIpc } from "./passwordManagers.ts";
++
++const dirs: string[] = [];
++afterAll(() => {
++  for (const dir of dirs) fs.rmSync(dir, { recursive: true, force: true });
++});
++
++function folder(): string {
++  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "indus-pm-detect-"));
++  dirs.push(dir);
++  return dir;
++}
++
++function program(dir: string, name: string, mode: number): void {
++  fs.writeFileSync(path.join(dir, name), "#!/bin/sh\n");
++  fs.chmodSync(path.join(dir, name), mode);
++}
++
++describe("password manager detection (W54-D2-1)", () => {
++  it("nothing installed: both managers read as not there", () => {
++    const empty = folder();
++    expect(detectManagers({ env: { PATH: empty }, platform: "linux" }, false)).toEqual({
++      checked: true,
++      onepassword: false,
++      bitwarden: false,
++    });
++  });
++
++  it("finds an executable on any PATH folder; a non-executable file does not count", () => {
++    const first = folder();
++    const second = folder();
++    program(first, "bw", 0o644);
++    program(second, "op", 0o755);
++    const lookup = { env: { PATH: `${first}:${second}` }, platform: "linux" };
++    expect(findProgram("op", lookup)).toBe(path.join(second, "op"));
++    expect(findProgram("bw", lookup)).toBeNull();
++    expect(detectManagers(lookup, false)).toEqual({
++      checked: true,
++      onepassword: true,
++      bitwarden: false,
++    });
++  });
++
++  it("Windows tries the PATHEXT extensions", () => {
++    const seen: string[] = [];
++    const found = findProgram("bw", {
++      env: { Path: "C:\\tools;D:\\bin", PATHEXT: ".EXE;.CMD" },
++      platform: "win32",
++      isExecutable: (file) => {
++        seen.push(file);
++        return file === "D:\\bin\\bw.CMD";
++      },
++    });
++    expect(found).toBe("D:\\bin\\bw.CMD");
++    expect(seen).toEqual([
++      "C:\\tools\\bw.EXE",
++      "C:\\tools\\bw.CMD",
++      "D:\\bin\\bw.EXE",
++      "D:\\bin\\bw.CMD",
++    ]);
++  });
++
++  it("a remote backend: nothing is looked up here", () => {
++    const dir = folder();
++    program(dir, "op", 0o755);
++    expect(detectManagers({ env: { PATH: dir }, platform: "linux" }, true)).toEqual({
++      checked: false,
++      onepassword: false,
++      bitwarden: false,
++    });
++  });
++
++  it("the bridge channel answers from the current lookup and connection", async () => {
++    const handlers = new Map<string, () => unknown>();
++    const registry = { handle: (name: string, fn: () => unknown) => handlers.set(name, fn) };
++    const dir = folder();
++    program(dir, "bw", 0o755);
++    let remote = false;
++    installPasswordManagersIpc(registry as never, {
++      lookup: () => ({ env: { PATH: dir }, platform: "linux" }),
++      remote: () => remote,
++    });
++    expect(await handlers.get("indus:vault:detect")?.()).toEqual({
++      checked: true,
++      onepassword: false,
++      bitwarden: true,
++    });
++    remote = true;
++    expect(await handlers.get("indus:vault:detect")?.()).toMatchObject({ checked: false });
++  });
++});
+diff --git a/apps/desktop/electron/passwordManagers.ts b/apps/desktop/electron/passwordManagers.ts
+new file mode 100644
+index 0000000..16c501e
+--- /dev/null
++++ b/apps/desktop/electron/passwordManagers.ts
+@@ -0,0 +1,72 @@
++// Settings › Passwords & Logins › Password managers (W54-D2): which manager command-line tools
++// this computer has. The agent's vault tool finds 1Password's `op` and Bitwarden's `bw` on the
++// backend's PATH; a local backend inherits main's PATH (merged with the login shell's at ready,
++// `shellPath.ts`), so main looks the same programs up on that PATH. Nothing is run: a program
++// counts when an executable file of that name sits in a PATH folder (Windows: with one of the
++// PATHEXT extensions). With a remote backend the tools that matter live on the other machine, so
++// nothing is looked up and the answer says so (`checked: false`).
++
++import fs from "node:fs";
++import path from "node:path";
++import type { IpcRegistry } from "./ipc/registry.ts";
++
++/** The program each manager's command-line tool installs. */
++export const MANAGER_PROGRAMS = { onepassword: "op", bitwarden: "bw" } as const;
++
++export interface ProgramLookup {
++  env: Readonly<Record<string, string | undefined>>;
++  platform: NodeJS.Platform | string;
++  /** True when `file` is an executable regular file (injected in tests). */
++  isExecutable?: (file: string) => boolean;
++}
++
++function executableFile(file: string): boolean {
++  try {
++    if (!fs.statSync(file).isFile()) return false;
++    fs.accessSync(file, fs.constants.X_OK);
++    return true;
++  } catch {
++    return false;
++  }
++}
++
++/** The first executable named `program` on the PATH, or null. */
++export function findProgram(program: string, lookup: ProgramLookup): string | null {
++  const windows = lookup.platform === "win32";
++  const pathText = lookup.env.PATH ?? lookup.env.Path ?? "";
++  const folders = pathText.split(windows ? ";" : ":").filter((dir) => dir.trim() !== "");
++  const extensions = windows
++    ? (lookup.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";").filter((ext) => ext !== "")
++    : [""];
++  const check = lookup.isExecutable ?? executableFile;
++  const join = windows ? path.win32.join : path.posix.join;
++  for (const dir of folders) {
++    for (const ext of extensions) {
++      const file = join(dir, `${program}${ext}`);
++      if (check(file)) return file;
++    }
++  }
++  return null;
++}
++
++export interface ManagerDetection {
++  checked: boolean;
++  onepassword: boolean;
++  bitwarden: boolean;
++}
++
++export function detectManagers(lookup: ProgramLookup, remote: boolean): ManagerDetection {
++  if (remote) return { checked: false, onepassword: false, bitwarden: false };
++  return {
++    checked: true,
++    onepassword: findProgram(MANAGER_PROGRAMS.onepassword, lookup) !== null,
++    bitwarden: findProgram(MANAGER_PROGRAMS.bitwarden, lookup) !== null,
++  };
++}
++
++export function installPasswordManagersIpc(
++  registry: IpcRegistry,
++  deps: { lookup: () => ProgramLookup; remote: () => boolean },
++): void {
++  registry.handle("indus:vault:detect", () => detectManagers(deps.lookup(), deps.remote()));
++}
+diff --git a/apps/desktop/electron/uninstall.test.ts b/apps/desktop/electron/uninstall.test.ts
+index 5f79f5f..d7b78b4 100644
+--- a/apps/desktop/electron/uninstall.test.ts
++++ b/apps/desktop/electron/uninstall.test.ts
+@@ -106,6 +106,22 @@ describe("ownership", () => {
+     expect(store).toMatchObject({ allowed: false, levels: [], installKind: "nix" });
+   });
+ 
++  it.each([
++    ["summary failed", { summaryText: null }, "gave no answer"],
++    ["not JSON", { summaryText: "Traceback ..." }, "could not be read"],
++    [
++      "no git checkout",
++      { summaryText: summary({ agent_installed: false }) },
++      "development checkout",
++    ],
++    ["another home", { summaryText: summary({ home: "/elsewhere" }) }, "/elsewhere"],
++    ["no receipt", { receipts: [] }, "install_receipts"],
++  ])("%s: the reason names what could not be confirmed (W54-D2-4)", (_label, extra, words) => {
++    const view = decideOwnership(input(extra as Partial<OwnershipInput>));
++    expect(view.reason).toContain("could not confirm how it was installed");
++    expect(view.reason).toContain(words);
++  });
++
+   it.each([
+     ["docker kind", { summaryText: summary({ install_kind: "docker" }) }],
+     ["bundled runtime", { summaryText: summary({ install_kind: "desktop" }) }],
+diff --git a/apps/desktop/electron/uninstall.ts b/apps/desktop/electron/uninstall.ts
+index b1ef9e5..64cc9a8 100644
+--- a/apps/desktop/electron/uninstall.ts
++++ b/apps/desktop/electron/uninstall.ts
+@@ -67,6 +67,21 @@ export interface OwnershipInput {
+ 
+ const NOT_CONFIRMED = "Indus could not confirm how it was installed, so it cannot remove itself.";
+ 
++/** What exactly could not be confirmed (W54-D2-4): the page names the missing proof. */
++export const MISSING = {
++  noAnswer: "`indus uninstall --gui-summary` gave no answer.",
++  unreadable: "The answer of `indus uninstall --gui-summary` could not be read.",
++  notOurs:
++    "The runtime it found is not one Indus installed itself (a development checkout, or a copy another tool set up).",
++  otherHome: (home: string) => `That runtime belongs to another Indus home (${home}).`,
++  noReceipt: (home: string) =>
++    `No successful installer receipt is in ${path.join(home, "logs", "install_receipts")}.`,
++} as const;
++
++function unconfirmed(detail: string): string {
++  return `${NOT_CONFIRMED} ${detail}`;
++}
++
+ function hidden(input: OwnershipInput, reason: string, installKind = "unknown") {
+   return {
+     allowed: false,
+@@ -83,29 +98,29 @@ export function decideOwnership(input: OwnershipInput): UninstallSummaryView {
+   if (/[\\/]nix[\\/]store[\\/]/.test(input.execPath)) {
+     return hidden(input, MANAGED_KINDS.nix ?? NOT_CONFIRMED, "nix");
+   }
+-  if (input.summaryText === null) return hidden(input, NOT_CONFIRMED);
++  if (input.summaryText === null) return hidden(input, unconfirmed(MISSING.noAnswer));
+   let summary: Record<string, unknown>;
+   try {
+     const parsed: unknown = JSON.parse(input.summaryText);
+     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+-      return hidden(input, NOT_CONFIRMED);
++      return hidden(input, unconfirmed(MISSING.unreadable));
+     }
+     summary = parsed as Record<string, unknown>;
+   } catch {
+-    return hidden(input, NOT_CONFIRMED);
++    return hidden(input, unconfirmed(MISSING.unreadable));
+   }
+   const kind = typeof summary.install_kind === "string" ? summary.install_kind : "unknown";
+   const managed = MANAGED_KINDS[kind];
+   if (managed !== undefined) return hidden(input, managed, kind);
+-  if (summary.agent_installed !== true) return hidden(input, NOT_CONFIRMED, kind);
++  if (summary.agent_installed !== true) return hidden(input, unconfirmed(MISSING.notOurs), kind);
+   if (typeof summary.home === "string" && path.resolve(summary.home) !== path.resolve(input.home)) {
+-    return hidden(input, NOT_CONFIRMED, kind);
++    return hidden(input, unconfirmed(MISSING.otherHome(summary.home)), kind);
+   }
+   const receipted = input.receipts.some(
+     (r) =>
+       typeof r === "object" && r !== null && (r as { outcome?: unknown }).outcome === "success",
+   );
+-  if (!receipted) return hidden(input, NOT_CONFIRMED, kind);
++  if (!receipted) return hidden(input, unconfirmed(MISSING.noReceipt(input.home)), kind);
+   return {
+     allowed: true,
+     levels: [...LEVELS],
+diff --git a/apps/desktop/src/app/profiles/ProfilesOverlay.test.tsx b/apps/desktop/src/app/profiles/ProfilesOverlay.test.tsx
+index b9d6f83..f39d26f 100644
+--- a/apps/desktop/src/app/profiles/ProfilesOverlay.test.tsx
++++ b/apps/desktop/src/app/profiles/ProfilesOverlay.test.tsx
+@@ -114,4 +114,34 @@ describe("ProfilesOverlay", () => {
+     expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+     expect(screen.getByText("2 profiles")).toBeTruthy();
+   });
++
++  it("opens on the profile this window runs on, not a placeholder (W54-D2-7)", async () => {
++    const api = fakeRest();
++    api.route("GET", "/api/profiles", {
++      profiles: [
++        { name: "default", is_default: true, model: "m-0" },
++        { name: "coder", is_default: false, model: "m-1", provider: "alpha" },
++      ],
++      current: "coder",
++    });
++    api.route("GET", "/api/profiles/coder/persona", { content: "Be brief.", exists: true });
++    render(<ProfilesOverlay api={api} onClose={() => {}} changes={changes()} />);
++    await waitFor(() => expect(document.querySelector("[data-detail='coder']")).not.toBeNull());
++    expect(screen.queryByText(/Pick a profile/)).toBeNull();
++    expect(screen.getByText("m-1")).toBeTruthy();
++    const selected = document.querySelector("[data-profile='coder']");
++    expect(selected?.querySelector("[aria-current='true']")).not.toBeNull();
++  });
++
++  it("with no current profile named, the default one opens", async () => {
++    const api = fakeRest();
++    api.route("GET", "/api/profiles", {
++      profiles: [
++        { name: "coder", is_default: false },
++        { name: "default", is_default: true },
++      ],
++    });
++    render(<ProfilesOverlay api={api} onClose={() => {}} changes={changes()} />);
++    await waitFor(() => expect(document.querySelector("[data-detail='default']")).not.toBeNull());
++  });
+ });
+diff --git a/apps/desktop/src/app/profiles/ProfilesOverlay.tsx b/apps/desktop/src/app/profiles/ProfilesOverlay.tsx
+index f56d58e..76ce7df 100644
+--- a/apps/desktop/src/app/profiles/ProfilesOverlay.tsx
++++ b/apps/desktop/src/app/profiles/ProfilesOverlay.tsx
+@@ -138,7 +138,7 @@ export function ProfilesOverlay(props: {
+   const api = useApi(props.api);
+   const switcher = useSwitcher();
+   const changes: ProfileChanges | null = props.changes === undefined ? switcher : props.changes;
+-  const list = useRestValue<{ profiles: ProfileRow[] }>(
++  const list = useRestValue<{ profiles: ProfileRow[]; current?: string | null }>(
+     () => rest(api, "GET", "/api/profiles"),
+     [api],
+   );
+@@ -250,7 +250,11 @@ export function ProfilesOverlay(props: {
+   } else {
+     const needle = query.trim().toLowerCase();
+     const shown = rows.filter((r) => needle === "" || r.name.toLowerCase().includes(needle));
+-    const row = rows.find((r) => r.name === picked) ?? null;
++    // W54-D2-7: nothing picked yet opens the profile this window runs on (else the default), so
++    // its model and persona show at once instead of a "pick one" placeholder.
++    const fallback =
++      rows.find((r) => r.name === list.data.current) ?? rows.find((r) => r.is_default) ?? rows[0];
++    const row = rows.find((r) => r.name === picked) ?? (picked === null ? fallback : null) ?? null;
+     body = (
+       <ListDetail
+         title={t("nav.profiles")}
+@@ -298,7 +302,7 @@ export function ProfilesOverlay(props: {
+                 </span>
+               )
+             }
+-            selected={r.name === picked}
++            selected={r.name === row?.name}
+             onSelect={() => setPicked(r.name)}
+             data={{ "data-profile": r.name }}
+             menu={{
+diff --git a/apps/desktop/src/global.d.ts b/apps/desktop/src/global.d.ts
+index 20c03ad..51a8e1a 100644
+--- a/apps/desktop/src/global.d.ts
++++ b/apps/desktop/src/global.d.ts
+@@ -854,6 +854,13 @@ export interface IndusDesktopSecrets {
+   setPolicy(payload: { store: "keychain" | "file" }): Promise<IndusSecretsPolicyView>;
+ }
+ 
++export interface IndusDesktopVault {
++  /** `indus:vault:detect` (W54-D2) */
++  detect(
++    payload?: Record<string, never>,
++  ): Promise<{ checked: boolean; onepassword: boolean; bitwarden: boolean }>;
++}
++
+ export interface IndusDesktopJournal {
+   /** `indus:journal:list` (P20-20) */
+   list(payload?: Record<string, never>): Promise<{
+@@ -982,6 +989,7 @@ export interface IndusDesktopBridge {
+   readonly clipboard: IndusDesktopClipboard;
+   readonly find: IndusDesktopFind;
+   readonly secrets: IndusDesktopSecrets;
++  readonly vault: IndusDesktopVault;
+   readonly journal: IndusDesktopJournal;
+   readonly prefs: IndusDesktopPrefs;
+   readonly work: IndusDesktopWork;
+diff --git a/apps/desktop/src/main.tsx b/apps/desktop/src/main.tsx
+index 2ff43c7..4d378b6 100644
+--- a/apps/desktop/src/main.tsx
++++ b/apps/desktop/src/main.tsx
+@@ -36,7 +36,7 @@ import { profileKey } from "./profiles/storageFamilies.ts";
+ import { ProfileSwitcher } from "./profiles/switching.ts";
+ import { ChatWorkspace } from "./profiles/workspace.ts";
+ import { SidebarModel } from "./sidebar/Sidebar.tsx";
+-import { installAppWake } from "./wake/appWake.ts";
++import { armWhenReady, installAppWake } from "./wake/appWake.ts";
+ 
+ applyStoredTheme();
+ document.title = translate("app.name");
+@@ -154,7 +154,7 @@ async function start(): Promise<void> {
+     const { controller } = installAppWake(
+       () => switcher.foreground().connection as unknown as LooseRpc,
+     );
+-    void controller.start({ consent: false });
++    armWhenReady(controller, switcher.foreground().connection); // W54-D2-3
+   }
+   // Desktop plugins (P24-32): checked in main, loaded here through a host built from the bridge.
+   if (bridge !== null && hasShell(query.kind)) {
+diff --git a/apps/desktop/src/settings/UninstallSection.test.tsx b/apps/desktop/src/settings/UninstallSection.test.tsx
+index 12713cb..5dad7a6 100644
+--- a/apps/desktop/src/settings/UninstallSection.test.tsx
++++ b/apps/desktop/src/settings/UninstallSection.test.tsx
+@@ -39,6 +39,27 @@ describe("UninstallSection", () => {
+     });
+     expect(screen.getByTestId("uninstall-hidden").textContent).toContain("Nix");
+     expect(screen.queryAllByRole("button")).toHaveLength(0);
++    expect(screen.queryByTestId("uninstall-manual")).toBeNull(); // Nix's own way is in the reason
++  });
++
++  it("an unconfirmed install is no dead end: the CLI commands and the dev run are named (W54-D2-4)", async () => {
++    const rig = bridge({
++      allowed: false,
++      levels: [],
++      reason:
++        "Indus could not confirm how it was installed, so it cannot remove itself. No receipt.",
++      installKind: "unknown",
++      home: "/h",
++      confirmPhrase: "uninstall everything",
++    });
++    render(<UninstallSection uninstall={rig.api} dev />);
++    await act(async () => {});
++    expect(screen.getByTestId("uninstall-hidden").textContent).toContain("No receipt");
++    expect(screen.getByTestId("uninstall-dev").textContent).toContain("development run");
++    const manual = screen.getByTestId("uninstall-manual").textContent ?? "";
++    expect(manual).toContain("indus uninstall --gui");
++    expect(manual).toContain("indus uninstall --full");
++    expect(screen.queryAllByRole("button")).toHaveLength(0); // nothing is run from here
+   });
+ 
+   it('"Remove everything" needs the exact phrase before anything runs', async () => {
+diff --git a/apps/desktop/src/settings/UninstallSection.tsx b/apps/desktop/src/settings/UninstallSection.tsx
+index 6ff7806..ff8ef6c 100644
+--- a/apps/desktop/src/settings/UninstallSection.tsx
++++ b/apps/desktop/src/settings/UninstallSection.tsx
+@@ -20,13 +20,27 @@ const LEVEL_LABELS: Readonly<Record<IndusUninstallLevel, MessageKey>> = {
+   full: "settings.uninstall.level.full",
+ };
+ 
++/** The CLI's own commands for each level (the same ones the helper would run). */
++const MANUAL_COMMANDS: Readonly<Record<IndusUninstallLevel, string>> = {
++  gui: "indus uninstall --gui",
++  "keep-data": "indus uninstall",
++  full: "indus uninstall --full",
++};
++
+ const LEVEL_DESCRIPTIONS: Readonly<Record<IndusUninstallLevel, MessageKey>> = {
+   gui: "settings.uninstall.level.gui.desc",
+   "keep-data": "settings.uninstall.level.keep-data.desc",
+   full: "settings.uninstall.level.full.desc",
+ };
+ 
+-export function UninstallSection(props: { uninstall: IndusDesktopUninstall | null | undefined }) {
++/** Install kinds whose reason already says how to remove them (main's managed kinds). */
++const MANAGED = new Set(["nix", "docker", "desktop"]);
++
++export function UninstallSection(props: {
++  uninstall: IndusDesktopUninstall | null | undefined;
++  /** A development run (started from source): said plainly under the reason (W54-D2-4). */
++  dev?: boolean;
++}) {
+   const t = useT();
+   const source = props.uninstall ?? null;
+   const [summary, setSummary] = useState<IndusUninstallSummary | null>(null);
+@@ -64,6 +78,24 @@ export function UninstallSection(props: { uninstall: IndusDesktopUninstall | nul
+         <p className="settings-row-desc" data-testid="uninstall-hidden">
+           {summary.reason}
+         </p>
++        {props.dev === true && (
++          <p className="settings-row-desc" data-testid="uninstall-dev">
++            {t("settings.uninstall.dev")}
++          </p>
++        )}
++        {!MANAGED.has(summary.installKind) && (
++          <div className="settings-uninstall-manual" data-testid="uninstall-manual">
++            <p className="settings-row-desc">{t("settings.uninstall.manual")}</p>
++            <ul className="settings-uninstall-commands">
++              {(["gui", "keep-data", "full"] as const).map((level) => (
++                <li key={level}>
++                  <code className="settings-code">{MANUAL_COMMANDS[level]}</code>
++                  <span className="settings-row-desc">{t(LEVEL_LABELS[level])}</span>
++                </li>
++              ))}
++            </ul>
++          </div>
++        )}
+       </div>
+     );
+   }
+diff --git a/apps/desktop/src/settings/context.tsx b/apps/desktop/src/settings/context.tsx
+index 3e7b3b3..c750127 100644
+--- a/apps/desktop/src/settings/context.tsx
++++ b/apps/desktop/src/settings/context.tsx
+@@ -16,6 +16,7 @@ import type {
+   IndusDesktopShortcuts,
+   IndusDesktopUninstall,
+   IndusDesktopUpdates,
++  IndusDesktopVault,
+   IndusDesktopZoom,
+   IndusLaunchFacts,
+   IndusPrefsPatch,
+@@ -50,6 +51,8 @@ export interface SettingsBridge {
+   readonly logs?: IndusDesktopLogs;
+   /** Providers › API keys: "Get a key" links open in the browser. */
+   readonly external?: IndusDesktopExternal;
++  /** Passwords › Password managers: which manager tools this computer has (W54-D2). */
++  readonly vault?: IndusDesktopVault;
+ }
+ 
+ /** `model.save_key` over the daemon (keys go to the profile's secret store, never the renderer). */
+diff --git a/apps/desktop/src/settings/customPages.tsx b/apps/desktop/src/settings/customPages.tsx
+index 22b5011..f087822 100644
+--- a/apps/desktop/src/settings/customPages.tsx
++++ b/apps/desktop/src/settings/customPages.tsx
+@@ -22,6 +22,7 @@ import { PluginsSettingsPage } from "./pagesB/plugins.tsx";
+ import { AccountsPage, EndpointsPage, LocalModelsPage } from "./pagesB/providers.tsx";
+ import { ArchivedList, DefaultFolderPage } from "./pagesB/sessions.tsx";
+ import { WakeWordRows } from "./pagesB/voice.tsx";
++import { PrimaryButton, SettingRow } from "./primitives.tsx";
+ import { rest } from "./settingsApi.ts";
+ 
+ // -- small building blocks ----------------------------------------------------------------------
+@@ -70,7 +71,7 @@ function Note(props: { text: string | null; error?: boolean }) {
+ 
+ function PersonaPage() {
+   const t = useT();
+-  const { api, profile, activeProfile } = useSettings();
++  const { api, profile, activeProfile, focusRow } = useSettings();
+   const name = profile ?? activeProfile ?? "default";
+   const [text, setText] = useState<string | null>(null);
+   const [note, setNote] = useState<{ text: string; error: boolean } | null>(null);
+@@ -87,39 +88,46 @@ function PersonaPage() {
+     };
+   }, [api, path]);
+   const id = useId();
++  // W54-D2-6: the persona is a document, not a field: label and line on top, then a full-width
++  // editor with Save under it on the right (the profile editor's SOUL block, our styling).
+   return (
+     <div className="settings-rows">
+-      <Row
+-        row="persona"
+-        label={t("settings.persona.title")}
+-        description={t("settings.persona.body")}
++      <SettingRow
++        rowId="persona"
++        highlighted={focusRow === "persona"}
+         htmlFor={id}
+-      >
+-        <textarea
+-          id={id}
+-          className="settings-input settings-textarea settings-wide"
+-          rows={8}
+-          value={text ?? ""}
+-          disabled={text === null}
+-          onChange={(event) => setText(event.currentTarget.value)}
+-        />
+-        <button
+-          type="button"
+-          className="button button-primary"
+-          disabled={text === null}
+-          onClick={async () => {
+-            const answer = await rest(api, "PUT", path, { body: { content: text ?? "" } });
+-            setNote(
+-              answer.ok
+-                ? { text: t("settings.saved"), error: false }
+-                : { text: answer.message, error: true },
+-            );
+-          }}
+-        >
+-          {t("settings.save")}
+-        </button>
+-        <Note text={note?.text ?? null} error={note?.error ?? false} />
+-      </Row>
++        title={t("settings.persona.title")}
++        description={t("settings.persona.body")}
++        below={
++          <div className="settings-persona">
++            <textarea
++              id={id}
++              className="settings-input settings-textarea settings-persona-text"
++              rows={16}
++              spellCheck={false}
++              value={text ?? ""}
++              disabled={text === null}
++              onChange={(event) => setText(event.currentTarget.value)}
++            />
++            <div className="settings-persona-actions">
++              <Note text={note?.text ?? null} error={note?.error ?? false} />
++              <PrimaryButton
++                disabled={text === null}
++                onClick={async () => {
++                  const answer = await rest(api, "PUT", path, { body: { content: text ?? "" } });
++                  setNote(
++                    answer.ok
++                      ? { text: t("settings.saved"), error: false }
++                      : { text: answer.message, error: true },
++                  );
++                }}
++              >
++                {t("settings.save")}
++              </PrimaryButton>
++            </div>
++          </div>
++        }
++      />
+     </div>
+   );
+ }
+diff --git a/apps/desktop/src/settings/pagesA.tsx b/apps/desktop/src/settings/pagesA.tsx
+index e759e49..8c787de 100644
+--- a/apps/desktop/src/settings/pagesA.tsx
++++ b/apps/desktop/src/settings/pagesA.tsx
+@@ -237,11 +237,38 @@ export function PasswordsCredentialsPage() {
+ const SOURCES = ["local", "onepassword", "bitwarden"] as const;
+ const SOURCE_ORDER = ["onepassword", "bitwarden", "local"] as const;
+ 
+-/** Each manager's switch edits `browser.vault_sources` (W52-dsa-16; no detection API). */
++type Detection = { checked: boolean; onepassword: boolean; bitwarden: boolean };
++
++/** What a manager row shows (W54-D2-1). The switch edits `browser.vault_sources`, a wish list
++ * that defaults to every source, so it alone cannot say a manager works: main looks the tool up
++ * (`vault.detect`). A tool that is not there reads "Not detected" with no switch; without an
++ * answer (a remote backend, an older main) the switch shows the setting and no state pill. */
++export function managerRowState(
++  source: (typeof SOURCE_ORDER)[number],
++  enabled: boolean,
++  detection: Detection | null,
++): { pill: "on" | "off" | "missing" | null; showSwitch: boolean } {
++  if (source === "local") return { pill: enabled ? "on" : "off", showSwitch: true };
++  if (detection === null || !detection.checked) return { pill: null, showSwitch: true };
++  if (!detection[source]) return { pill: "missing", showSwitch: false };
++  return { pill: enabled ? "on" : "off", showSwitch: true };
++}
++
+ export function PasswordsSourcesPage() {
+   const t = useT();
+-  const { config, saveField, focusRow } = useSettings();
++  const { config, saveField, focusRow, bridge } = useSettings();
++  const vault = bridge?.vault;
+   const [note, setNote] = useState<string | null>(null);
++  const [detection, setDetection] = useState<Detection | null>(null);
++  useEffect(() => {
++    let live = true;
++    void attempt(vault ? () => vault.detect() : null).then((answer) => {
++      if (live && answer.ok) setDetection(answer.value);
++    });
++    return () => {
++      live = false;
++    };
++  }, [vault]);
+   if (config === null) return <SkeletonRows count={3} />;
+   const raw = valueAt(config, "browser.vault_sources");
+   const list: string[] = Array.isArray(raw)
+@@ -257,6 +284,7 @@ export function PasswordsSourcesPage() {
+         {SOURCE_ORDER.map((source) => {
+           const on = list.includes(source);
+           const title = t(`settingsA.sources.${source}`);
++          const state = managerRowState(source, on, detection);
+           return (
+             <SettingRow
+               key={source}
+@@ -264,24 +292,38 @@ export function PasswordsSourcesPage() {
+               title={
+                 <span className="settingsA-title-pill">
+                   {title}
+-                  <Pill tone={on ? "accent" : "neutral"}>
+-                    {on ? t("settingsA.sources.on") : t("settingsA.sources.off")}
+-                  </Pill>
++                  {state.pill !== null && (
++                    <Pill tone={state.pill === "on" ? "accent" : "neutral"}>
++                      {t(
++                        state.pill === "missing"
++                          ? "settingsA.sources.missing"
++                          : state.pill === "on"
++                            ? "settingsA.sources.on"
++                            : "settingsA.sources.off",
++                      )}
++                    </Pill>
++                  )}
+                 </span>
+               }
+-              description={t(`settingsA.sources.${source}Body`)}
++              description={t(
++                state.pill === "missing" && source !== "local"
++                  ? `settingsA.sources.${source}Missing`
++                  : `settingsA.sources.${source}Body`,
++              )}
+               control={
+-                <Switch
+-                  label={title}
+-                  checked={on}
+-                  disabled={saveField === undefined}
+-                  onChange={async (checked) => {
+-                    const next = checked
+-                      ? SOURCES.filter((s) => s === source || list.includes(s))
+-                      : list.filter((s) => s !== source);
+-                    setNote((await saveField?.("browser.vault_sources", next)) ?? null);
+-                  }}
+-                />
++                state.showSwitch ? (
++                  <Switch
++                    label={title}
++                    checked={on}
++                    disabled={saveField === undefined}
++                    onChange={async (checked) => {
++                      const next = checked
++                        ? SOURCES.filter((s) => s === source || list.includes(s))
++                        : list.filter((s) => s !== source);
++                      setNote((await saveField?.("browser.vault_sources", next)) ?? null);
++                    }}
++                  />
++                ) : undefined
+               }
+             />
+           );
+diff --git a/apps/desktop/src/settings/pagesB/about.tsx b/apps/desktop/src/settings/pagesB/about.tsx
+index cd1a471..6a7f45c 100644
+--- a/apps/desktop/src/settings/pagesB/about.tsx
++++ b/apps/desktop/src/settings/pagesB/about.tsx
+@@ -178,7 +178,7 @@ export function UninstallPage() {
+         data-row="uninstall"
+         data-highlighted={focusRow === "uninstall" ? "true" : undefined}
+       >
+-        <UninstallSection uninstall={bridge?.uninstall} />
++        <UninstallSection uninstall={bridge?.uninstall} dev={bridge?.facts?.packaged === false} />
+       </div>
+     </PageBody>
+   );
+diff --git a/apps/desktop/src/settings/pagesB/gateways.tsx b/apps/desktop/src/settings/pagesB/gateways.tsx
+index 7d745aa..1bfd57a 100644
+--- a/apps/desktop/src/settings/pagesB/gateways.tsx
++++ b/apps/desktop/src/settings/pagesB/gateways.tsx
+@@ -55,6 +55,17 @@ function ModeCard(props: {
+   );
+ }
+ 
++/** The switch shows what this run really uses (`effective`), not the stored wish (`store`): with
++ * no usable keychain the secrets sit in private files, so the switch reads off and cannot be
++ * turned on, and the reason is a quiet line, not an error (W54-D2-2). */
++export function storageSwitchState(policy: IndusSecretsPolicyView | null): {
++  checked: boolean;
++  disabled: boolean;
++} {
++  if (policy === null) return { checked: false, disabled: true };
++  return { checked: policy.effective === "keychain", disabled: !policy.keychainUsable };
++}
++
+ function StorageRow() {
+   const t = useT();
+   const { bridge, focusRow } = useSettings();
+@@ -67,6 +78,7 @@ function StorageRow() {
+       else setError(answer.code);
+     });
+   }, [secrets]);
++  const state = storageSwitchState(policy);
+   return (
+     <SettingRow
+       rowId="secure-storage"
+@@ -76,7 +88,7 @@ function StorageRow() {
+         <>
+           {t("settings.storage.body")}
+           {policy !== null && !policy.keychainUsable && (
+-            <span className="sb-status" data-error="true">
++            <span className="sb-status" data-testid="keychain-unusable">
+               {t("settings.storage.unusable", { reason: policy.reason })}
+             </span>
+           )}
+@@ -86,8 +98,8 @@ function StorageRow() {
+         <>
+           <Switch
+             label={t("settings.storage.title")}
+-            checked={policy?.store === "keychain"}
+-            disabled={policy === null || (!policy.keychainUsable && policy.store === "file")}
++            checked={state.checked}
++            disabled={state.disabled}
+             onChange={async (checked) => {
+               const answer = await attempt(
+                 secrets ? () => secrets.setPolicy({ store: checked ? "keychain" : "file" }) : null,
+diff --git a/apps/desktop/src/settings/pagesB/keyboard.tsx b/apps/desktop/src/settings/pagesB/keyboard.tsx
+index 9443c0b..7b0f8ba 100644
+--- a/apps/desktop/src/settings/pagesB/keyboard.tsx
++++ b/apps/desktop/src/settings/pagesB/keyboard.tsx
+@@ -26,6 +26,19 @@ const GROUP_LABELS: Readonly<Record<KeyGroup, MessageKey>> = {
+   conversation: "settings.keys2.groupConversation",
+ };
+ 
++/** The composer's built-in keys (the ones its `?` help card lists): real, but not rebindable, so
++ * they show as plain chips under the Composer group (W54-D2-9). */
++const FIXED_COMPOSER_KEYS: ReadonlyArray<{ keys: (mac: boolean) => string[]; label: MessageKey }> =
++  [
++    { keys: () => ["Enter"], label: "settings.keys2.fixedSend" },
++    { keys: (mac) => [mac ? "⇧" : "Shift", "Enter"], label: "settings.keys2.fixedNewline" },
++    { keys: () => ["@"], label: "settings.keys2.fixedMention" },
++    { keys: () => ["/"], label: "settings.keys2.fixedSlash" },
++    { keys: () => ["?"], label: "settings.keys2.fixedHelp" },
++    { keys: () => ["↑", "↓"], label: "settings.keys2.fixedHistory" },
++    { keys: () => ["Esc"], label: "settings.keys2.fixedEscape" },
++  ];
++
+ const GLOBAL_TO_ACTION: Readonly<Record<string, IndusShortcutAction>> = {
+   quickEntryShortcut: "quick-entry",
+   hudSnapShortcut: "hud-snap",
+@@ -122,7 +135,13 @@ export function KeyBindingsPage() {
+       </label>
+       {KEY_GROUPS.map((group) => {
+         const rows = shown.filter((action) => keyGroupOf(action.id) === group);
+-        if (rows.length === 0) return null;
++        const fixed =
++          group === "composer"
++            ? FIXED_COMPOSER_KEYS.filter(
++                (row) => q === "" || t(row.label).toLowerCase().includes(q),
++              )
++            : [];
++        if (rows.length === 0 && fixed.length === 0) return null;
+         return (
+           <section key={group} className="sb-key-group" aria-label={t(GROUP_LABELS[group])}>
+             <h3 className="sb-caps">{t(GROUP_LABELS[group])}</h3>
+@@ -153,6 +172,19 @@ export function KeyBindingsPage() {
+                 </div>
+               );
+             })}
++            {fixed.map((row) => (
++              <div key={row.label} className="sb-bind" data-fixed="true">
++                <span className="sb-bind-label">{t(row.label)}</span>
++                <span className="sb-chips" title={t("settings.keys2.fixed")}>
++                  {row.keys(platform === "darwin").map((key) => (
++                    <kbd key={key} className="sb-kbd">
++                      {key}
++                    </kbd>
++                  ))}
++                </span>
++                <span className="sb-bind-reset" aria-hidden="true" />
++              </div>
++            ))}
+           </section>
+         );
+       })}
+diff --git a/apps/desktop/src/settings/pagesB/pagesB.css b/apps/desktop/src/settings/pagesB/pagesB.css
+index 7386d2c..d181305 100644
+--- a/apps/desktop/src/settings/pagesB/pagesB.css
++++ b/apps/desktop/src/settings/pagesB/pagesB.css
+@@ -748,6 +748,40 @@
+   margin: 0;
+ }
+ 
++/* no option offered: what the person can run themselves (W54-D2-4) */
++.settings-uninstall-manual {
++  display: flex;
++  flex-direction: column;
++  gap: 6px;
++  margin-top: 4px;
++  padding: 10px 12px;
++  border: 1px solid var(--desk-stroke-1);
++  border-radius: var(--desk-radius-card);
++  background: var(--desk-bg-canvas);
++}
++
++.settings-uninstall-manual .settings-row-desc {
++  margin: 0;
++}
++
++.settings-uninstall-commands {
++  display: grid;
++  grid-template-columns: max-content minmax(0, 1fr);
++  gap: 4px 14px;
++  margin: 0;
++  padding: 0;
++  list-style: none;
++}
++
++.settings-uninstall-commands > li {
++  display: contents;
++}
++
++.settings-uninstall-commands .settings-code {
++  color: var(--desk-fg-1);
++  user-select: all;
++}
++
+ .settings-uninstall-confirm {
+   display: flex;
+   flex-direction: column;
+diff --git a/apps/desktop/src/settings/pagesB/providers.tsx b/apps/desktop/src/settings/pagesB/providers.tsx
+index 5990bb1..b95054a 100644
+--- a/apps/desktop/src/settings/pagesB/providers.tsx
++++ b/apps/desktop/src/settings/pagesB/providers.tsx
+@@ -246,6 +246,17 @@ export function EndpointsPage() {
+   const [rowNotes, setRowNotes] = useState<
+     Readonly<Record<string, { text: string; error: boolean }>>
+   >({});
++  // W54-D2-8: the main model may point at an endpoint of its own (`model.base_url`, provider
++  // `custom`) that is not one of the saved entries; it is the one in use, so it is listed too.
++  const inlineUrl = valueAt(config, "model.base_url");
++  const inlineModel = valueAt(config, "model.default");
++  const inline =
++    typeof inlineUrl === "string" &&
++    inlineUrl !== "" &&
++    !saved.some(([entryName]) => entryName === current)
++      ? { url: inlineUrl, model: typeof inlineModel === "string" ? inlineModel : "" }
++      : null;
++  const [inlineNote, setInlineNote] = useState<{ text: string; error: boolean } | null>(null);
+   const urlId = useId();
+   const valid = /^[a-z0-9][a-z0-9._-]*$/i.test(name) && /^https?:\/\//i.test(url.trim());
+ 
+@@ -299,9 +310,45 @@ export function EndpointsPage() {
+         data-highlighted={focusRow === "custom-endpoints" ? "true" : undefined}
+       >
+         <p className="settings-intro">
+-          <span className="sb-count">{saved.length}</span>
++          <span className="sb-count">{saved.length + (inline === null ? 0 : 1)}</span>
+           {t("settings.endpoints.body")}
+         </p>
++        {inline !== null && (
++          <div className="sb-endpoint" data-endpoint="main-model">
++            <button
++              type="button"
++              className="sb-endpoint-main"
++              aria-label={t("settings.endpoints2.keepInline")}
++              onClick={() => {
++                clear();
++                setUrl(inline.url);
++                setModel(inline.model);
++              }}
++            />
++            <div className="sb-endpoint-text">
++              <span className="sb-endpoint-name">
++                {t("settings.endpoints2.inline")}
++                <Pill tone="accent">{t("settings.endpoints2.active")}</Pill>
++              </span>
++              <span className="sb-mono">{inline.url}</span>
++              <span className="sb-mono sb-faint">
++                {inline.model || t("settings.endpoints2.noModel")} ·{" "}
++                {t("settings.endpoints2.inlineWhere")}
++              </span>
++              <Note text={inlineNote?.text ?? null} error={inlineNote?.error ?? false} />
++            </div>
++            <span className="sb-endpoint-actions">
++              <OutlineButton
++                onClick={async () => {
++                  const tested = await testEndpoint(api, { base_url: inline.url }, profile);
++                  setInlineNote({ text: tested.message, error: !tested.ok });
++                }}
++              >
++                {t("settings.endpoints.test")}
++              </OutlineButton>
++            </span>
++          </div>
++        )}
+         {saved.map(([entryName, entry]) => {
+           const active = current === entryName;
+           const rowNote = rowNotes[entryName];
+diff --git a/apps/desktop/src/settings/pagesB/voice.tsx b/apps/desktop/src/settings/pagesB/voice.tsx
+index 1a9bb00..23cd0de 100644
+--- a/apps/desktop/src/settings/pagesB/voice.tsx
++++ b/apps/desktop/src/settings/pagesB/voice.tsx
+@@ -7,6 +7,10 @@ import { useWake, type WakeController } from "../../wake/WakeIndicator.tsx";
+ import { useSettings } from "../context.tsx";
+ import { SettingRow, Switch } from "../primitives.tsx";
+ 
++/** Only a start that went wrong is red; "off", "another window listens" and "cannot run here"
++ * are states, shown as a quiet line (W54-D2-3). */
++const FAILURES: ReadonlySet<string> = new Set(["wake.reason.failed", "wake.reason.timeout"]);
++
+ function WakeRow(props: { controller: WakeController }) {
+   const t = useT();
+   const { focusRow } = useSettings();
+@@ -22,7 +26,11 @@ function WakeRow(props: { controller: WakeController }) {
+           {t("wake.toggle.hint", { phrase: view.phrase })}
+           {view.pending && <span className="sb-status">{t("wake.toggle.starting")}</span>}
+           {view.notice !== null && (
+-            <span className="sb-status" data-error="true" role="alert">
++            <span
++              className="sb-status"
++              data-error={FAILURES.has(view.notice.key) ? "true" : undefined}
++              role={FAILURES.has(view.notice.key) ? "alert" : "status"}
++            >
+               {t(view.notice.key, view.notice.vars)}
+             </span>
+           )}
+diff --git a/apps/desktop/src/settings/settings.css b/apps/desktop/src/settings/settings.css
+index d4bb0b4..8363715 100644
+--- a/apps/desktop/src/settings/settings.css
++++ b/apps/desktop/src/settings/settings.css
+@@ -663,3 +663,26 @@
+   border: 1px solid var(--desk-stroke-1);
+   border-radius: var(--desk-radius-control);
+ }
++
++/* Chat › Personality (W54-D2-6): a full-width editor with Save under it on the right */
++.settings-persona {
++  display: flex;
++  flex-direction: column;
++  gap: 8px;
++  margin-top: 8px;
++}
++
++.settings-persona-text {
++  width: 100%;
++  min-height: 280px;
++  padding: 10px 12px;
++  line-height: 18px;
++  resize: vertical;
++}
++
++.settings-persona-actions {
++  display: flex;
++  align-items: center;
++  justify-content: flex-end;
++  gap: 12px;
++}
+diff --git a/apps/desktop/src/settings/settingsStates.test.tsx b/apps/desktop/src/settings/settingsStates.test.tsx
+new file mode 100644
+index 0000000..b45a8f2
+--- /dev/null
++++ b/apps/desktop/src/settings/settingsStates.test.tsx
+@@ -0,0 +1,239 @@
++// @vitest-environment jsdom
++// Settings pages that showed a state that was not true (W54-D2): password managers "On" with no
++// tool installed, the keychain switch ON while secrets sat in files, the main model's own endpoint
++// missing from Custom endpoints, and the persona squeezed into a field-sized box.
++import { act, fireEvent, render, screen } from "@testing-library/react";
++import { useState } from "react";
++import { describe, expect, it, vi } from "vitest";
++import { ThemeProvider } from "../app/theme.tsx";
++import type { IndusSecretsPolicyView } from "../global.d.ts";
++import type { SettingsBridge } from "./context.tsx";
++import { fakeRest } from "./fakeRest.ts";
++import { managerRowState } from "./pagesA.tsx";
++import { storageSwitchState } from "./pagesB/gateways.tsx";
++import { SettingsOverlay } from "./SettingsOverlay.tsx";
++
++const SCHEMA = {
++  fields: {
++    "browser.vault_sources": { type: "list", description: "", category: "browser" },
++  },
++};
++
++function backend(config: Record<string, unknown>) {
++  const api = fakeRest();
++  api.route("GET", "/api/config/schema", SCHEMA);
++  api.route("GET", "/api/config", config);
++  api.route("GET", "/api/profiles", { profiles: [{ name: "default" }], current: "default" });
++  api.route("PUT", "/api/config", { ok: true });
++  return api;
++}
++
++function Harness(props: {
++  initial: string;
++  api: ReturnType<typeof fakeRest>;
++  bridge: SettingsBridge | null;
++}) {
++  const [query, setQuery] = useState(props.initial);
++  return (
++    <ThemeProvider>
++      <SettingsOverlay
++        query={query}
++        onNavigate={setQuery}
++        onClose={() => undefined}
++        api={props.api}
++        bridge={props.bridge}
++        saveKey={null}
++      />
++    </ThemeProvider>
++  );
++}
++
++async function settle() {
++  await act(async () => {
++    await new Promise((resolve) => setTimeout(resolve, 0));
++  });
++}
++
++const ALL = { browser: { vault_sources: ["local", "onepassword", "bitwarden"] } };
++
++describe("password managers (W54-D2-1)", () => {
++  it("a manager whose tool is not installed reads Not detected, with no switch", async () => {
++    const bridge: SettingsBridge = {
++      vault: { detect: async () => ({ checked: true, onepassword: false, bitwarden: true }) },
++    };
++    render(<Harness initial="view=passwords&page=sources" api={backend(ALL)} bridge={bridge} />);
++    await settle();
++    const one = document.querySelector('[data-row="vault-onepassword"]') as HTMLElement;
++    expect(one.textContent).toContain("Not detected");
++    expect(one.textContent).not.toContain("On");
++    expect(one.querySelector('[role="switch"]')).toBeNull();
++    const bit = document.querySelector('[data-row="vault-bitwarden"]') as HTMLElement;
++    expect(bit.textContent).toContain("On");
++    expect(screen.getByRole("switch", { name: "Bitwarden" })).toBeTruthy();
++    expect(screen.getByRole("switch", { name: "This computer" })).toBeTruthy();
++  });
++
++  it("without an answer (remote backend) no manager claims to be On", async () => {
++    const bridge: SettingsBridge = {
++      vault: { detect: async () => ({ checked: false, onepassword: false, bitwarden: false }) },
++    };
++    render(<Harness initial="view=passwords&page=sources" api={backend(ALL)} bridge={bridge} />);
++    await settle();
++    for (const source of ["onepassword", "bitwarden"]) {
++      const row = document.querySelector(`[data-row="vault-${source}"]`) as HTMLElement;
++      expect(row.querySelector(".settings-pill")).toBeNull();
++      expect(row.querySelector('[role="switch"]')).not.toBeNull();
++    }
++  });
++
++  it("the row state table", () => {
++    const found = { checked: true, onepassword: true, bitwarden: false };
++    expect(managerRowState("onepassword", true, found)).toEqual({ pill: "on", showSwitch: true });
++    expect(managerRowState("onepassword", false, found)).toEqual({
++      pill: "off",
++      showSwitch: true,
++    });
++    expect(managerRowState("bitwarden", true, found)).toEqual({
++      pill: "missing",
++      showSwitch: false,
++    });
++    expect(managerRowState("bitwarden", true, null)).toEqual({ pill: null, showSwitch: true });
++    expect(managerRowState("local", true, null)).toEqual({ pill: "on", showSwitch: true });
++  });
++});
++
++describe("keychain switch (W54-D2-2)", () => {
++  const policy = (over: Partial<IndusSecretsPolicyView>): IndusSecretsPolicyView => ({
++    store: "keychain",
++    effective: "keychain",
++    keychainUsable: true,
++    reason: "keychain available",
++    ...over,
++  });
++
++  it("follows what this run uses, not the stored wish", () => {
++    expect(storageSwitchState(null)).toEqual({ checked: false, disabled: true });
++    expect(storageSwitchState(policy({}))).toEqual({ checked: true, disabled: false });
++    expect(storageSwitchState(policy({ store: "file", effective: "file" }))).toEqual({
++      checked: false,
++      disabled: false,
++    });
++    expect(
++      storageSwitchState(policy({ effective: "file", keychainUsable: false, reason: "x" })),
++    ).toEqual({ checked: false, disabled: true });
++  });
++
++  it("no keychain: the switch reads off and the reason is a quiet line, not an error", async () => {
++    const getPolicy = vi.fn(async () =>
++      policy({
++        effective: "file",
++        keychainUsable: false,
++        reason: "no secret service (backend basic_text)",
++      }),
++    );
++    const bridge: SettingsBridge = {
++      secrets: { getPolicy, setPolicy: async () => policy({}) },
++    };
++    render(<Harness initial="view=gateways" api={backend({})} bridge={bridge} />);
++    await settle();
++    const toggle = screen.getByRole("switch", {
++      name: "Encrypt saved secrets with the OS keychain",
++    }) as HTMLButtonElement;
++    expect(toggle.getAttribute("aria-checked")).toBe("false");
++    expect(toggle.disabled).toBe(true);
++    const line = screen.getByTestId("keychain-unusable");
++    expect(line.textContent).toContain("no secret service");
++    expect(line.getAttribute("data-error")).toBeNull();
++  });
++});
++
++describe("custom endpoints (W54-D2-8)", () => {
++  it("the main model's own endpoint is listed as the active card", async () => {
++    const api = backend({
++      model: { provider: "custom", base_url: "http://127.0.0.1:9000/v1", default: "fake-model" },
++    });
++    api.route("POST", "/api/model/test-endpoint", {
++      ok: true,
++      status: 200,
++      models: ["fake-model"],
++      message: "The endpoint offers 1 model.",
++    });
++    render(<Harness initial="view=providers&page=endpoints" api={api} bridge={null} />);
++    await settle();
++    const card = document.querySelector('[data-endpoint="main-model"]') as HTMLElement;
++    expect(card.textContent).toContain("http://127.0.0.1:9000/v1");
++    expect(card.textContent).toContain("Active");
++    expect(card.textContent).toContain("fake-model");
++    expect(document.querySelector(".sb-count")?.textContent).toBe("1");
++    // Save it under a name: the form takes its URL and model
++    fireEvent.click(
++      screen.getByRole("button", { name: "Save the main model endpoint under a name" }),
++    );
++    expect((screen.getByLabelText("Base URL") as HTMLInputElement).value).toBe(
++      "http://127.0.0.1:9000/v1",
++    );
++  });
++
++  it("a saved entry that is in use is not listed twice", async () => {
++    const api = backend({
++      model: { provider: "mine", base_url: "http://h/v1", default: "m" },
++      providers: { mine: { base_url: "http://h/v1", models: ["m"] } },
++    });
++    render(<Harness initial="view=providers&page=endpoints" api={api} bridge={null} />);
++    await settle();
++    expect(document.querySelector('[data-endpoint="main-model"]')).toBeNull();
++    expect(document.querySelector(".sb-count")?.textContent).toBe("1");
++  });
++});
++
++describe("personality (W54-D2-6)", () => {
++  it("is a full-width editor under its title, with Save below", async () => {
++    const api = backend({});
++    api.route("GET", "/api/profiles/default/persona", { content: "Be brief." });
++    api.route("PUT", "/api/profiles/default/persona", { ok: true });
++    render(<Harness initial="view=chat&page=personality" api={api} bridge={null} />);
++    await settle();
++    const box = screen.getByLabelText("Personality") as HTMLTextAreaElement;
++    expect(box.value).toBe("Be brief.");
++    expect(box.closest(".settings-row-below")).not.toBeNull();
++    expect(box.closest(".settings-row-control")).toBeNull();
++    fireEvent.change(box, { target: { value: "Be kind." } });
++    await act(async () => {
++      fireEvent.click(screen.getByRole("button", { name: "Save" }));
++    });
++    expect(api.calls.find((c) => c.method === "PUT")?.body).toEqual({ content: "Be kind." });
++  });
++});
++
++describe("key bindings (W54-D2-9)", () => {
++  it("the composer's built-in keys are listed as fixed chips, not as rebindable rows", async () => {
++    const snapshot = {
++      minimizeToTray: false,
++      keepAwake: "while-working" as const,
++      quickEntryShortcut: "",
++      hudSnapShortcut: "",
++      hudToggleShortcut: "",
++      notifications: { turnComplete: true, approvals: true, sounds: true },
++      keybindings: {},
++      chatTextScale: 100,
++    };
++    const bridge: SettingsBridge = {
++      prefs: { get: async () => snapshot, set: async () => snapshot, onChanged: () => () => {} },
++    };
++    render(<Harness initial="view=keyboard" api={backend({})} bridge={bridge} />);
++    await settle();
++    const composer = screen.getByRole("region", { name: "Composer" });
++    const fixed = Array.from(composer.querySelectorAll('[data-fixed="true"]'));
++    expect(fixed.map((row) => row.querySelector(".sb-bind-label")?.textContent)).toEqual([
++      "Send the message",
++      "New line",
++      "Mention files, folders, links",
++      "Slash commands",
++      "Composer help",
++      "Earlier prompts",
++      "Close a menu",
++    ]);
++    for (const row of fixed) expect(row.querySelector("button")).toBeNull();
++    expect(fixed[1]?.textContent).toContain("ShiftEnter");
++  });
++});
+diff --git a/apps/desktop/src/settings/strings.en.ts b/apps/desktop/src/settings/strings.en.ts
+index 1ae68f5..07cce67 100644
+--- a/apps/desktop/src/settings/strings.en.ts
++++ b/apps/desktop/src/settings/strings.en.ts
+@@ -190,7 +190,8 @@ export const SETTINGS_STRINGS = {
+   "settings.storage.title": "Encrypt saved secrets with the OS keychain",
+   "settings.storage.body":
+     "Off keeps them in private files only you can read. Provider keys are not held here.",
+-  "settings.storage.unusable": "The keychain cannot be used right now: {reason}",
++  "settings.storage.unusable":
++    "No keychain is available on this computer ({reason}), so secrets stay in private files.",
+ 
+   "settings.keyboard.title": "Keyboard shortcuts",
+   "settings.keyboard.body":
+diff --git a/apps/desktop/src/settings/stringsA.en.ts b/apps/desktop/src/settings/stringsA.en.ts
+index 83bf178..676aa67 100644
+--- a/apps/desktop/src/settings/stringsA.en.ts
++++ b/apps/desktop/src/settings/stringsA.en.ts
+@@ -267,6 +267,11 @@ export const SETTINGS_A_STRINGS = {
+     "Besides this computer's own vault, the agent can fill logins from a password manager's command-line tool. It asks you to unlock it once per session.",
+   "settingsA.sources.on": "On",
+   "settingsA.sources.off": "Off",
++  "settingsA.sources.missing": "Not detected",
++  "settingsA.sources.onepasswordMissing":
++    "Not found on this computer. Install the 1Password command-line tool (op) and sign in to it; Indus finds it by itself.",
++  "settingsA.sources.bitwardenMissing":
++    "Not found on this computer. Install the Bitwarden command-line tool (bw) and sign in to it; Indus finds it by itself.",
+   "settingsA.sources.local": "This computer",
+   "settingsA.sources.localBody": "The encrypted vault Indus keeps in your profile.",
+   "settingsA.sources.onepassword": "1Password",
+diff --git a/apps/desktop/src/settings/stringsB.en.ts b/apps/desktop/src/settings/stringsB.en.ts
+index 8736633..20f5014 100644
+--- a/apps/desktop/src/settings/stringsB.en.ts
++++ b/apps/desktop/src/settings/stringsB.en.ts
+@@ -80,9 +80,20 @@ export const SETTINGS_B_STRINGS = {
+   "settings.keys2.searchShortcuts": "Search shortcuts…",
+   "settings.keys2.groupGeneral": "General",
+   "settings.keys2.groupComposer": "Composer",
++  "settings.keys2.fixed": "Built into the composer; cannot be changed",
++  "settings.keys2.fixedSend": "Send the message",
++  "settings.keys2.fixedNewline": "New line",
++  "settings.keys2.fixedMention": "Mention files, folders, links",
++  "settings.keys2.fixedSlash": "Slash commands",
++  "settings.keys2.fixedHelp": "Composer help",
++  "settings.keys2.fixedHistory": "Earlier prompts",
++  "settings.keys2.fixedEscape": "Close a menu",
+   "settings.keys2.groupTabs": "Tabs",
+   "settings.keys2.groupConversation": "Conversation",
+   "settings.endpoints2.active": "Active",
++  "settings.endpoints2.inline": "Main model endpoint",
++  "settings.endpoints2.inlineWhere": "set on Model › Main model",
++  "settings.endpoints2.keepInline": "Save the main model endpoint under a name",
+   "settings.endpoints2.use": "Use",
+   "settings.endpoints2.inUse": "New chats use this endpoint.",
+   "settings.endpoints2.needModel": "Test it and pick a default model first.",
+diff --git a/apps/desktop/src/settings/uninstallStrings.en.ts b/apps/desktop/src/settings/uninstallStrings.en.ts
+index ecddb5e..6e5ed98 100644
+--- a/apps/desktop/src/settings/uninstallStrings.en.ts
++++ b/apps/desktop/src/settings/uninstallStrings.en.ts
+@@ -19,4 +19,8 @@ export const UNINSTALL_STRINGS = {
+   "settings.uninstall.cancel": "Cancel",
+   "settings.uninstall.ask": "Indus will quit now and then {what}.",
+   "settings.uninstall.failed": "Uninstall did not start: {message}",
++  "settings.uninstall.dev":
++    "This window is a development run started from source, so there is no installed copy for it to remove.",
++  "settings.uninstall.manual":
++    "You can still remove Indus yourself: quit the app, then run one of these in a terminal.",
+ } as const satisfies Record<string, string>;
+diff --git a/apps/desktop/src/wake/WakeIndicator.tsx b/apps/desktop/src/wake/WakeIndicator.tsx
+index 9c1cfba..6c58754 100644
+--- a/apps/desktop/src/wake/WakeIndicator.tsx
++++ b/apps/desktop/src/wake/WakeIndicator.tsx
+@@ -135,12 +135,16 @@ export class WakeController {
+       )) as StartAnswer;
+     } catch (error) {
+       if (serial !== this.serial) return;
++      // A launch arm (no consent) that finds no connection is not a failure the person asked
++      // about: it stays quiet, and the switch simply reads off (W54-D2-3).
++      const quiet = !options.consent && error instanceof Error && error.name === "NotConnected";
+       this.patch({
+         pending: false,
+         listening: false,
+         indicator: "hidden",
+-        notice:
+-          error instanceof StartTimeout
++        notice: quiet
++          ? null
++          : error instanceof StartTimeout
+             ? { key: "wake.reason.timeout" }
+             : {
+                 key: "wake.reason.failed",
+@@ -163,12 +167,16 @@ export class WakeController {
+       return;
+     }
+     const key = REASON_KEYS[answer.reason ?? ""] ?? "wake.reason.disabled";
++    // At launch (no consent) "it is off" is the normal answer, not news: the switch reading off
++    // says it (W54-D2-3). The person's own switch still gets every reason.
++    const routine =
++      !options.consent && (key === "wake.reason.disabled" || key === "wake.reason.consent");
+     this.patch({
+       pending: false,
+       listening: false,
+       indicator: "hidden",
+       phrase,
+-      notice: { key, vars: { hint: answer.hint ?? "" } },
++      notice: routine ? null : { key, vars: { hint: answer.hint ?? "" } },
+     });
+   }
+ 
+diff --git a/apps/desktop/src/wake/appWake.test.ts b/apps/desktop/src/wake/appWake.test.ts
+index 84c2079..f97718d 100644
+--- a/apps/desktop/src/wake/appWake.test.ts
++++ b/apps/desktop/src/wake/appWake.test.ts
+@@ -1,5 +1,7 @@
++import { NotConnected } from "@indus/client";
+ import { describe, expect, it, vi } from "vitest";
+ import {
++  armWhenReady,
+   type DictateRequest,
+   dictationDone,
+   installAppWake,
+@@ -63,3 +65,64 @@ describe("the window's wake word hands off to the composer's dictation (P24-20 
+     expect(() => requestDictation(new EventTarget())).toThrow(/no composer/);
+   });
+ });
++
++describe("the launch arm waits for the connection (W54-D2-3)", () => {
++  function connection(ready: boolean) {
++    const listeners = new Set<() => void>();
++    let state = { ready };
++    return {
++      getState: () => state,
++      subscribe: (listener: () => void) => {
++        listeners.add(listener);
++        return () => listeners.delete(listener);
++      },
++      becomeReady: () => {
++        state = { ready: true };
++        for (const listener of [...listeners]) listener();
++      },
++      listeners,
++    };
++  }
++
++  it("asks wake.start only after the daemon is ready, once", async () => {
++    const { made, calls } = rig();
++    const link = connection(false);
++    armWhenReady(made.controller, link);
++    expect(calls).toEqual([]);
++    link.becomeReady();
++    link.becomeReady();
++    await vi.waitFor(() => expect(calls).toEqual(["wake.start"]));
++    expect(link.listeners.size).toBe(0);
++    made.dispose();
++  });
++
++  it("a launch arm that finds no connection leaves no error under the switch", async () => {
++    const made = installAppWake(
++      () => ({
++        request: async () => {
++          throw new NotConnected();
++        },
++      }),
++      new EventTarget(),
++    );
++    await made.controller.start({ consent: false });
++    expect(made.controller.get().notice).toBeNull();
++    expect(made.controller.get().listening).toBe(false);
++    // the person's own switch still reports the failure
++    await made.controller.start({ consent: true });
++    expect(made.controller.get().notice?.key).toBe("wake.reason.failed");
++    made.dispose();
++  });
++
++  it("at launch, an answer of 'off' is the normal state, not a notice; the switch still hears it", async () => {
++    const made = installAppWake(
++      () => ({ request: async () => ({ started: false, reason: "disabled" }) }),
++      new EventTarget(),
++    );
++    await made.controller.start({ consent: false });
++    expect(made.controller.get().notice).toBeNull();
++    await made.controller.start({ consent: true });
++    expect(made.controller.get().notice?.key).toBe("wake.reason.disabled");
++    made.dispose();
++  });
++});
+diff --git a/apps/desktop/src/wake/appWake.ts b/apps/desktop/src/wake/appWake.ts
+index f1f4494..610ae31 100644
+--- a/apps/desktop/src/wake/appWake.ts
++++ b/apps/desktop/src/wake/appWake.ts
+@@ -61,3 +61,30 @@ export function installAppWake(
+     },
+   };
+ }
++
++/** What `armWhenReady` reads from a connection: its `ready` flag and change notices. */
++export interface ReadySource {
++  getState(): { readonly ready: boolean };
++  subscribe(listener: () => void): () => void;
++}
++
++/** The launch arm (W54-D2-3): `wake.start` without consent once the connection is ready (the
++ * daemon answered `gateway.ready`), never before. Asking earlier failed with "not connected" and
++ * left a red error under the Settings switch although the person had asked for nothing. Returns
++ * the undo (stops waiting). */
++export function armWhenReady(controller: WakeController, connection: ReadySource): () => void {
++  let done = false;
++  let off: () => void = () => {};
++  const check = () => {
++    if (done || !connection.getState().ready) return;
++    done = true;
++    off();
++    void controller.start({ consent: false });
++  };
++  off = connection.subscribe(check);
++  check();
++  return () => {
++    done = true;
++    off();
++  };
++}
+diff --git a/docs/notes/ui-parity/desktop-settings-states.md b/docs/notes/ui-parity/desktop-settings-states.md
+new file mode 100644
+index 0000000..2a3f733
+--- /dev/null
++++ b/docs/notes/ui-parity/desktop-settings-states.md
+@@ -0,0 +1,57 @@
++# Task: Desktop settings and page states that were not true (W54-D2) Phase: ui-parity Owner: builder w54d2
++
++Status: Built (2026-10-25, wave 54 builder D2, base 7b59d33). Uncommitted, for the integrator.
++
++Read: the wave 54 gap list (desktop lines for settings-passwords-password-managers,
++settings-voice-voice-conversation, settings-gateways-this-window, settings-about-uninstall,
++settings-licences, settings-chat-personality, profiles, settings-providers-custom-endpoints, cron,
++settings-shortcuts, settings-notifications-desktop-alerts) and the reference and Indus screenshots of
++those slugs, both themes (scratchpad Evidence, not in the repo). Reference source: not opened (the
++screenshots carry the layout). Evidence ids: none.
++
++What it does (own words): several settings pages showed a state that was not true. Each one is
++traced to its cause and fixed there, then the page shows the real state:
++
++- Password managers read `browser.vault_sources` (a wish list that defaults to every source) as if
++  it said what works, so 1Password and Bitwarden read "On" with nothing installed. Main now looks
++  the manager programs up on the PATH the backend inherits (`op`, `bw`; the new bridge call
++  `vault.detect`), and the page shows "Not detected" with no switch for a missing tool. With a
++  remote backend nothing is looked up and no row claims a state.
++- The keychain switch was bound to the stored wish (`store`), not what the run uses (`effective`),
++  so it read ON while secrets were in files. It now follows `effective`, is disabled when no
++  keychain exists, and the reason is a quiet line.
++- The wake word's launch arm asked the daemon before the connection was up, failed with "not
++  connected", and the page showed that as a red error although nobody had asked for anything. The
++  arm now waits for the connection's `ready`; a launch arm that still finds no connection, or is
++  told the feature is off, stays quiet (the person's own switch still gets every reason), and only
++  a failed or timed-out start is shown in red.
++- Uninstall: when ownership cannot be confirmed, main now names the missing proof (no answer from
++  the CLI, unreadable answer, not an install of ours, another home, no receipt) and the page adds
++  the CLI commands the person can run, plus a line when the window is a development run.
++- Licences: a development run reads the checkout's own `THIRD_PARTY_NOTICES.md` (the e2e/capture
++  harness copies the app outside the checkout, so its shots still show the "missing" line).
++- Personality: a full-width editor under its title with Save below (was a field-sized box).
++- Profiles opens on the profile this window runs on (the list's `current`), else the default.
++- Custom endpoints lists the main model's own endpoint (`model.base_url`) as the active card when
++  it is not a saved entry; clicking it fills the form so it can be saved under a name.
++- Key bindings lists the composer's built-in keys (the ones its help card lists) as fixed chips.
++
++Decisions: W54-D2-1 detection in main over the PATH, no backend endpoint (the backend has none and
++the brief forbids inventing one); W54-D2-2 the switch shows `effective`; W54-D2-3 wake arm waits
++for `ready`; W54-D2-4 named reasons + manual commands, never an uninstall option we cannot prove;
++W54-D2-5 dev licences from the checkout; W54-D2-6 persona editor; W54-D2-7 profiles default
++selection; W54-D2-8 inline endpoint card; W54-D2-9 fixed composer keys, no new rebindable actions.
++
++Left on purpose: cron blueprints (our REST route serves skill blueprints only; the left column
++already shows when there are jobs or blueprints), desktop alerts (3 real toggles; no fake rows).
++
++Compare checklist:
++- [x] password managers: Not detected without the tool, no switch
++- [x] voice: no red error when nothing failed
++- [x] gateways: switch matches reality, quiet reason
++- [x] uninstall: says what is missing and what the person can do
++- [x] licences: dev run shows the notices
++- [x] personality: full-width editor
++- [x] profiles: opens with a profile selected
++- [x] custom endpoints: active endpoint card
++- [ ] cron: blueprint list needs data the backend does not serve yet (follow-up)

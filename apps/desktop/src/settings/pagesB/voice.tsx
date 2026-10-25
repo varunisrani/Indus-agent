@@ -7,6 +7,10 @@ import { useWake, type WakeController } from "../../wake/WakeIndicator.tsx";
 import { useSettings } from "../context.tsx";
 import { SettingRow, Switch } from "../primitives.tsx";
 
+/** Only a start that went wrong is red; "off", "another window listens" and "cannot run here"
+ * are states, shown as a quiet line (W54-D2-3). */
+const FAILURES: ReadonlySet<string> = new Set(["wake.reason.failed", "wake.reason.timeout"]);
+
 function WakeRow(props: { controller: WakeController }) {
   const t = useT();
   const { focusRow } = useSettings();
@@ -22,7 +26,11 @@ function WakeRow(props: { controller: WakeController }) {
           {t("wake.toggle.hint", { phrase: view.phrase })}
           {view.pending && <span className="sb-status">{t("wake.toggle.starting")}</span>}
           {view.notice !== null && (
-            <span className="sb-status" data-error="true" role="alert">
+            <span
+              className="sb-status"
+              data-error={FAILURES.has(view.notice.key) ? "true" : undefined}
+              role={FAILURES.has(view.notice.key) ? "alert" : "status"}
+            >
               {t(view.notice.key, view.notice.vars)}
             </span>
           )}

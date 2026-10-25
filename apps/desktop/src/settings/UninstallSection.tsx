@@ -20,13 +20,27 @@ const LEVEL_LABELS: Readonly<Record<IndusUninstallLevel, MessageKey>> = {
   full: "settings.uninstall.level.full",
 };
 
+/** The CLI's own commands for each level (the same ones the helper would run). */
+const MANUAL_COMMANDS: Readonly<Record<IndusUninstallLevel, string>> = {
+  gui: "indus uninstall --gui",
+  "keep-data": "indus uninstall",
+  full: "indus uninstall --full",
+};
+
 const LEVEL_DESCRIPTIONS: Readonly<Record<IndusUninstallLevel, MessageKey>> = {
   gui: "settings.uninstall.level.gui.desc",
   "keep-data": "settings.uninstall.level.keep-data.desc",
   full: "settings.uninstall.level.full.desc",
 };
 
-export function UninstallSection(props: { uninstall: IndusDesktopUninstall | null | undefined }) {
+/** Install kinds whose reason already says how to remove them (main's managed kinds). */
+const MANAGED = new Set(["nix", "docker", "desktop"]);
+
+export function UninstallSection(props: {
+  uninstall: IndusDesktopUninstall | null | undefined;
+  /** A development run (started from source): said plainly under the reason (W54-D2-4). */
+  dev?: boolean;
+}) {
   const t = useT();
   const source = props.uninstall ?? null;
   const [summary, setSummary] = useState<IndusUninstallSummary | null>(null);
@@ -64,6 +78,24 @@ export function UninstallSection(props: { uninstall: IndusDesktopUninstall | nul
         <p className="settings-row-desc" data-testid="uninstall-hidden">
           {summary.reason}
         </p>
+        {props.dev === true && (
+          <p className="settings-row-desc" data-testid="uninstall-dev">
+            {t("settings.uninstall.dev")}
+          </p>
+        )}
+        {!MANAGED.has(summary.installKind) && (
+          <div className="settings-uninstall-manual" data-testid="uninstall-manual">
+            <p className="settings-row-desc">{t("settings.uninstall.manual")}</p>
+            <ul className="settings-uninstall-commands">
+              {(["gui", "keep-data", "full"] as const).map((level) => (
+                <li key={level}>
+                  <code className="settings-code">{MANUAL_COMMANDS[level]}</code>
+                  <span className="settings-row-desc">{t(LEVEL_LABELS[level])}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     );
   }

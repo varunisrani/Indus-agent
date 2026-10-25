@@ -138,7 +138,7 @@ export function ProfilesOverlay(props: {
   const api = useApi(props.api);
   const switcher = useSwitcher();
   const changes: ProfileChanges | null = props.changes === undefined ? switcher : props.changes;
-  const list = useRestValue<{ profiles: ProfileRow[] }>(
+  const list = useRestValue<{ profiles: ProfileRow[]; current?: string | null }>(
     () => rest(api, "GET", "/api/profiles"),
     [api],
   );
@@ -250,7 +250,11 @@ export function ProfilesOverlay(props: {
   } else {
     const needle = query.trim().toLowerCase();
     const shown = rows.filter((r) => needle === "" || r.name.toLowerCase().includes(needle));
-    const row = rows.find((r) => r.name === picked) ?? null;
+    // W54-D2-7: nothing picked yet opens the profile this window runs on (else the default), so
+    // its model and persona show at once instead of a "pick one" placeholder.
+    const fallback =
+      rows.find((r) => r.name === list.data.current) ?? rows.find((r) => r.is_default) ?? rows[0];
+    const row = rows.find((r) => r.name === picked) ?? (picked === null ? fallback : null) ?? null;
     body = (
       <ListDetail
         title={t("nav.profiles")}
@@ -298,7 +302,7 @@ export function ProfilesOverlay(props: {
                 </span>
               )
             }
-            selected={r.name === picked}
+            selected={r.name === row?.name}
             onSelect={() => setPicked(r.name)}
             data={{ "data-profile": r.name }}
             menu={{

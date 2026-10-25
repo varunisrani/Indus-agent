@@ -22,6 +22,7 @@ import { PluginsSettingsPage } from "./pagesB/plugins.tsx";
 import { AccountsPage, EndpointsPage, LocalModelsPage } from "./pagesB/providers.tsx";
 import { ArchivedList, DefaultFolderPage } from "./pagesB/sessions.tsx";
 import { WakeWordRows } from "./pagesB/voice.tsx";
+import { PrimaryButton, SettingRow } from "./primitives.tsx";
 import { rest } from "./settingsApi.ts";
 
 // -- small building blocks ----------------------------------------------------------------------
@@ -70,7 +71,7 @@ function Note(props: { text: string | null; error?: boolean }) {
 
 function PersonaPage() {
   const t = useT();
-  const { api, profile, activeProfile } = useSettings();
+  const { api, profile, activeProfile, focusRow } = useSettings();
   const name = profile ?? activeProfile ?? "default";
   const [text, setText] = useState<string | null>(null);
   const [note, setNote] = useState<{ text: string; error: boolean } | null>(null);
@@ -87,39 +88,46 @@ function PersonaPage() {
     };
   }, [api, path]);
   const id = useId();
+  // W54-D2-6: the persona is a document, not a field: label and line on top, then a full-width
+  // editor with Save under it on the right (the profile editor's SOUL block, our styling).
   return (
     <div className="settings-rows">
-      <Row
-        row="persona"
-        label={t("settings.persona.title")}
-        description={t("settings.persona.body")}
+      <SettingRow
+        rowId="persona"
+        highlighted={focusRow === "persona"}
         htmlFor={id}
-      >
-        <textarea
-          id={id}
-          className="settings-input settings-textarea settings-wide"
-          rows={8}
-          value={text ?? ""}
-          disabled={text === null}
-          onChange={(event) => setText(event.currentTarget.value)}
-        />
-        <button
-          type="button"
-          className="button button-primary"
-          disabled={text === null}
-          onClick={async () => {
-            const answer = await rest(api, "PUT", path, { body: { content: text ?? "" } });
-            setNote(
-              answer.ok
-                ? { text: t("settings.saved"), error: false }
-                : { text: answer.message, error: true },
-            );
-          }}
-        >
-          {t("settings.save")}
-        </button>
-        <Note text={note?.text ?? null} error={note?.error ?? false} />
-      </Row>
+        title={t("settings.persona.title")}
+        description={t("settings.persona.body")}
+        below={
+          <div className="settings-persona">
+            <textarea
+              id={id}
+              className="settings-input settings-textarea settings-persona-text"
+              rows={16}
+              spellCheck={false}
+              value={text ?? ""}
+              disabled={text === null}
+              onChange={(event) => setText(event.currentTarget.value)}
+            />
+            <div className="settings-persona-actions">
+              <Note text={note?.text ?? null} error={note?.error ?? false} />
+              <PrimaryButton
+                disabled={text === null}
+                onClick={async () => {
+                  const answer = await rest(api, "PUT", path, { body: { content: text ?? "" } });
+                  setNote(
+                    answer.ok
+                      ? { text: t("settings.saved"), error: false }
+                      : { text: answer.message, error: true },
+                  );
+                }}
+              >
+                {t("settings.save")}
+              </PrimaryButton>
+            </div>
+          </div>
+        }
+      />
     </div>
   );
 }

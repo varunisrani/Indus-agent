@@ -16,6 +16,7 @@ import type {
   IndusDesktopShortcuts,
   IndusDesktopUninstall,
   IndusDesktopUpdates,
+  IndusDesktopVault,
   IndusDesktopZoom,
   IndusLaunchFacts,
   IndusPrefsPatch,
@@ -50,6 +51,8 @@ export interface SettingsBridge {
   readonly logs?: IndusDesktopLogs;
   /** Providers › API keys: "Get a key" links open in the browser. */
   readonly external?: IndusDesktopExternal;
+  /** Passwords › Password managers: which manager tools this computer has (W54-D2). */
+  readonly vault?: IndusDesktopVault;
 }
 
 /** `model.save_key` over the daemon (keys go to the profile's secret store, never the renderer). */

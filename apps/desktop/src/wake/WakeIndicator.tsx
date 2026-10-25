@@ -135,12 +135,16 @@ export class WakeController {
       )) as StartAnswer;
     } catch (error) {
       if (serial !== this.serial) return;
+      // A launch arm (no consent) that finds no connection is not a failure the person asked
+      // about: it stays quiet, and the switch simply reads off (W54-D2-3).
+      const quiet = !options.consent && error instanceof Error && error.name === "NotConnected";
       this.patch({
         pending: false,
         listening: false,
         indicator: "hidden",
-        notice:
-          error instanceof StartTimeout
+        notice: quiet
+          ? null
+          : error instanceof StartTimeout
             ? { key: "wake.reason.timeout" }
             : {
                 key: "wake.reason.failed",
@@ -163,12 +167,16 @@ export class WakeController {
       return;
     }
     const key = REASON_KEYS[answer.reason ?? ""] ?? "wake.reason.disabled";
+    // At launch (no consent) "it is off" is the normal answer, not news: the switch reading off
+    // says it (W54-D2-3). The person's own switch still gets every reason.
+    const routine =
+      !options.consent && (key === "wake.reason.disabled" || key === "wake.reason.consent");
     this.patch({
       pending: false,
       listening: false,
       indicator: "hidden",
       phrase,
-      notice: { key, vars: { hint: answer.hint ?? "" } },
+      notice: routine ? null : { key, vars: { hint: answer.hint ?? "" } },
     });
   }
 

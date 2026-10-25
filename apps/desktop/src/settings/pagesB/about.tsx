@@ -178,7 +178,7 @@ export function UninstallPage() {
         data-row="uninstall"
         data-highlighted={focusRow === "uninstall" ? "true" : undefined}
       >
-        <UninstallSection uninstall={bridge?.uninstall} />
+        <UninstallSection uninstall={bridge?.uninstall} dev={bridge?.facts?.packaged === false} />
       </div>
     </PageBody>
   );

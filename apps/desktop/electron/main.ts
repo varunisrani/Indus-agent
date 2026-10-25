@@ -62,6 +62,7 @@ import { installLinuxLauncher } from "./linuxLauncher.ts";
 import { DesktopLog } from "./log.ts";
 import { installMediaProtocol, MediaRoots, type MediaTarget } from "./mediaProtocol.ts";
 import { installPanes, type PaneElectron, type PanesHandle } from "./panesInstall.ts";
+import { installPasswordManagersIpc } from "./passwordManagers.ts";
 import { desktopPaths, resolveIndusHome, userDataOverride } from "./paths.ts";
 import { installDiskPlugins } from "./plugins/diskPlugins.ts";
 import { installPrefsIpc } from "./prefs.ts";
@@ -467,6 +468,8 @@ async function boot(): Promise<void> {
     homeDir: os.homedir(),
     env: process.env,
     resourcesPath: app.isPackaged ? process.resourcesPath : null,
+    // a development run reads the checkout's own notices (W54-D2)
+    devNoticesDir: app.isPackaged ? null : path.resolve(app.getAppPath(), "..", ".."),
     // the serve session token or the remote token of the current connection, never in a bundle
     knownSecrets: () => {
       const token = backend.orchestrator.current()?.rest.token;
@@ -474,6 +477,10 @@ async function boot(): Promise<void> {
     },
   }); // P20-39
   const prefs = installPrefsIpc(context); // P20-32
+  installPasswordManagersIpc(registry, {
+    lookup: () => ({ env: process.env, platform: process.platform }),
+    remote: () => backend.orchestrator.current()?.descriptor.mode === "remote",
+  }); // W54-D2
   installAmbient(context, ambientElectron(), backend, { prefs }); // P20-35, P20-36 (P20-32 prefs)
   installUpdates(
     context,

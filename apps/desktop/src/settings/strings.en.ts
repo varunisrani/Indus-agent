@@ -190,7 +190,8 @@ export const SETTINGS_STRINGS = {
   "settings.storage.title": "Encrypt saved secrets with the OS keychain",
   "settings.storage.body":
     "Off keeps them in private files only you can read. Provider keys are not held here.",
-  "settings.storage.unusable": "The keychain cannot be used right now: {reason}",
+  "settings.storage.unusable":
+    "No keychain is available on this computer ({reason}), so secrets stay in private files.",
 
   "settings.keyboard.title": "Keyboard shortcuts",
   "settings.keyboard.body":

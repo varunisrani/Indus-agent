@@ -61,3 +61,30 @@ export function installAppWake(
     },
   };
 }
+
+/** What `armWhenReady` reads from a connection: its `ready` flag and change notices. */
+export interface ReadySource {
+  getState(): { readonly ready: boolean };
+  subscribe(listener: () => void): () => void;
+}
+
+/** The launch arm (W54-D2-3): `wake.start` without consent once the connection is ready (the
+ * daemon answered `gateway.ready`), never before. Asking earlier failed with "not connected" and
+ * left a red error under the Settings switch although the person had asked for nothing. Returns
+ * the undo (stops waiting). */
+export function armWhenReady(controller: WakeController, connection: ReadySource): () => void {
+  let done = false;
+  let off: () => void = () => {};
+  const check = () => {
+    if (done || !connection.getState().ready) return;
+    done = true;
+    off();
+    void controller.start({ consent: false });
+  };
+  off = connection.subscribe(check);
+  check();
+  return () => {
+    done = true;
+    off();
+  };
+}

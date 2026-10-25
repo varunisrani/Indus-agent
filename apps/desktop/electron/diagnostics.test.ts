@@ -213,7 +213,7 @@ function memoryFs(files: Map<string, string>): LogFs {
 
 type Handler = (payload: unknown, context: { senderId: number }) => unknown;
 
-function harness() {
+function harness(extra: { devNoticesDir?: string | null } = {}) {
   const files = new Map<string, string>();
   const log = new DesktopLog({
     file: "/logs/desktop.log",
@@ -250,6 +250,7 @@ function harness() {
     homeDir: "/u",
     env: {},
     resourcesPath: null,
+    ...extra,
     knownSecrets: () => [SECRETS.serveToken],
   });
   return { files, log, handlers, clipboard, revealed, handle };
@@ -275,6 +276,16 @@ describe("installDiagnostics", () => {
     const { handlers } = harness();
     expect(await handlers.get("indus:about:notices")?.({}, { senderId: 1 })).toEqual({
       text: null,
+    });
+  });
+
+  it("a development run reads the checkout's own notices file (W54-D2)", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "indus-notices-dev-"));
+    dirs.push(dir);
+    fs.writeFileSync(path.join(dir, NOTICES_FILE), "# Third-party notices\n\ndev-lib MIT\n");
+    const { handlers } = harness({ devNoticesDir: dir });
+    expect(await handlers.get("indus:about:notices")?.({}, { senderId: 1 })).toEqual({
+      text: "# Third-party notices\n\ndev-lib MIT\n",
     });
   });
 

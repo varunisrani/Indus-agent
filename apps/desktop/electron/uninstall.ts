@@ -67,6 +67,21 @@ export interface OwnershipInput {
 
 const NOT_CONFIRMED = "Indus could not confirm how it was installed, so it cannot remove itself.";
 
+/** What exactly could not be confirmed (W54-D2-4): the page names the missing proof. */
+export const MISSING = {
+  noAnswer: "`indus uninstall --gui-summary` gave no answer.",
+  unreadable: "The answer of `indus uninstall --gui-summary` could not be read.",
+  notOurs:
+    "The runtime it found is not one Indus installed itself (a development checkout, or a copy another tool set up).",
+  otherHome: (home: string) => `That runtime belongs to another Indus home (${home}).`,
+  noReceipt: (home: string) =>
+    `No successful installer receipt is in ${path.join(home, "logs", "install_receipts")}.`,
+} as const;
+
+function unconfirmed(detail: string): string {
+  return `${NOT_CONFIRMED} ${detail}`;
+}
+
 function hidden(input: OwnershipInput, reason: string, installKind = "unknown") {
   return {
     allowed: false,
@@ -83,29 +98,29 @@ export function decideOwnership(input: OwnershipInput): UninstallSummaryView {
   if (/[\\/]nix[\\/]store[\\/]/.test(input.execPath)) {
     return hidden(input, MANAGED_KINDS.nix ?? NOT_CONFIRMED, "nix");
   }
-  if (input.summaryText === null) return hidden(input, NOT_CONFIRMED);
+  if (input.summaryText === null) return hidden(input, unconfirmed(MISSING.noAnswer));
   let summary: Record<string, unknown>;
   try {
     const parsed: unknown = JSON.parse(input.summaryText);
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-      return hidden(input, NOT_CONFIRMED);
+      return hidden(input, unconfirmed(MISSING.unreadable));
     }
     summary = parsed as Record<string, unknown>;
   } catch {
-    return hidden(input, NOT_CONFIRMED);
+    return hidden(input, unconfirmed(MISSING.unreadable));
   }
   const kind = typeof summary.install_kind === "string" ? summary.install_kind : "unknown";
   const managed = MANAGED_KINDS[kind];
   if (managed !== undefined) return hidden(input, managed, kind);
-  if (summary.agent_installed !== true) return hidden(input, NOT_CONFIRMED, kind);
+  if (summary.agent_installed !== true) return hidden(input, unconfirmed(MISSING.notOurs), kind);
   if (typeof summary.home === "string" && path.resolve(summary.home) !== path.resolve(input.home)) {
-    return hidden(input, NOT_CONFIRMED, kind);
+    return hidden(input, unconfirmed(MISSING.otherHome(summary.home)), kind);
   }
   const receipted = input.receipts.some(
     (r) =>
       typeof r === "object" && r !== null && (r as { outcome?: unknown }).outcome === "success",
   );
-  if (!receipted) return hidden(input, NOT_CONFIRMED, kind);
+  if (!receipted) return hidden(input, unconfirmed(MISSING.noReceipt(input.home)), kind);
   return {
     allowed: true,
     levels: [...LEVELS],

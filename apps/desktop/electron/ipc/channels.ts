@@ -611,6 +611,15 @@ export const CHANNELS = [
     owner: "P20-07",
   },
 
+  // password managers: which command-line tools this computer has (W54-D2)
+  {
+    name: "indus:vault:detect",
+    kind: "invoke",
+    group: "vault",
+    method: "detect",
+    owner: "W54-D2",
+  },
+
   // prepared-submission journal
   { name: "indus:journal:list", kind: "invoke", group: "journal", method: "list", owner: "P20-20" },
   {

@@ -26,6 +26,19 @@ const GROUP_LABELS: Readonly<Record<KeyGroup, MessageKey>> = {
   conversation: "settings.keys2.groupConversation",
 };
 
+/** The composer's built-in keys (the ones its `?` help card lists): real, but not rebindable, so
+ * they show as plain chips under the Composer group (W54-D2-9). */
+const FIXED_COMPOSER_KEYS: ReadonlyArray<{ keys: (mac: boolean) => string[]; label: MessageKey }> =
+  [
+    { keys: () => ["Enter"], label: "settings.keys2.fixedSend" },
+    { keys: (mac) => [mac ? "⇧" : "Shift", "Enter"], label: "settings.keys2.fixedNewline" },
+    { keys: () => ["@"], label: "settings.keys2.fixedMention" },
+    { keys: () => ["/"], label: "settings.keys2.fixedSlash" },
+    { keys: () => ["?"], label: "settings.keys2.fixedHelp" },
+    { keys: () => ["↑", "↓"], label: "settings.keys2.fixedHistory" },
+    { keys: () => ["Esc"], label: "settings.keys2.fixedEscape" },
+  ];
+
 const GLOBAL_TO_ACTION: Readonly<Record<string, IndusShortcutAction>> = {
   quickEntryShortcut: "quick-entry",
   hudSnapShortcut: "hud-snap",
@@ -122,7 +135,13 @@ export function KeyBindingsPage() {
       </label>
       {KEY_GROUPS.map((group) => {
         const rows = shown.filter((action) => keyGroupOf(action.id) === group);
-        if (rows.length === 0) return null;
+        const fixed =
+          group === "composer"
+            ? FIXED_COMPOSER_KEYS.filter(
+                (row) => q === "" || t(row.label).toLowerCase().includes(q),
+              )
+            : [];
+        if (rows.length === 0 && fixed.length === 0) return null;
         return (
           <section key={group} className="sb-key-group" aria-label={t(GROUP_LABELS[group])}>
             <h3 className="sb-caps">{t(GROUP_LABELS[group])}</h3>
@@ -153,6 +172,19 @@ export function KeyBindingsPage() {
                 </div>
               );
             })}
+            {fixed.map((row) => (
+              <div key={row.label} className="sb-bind" data-fixed="true">
+                <span className="sb-bind-label">{t(row.label)}</span>
+                <span className="sb-chips" title={t("settings.keys2.fixed")}>
+                  {row.keys(platform === "darwin").map((key) => (
+                    <kbd key={key} className="sb-kbd">
+                      {key}
+                    </kbd>
+                  ))}
+                </span>
+                <span className="sb-bind-reset" aria-hidden="true" />
+              </div>
+            ))}
           </section>
         );
       })}

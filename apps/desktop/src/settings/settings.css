@@ -663,3 +663,26 @@
   border: 1px solid var(--desk-stroke-1);
   border-radius: var(--desk-radius-control);
 }
+
+/* Chat › Personality (W54-D2-6): a full-width editor with Save under it on the right */
+.settings-persona {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.settings-persona-text {
+  width: 100%;
+  min-height: 280px;
+  padding: 10px 12px;
+  line-height: 18px;
+  resize: vertical;
+}
+
+.settings-persona-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}

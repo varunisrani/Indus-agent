@@ -237,11 +237,38 @@ export function PasswordsCredentialsPage() {
 const SOURCES = ["local", "onepassword", "bitwarden"] as const;
 const SOURCE_ORDER = ["onepassword", "bitwarden", "local"] as const;
 
-/** Each manager's switch edits `browser.vault_sources` (W52-dsa-16; no detection API). */
+type Detection = { checked: boolean; onepassword: boolean; bitwarden: boolean };
+
+/** What a manager row shows (W54-D2-1). The switch edits `browser.vault_sources`, a wish list
+ * that defaults to every source, so it alone cannot say a manager works: main looks the tool up
+ * (`vault.detect`). A tool that is not there reads "Not detected" with no switch; without an
+ * answer (a remote backend, an older main) the switch shows the setting and no state pill. */
+export function managerRowState(
+  source: (typeof SOURCE_ORDER)[number],
+  enabled: boolean,
+  detection: Detection | null,
+): { pill: "on" | "off" | "missing" | null; showSwitch: boolean } {
+  if (source === "local") return { pill: enabled ? "on" : "off", showSwitch: true };
+  if (detection === null || !detection.checked) return { pill: null, showSwitch: true };
+  if (!detection[source]) return { pill: "missing", showSwitch: false };
+  return { pill: enabled ? "on" : "off", showSwitch: true };
+}
+
 export function PasswordsSourcesPage() {
   const t = useT();
-  const { config, saveField, focusRow } = useSettings();
+  const { config, saveField, focusRow, bridge } = useSettings();
+  const vault = bridge?.vault;
   const [note, setNote] = useState<string | null>(null);
+  const [detection, setDetection] = useState<Detection | null>(null);
+  useEffect(() => {
+    let live = true;
+    void attempt(vault ? () => vault.detect() : null).then((answer) => {
+      if (live && answer.ok) setDetection(answer.value);
+    });
+    return () => {
+      live = false;
+    };
+  }, [vault]);
   if (config === null) return <SkeletonRows count={3} />;
   const raw = valueAt(config, "browser.vault_sources");
   const list: string[] = Array.isArray(raw)
@@ -257,6 +284,7 @@ export function PasswordsSourcesPage() {
         {SOURCE_ORDER.map((source) => {
           const on = list.includes(source);
           const title = t(`settingsA.sources.${source}`);
+          const state = managerRowState(source, on, detection);
           return (
             <SettingRow
               key={source}
@@ -264,24 +292,38 @@ export function PasswordsSourcesPage() {
               title={
                 <span className="settingsA-title-pill">
                   {title}
-                  <Pill tone={on ? "accent" : "neutral"}>
-                    {on ? t("settingsA.sources.on") : t("settingsA.sources.off")}
-                  </Pill>
+                  {state.pill !== null && (
+                    <Pill tone={state.pill === "on" ? "accent" : "neutral"}>
+                      {t(
+                        state.pill === "missing"
+                          ? "settingsA.sources.missing"
+                          : state.pill === "on"
+                            ? "settingsA.sources.on"
+                            : "settingsA.sources.off",
+                      )}
+                    </Pill>
+                  )}
                 </span>
               }
-              description={t(`settingsA.sources.${source}Body`)}
+              description={t(
+                state.pill === "missing" && source !== "local"
+                  ? `settingsA.sources.${source}Missing`
+                  : `settingsA.sources.${source}Body`,
+              )}
               control={
-                <Switch
-                  label={title}
-                  checked={on}
-                  disabled={saveField === undefined}
-                  onChange={async (checked) => {
-                    const next = checked
-                      ? SOURCES.filter((s) => s === source || list.includes(s))
-                      : list.filter((s) => s !== source);
-                    setNote((await saveField?.("browser.vault_sources", next)) ?? null);
-                  }}
-                />
+                state.showSwitch ? (
+                  <Switch
+                    label={title}
+                    checked={on}
+                    disabled={saveField === undefined}
+                    onChange={async (checked) => {
+                      const next = checked
+                        ? SOURCES.filter((s) => s === source || list.includes(s))
+                        : list.filter((s) => s !== source);
+                      setNote((await saveField?.("browser.vault_sources", next)) ?? null);
+                    }}
+                  />
+                ) : undefined
               }
             />
           );

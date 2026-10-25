@@ -246,6 +246,17 @@ export function EndpointsPage() {
   const [rowNotes, setRowNotes] = useState<
     Readonly<Record<string, { text: string; error: boolean }>>
   >({});
+  // W54-D2-8: the main model may point at an endpoint of its own (`model.base_url`, provider
+  // `custom`) that is not one of the saved entries; it is the one in use, so it is listed too.
+  const inlineUrl = valueAt(config, "model.base_url");
+  const inlineModel = valueAt(config, "model.default");
+  const inline =
+    typeof inlineUrl === "string" &&
+    inlineUrl !== "" &&
+    !saved.some(([entryName]) => entryName === current)
+      ? { url: inlineUrl, model: typeof inlineModel === "string" ? inlineModel : "" }
+      : null;
+  const [inlineNote, setInlineNote] = useState<{ text: string; error: boolean } | null>(null);
   const urlId = useId();
   const valid = /^[a-z0-9][a-z0-9._-]*$/i.test(name) && /^https?:\/\//i.test(url.trim());
 
@@ -299,9 +310,45 @@ export function EndpointsPage() {
         data-highlighted={focusRow === "custom-endpoints" ? "true" : undefined}
       >
         <p className="settings-intro">
-          <span className="sb-count">{saved.length}</span>
+          <span className="sb-count">{saved.length + (inline === null ? 0 : 1)}</span>
           {t("settings.endpoints.body")}
         </p>
+        {inline !== null && (
+          <div className="sb-endpoint" data-endpoint="main-model">
+            <button
+              type="button"
+              className="sb-endpoint-main"
+              aria-label={t("settings.endpoints2.keepInline")}
+              onClick={() => {
+                clear();
+                setUrl(inline.url);
+                setModel(inline.model);
+              }}
+            />
+            <div className="sb-endpoint-text">
+              <span className="sb-endpoint-name">
+                {t("settings.endpoints2.inline")}
+                <Pill tone="accent">{t("settings.endpoints2.active")}</Pill>
+              </span>
+              <span className="sb-mono">{inline.url}</span>
+              <span className="sb-mono sb-faint">
+                {inline.model || t("settings.endpoints2.noModel")} ·{" "}
+                {t("settings.endpoints2.inlineWhere")}
+              </span>
+              <Note text={inlineNote?.text ?? null} error={inlineNote?.error ?? false} />
+            </div>
+            <span className="sb-endpoint-actions">
+              <OutlineButton
+                onClick={async () => {
+                  const tested = await testEndpoint(api, { base_url: inline.url }, profile);
+                  setInlineNote({ text: tested.message, error: !tested.ok });
+                }}
+              >
+                {t("settings.endpoints.test")}
+              </OutlineButton>
+            </span>
+          </div>
+        )}
         {saved.map(([entryName, entry]) => {
           const active = current === entryName;
           const rowNote = rowNotes[entryName];

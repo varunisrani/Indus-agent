@@ -39,6 +39,27 @@ describe("UninstallSection", () => {
     });
     expect(screen.getByTestId("uninstall-hidden").textContent).toContain("Nix");
     expect(screen.queryAllByRole("button")).toHaveLength(0);
+    expect(screen.queryByTestId("uninstall-manual")).toBeNull(); // Nix's own way is in the reason
+  });
+
+  it("an unconfirmed install is no dead end: the CLI commands and the dev run are named (W54-D2-4)", async () => {
+    const rig = bridge({
+      allowed: false,
+      levels: [],
+      reason:
+        "Indus could not confirm how it was installed, so it cannot remove itself. No receipt.",
+      installKind: "unknown",
+      home: "/h",
+      confirmPhrase: "uninstall everything",
+    });
+    render(<UninstallSection uninstall={rig.api} dev />);
+    await act(async () => {});
+    expect(screen.getByTestId("uninstall-hidden").textContent).toContain("No receipt");
+    expect(screen.getByTestId("uninstall-dev").textContent).toContain("development run");
+    const manual = screen.getByTestId("uninstall-manual").textContent ?? "";
+    expect(manual).toContain("indus uninstall --gui");
+    expect(manual).toContain("indus uninstall --full");
+    expect(screen.queryAllByRole("button")).toHaveLength(0); // nothing is run from here
   });
 
   it('"Remove everything" needs the exact phrase before anything runs', async () => {

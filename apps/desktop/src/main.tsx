@@ -36,7 +36,7 @@ import { profileKey } from "./profiles/storageFamilies.ts";
 import { ProfileSwitcher } from "./profiles/switching.ts";
 import { ChatWorkspace } from "./profiles/workspace.ts";
 import { SidebarModel } from "./sidebar/Sidebar.tsx";
-import { installAppWake } from "./wake/appWake.ts";
+import { armWhenReady, installAppWake } from "./wake/appWake.ts";
 
 applyStoredTheme();
 document.title = translate("app.name");
@@ -154,7 +154,7 @@ async function start(): Promise<void> {
     const { controller } = installAppWake(
       () => switcher.foreground().connection as unknown as LooseRpc,
     );
-    void controller.start({ consent: false });
+    armWhenReady(controller, switcher.foreground().connection); // W54-D2-3
   }
   // Desktop plugins (P24-32): checked in main, loaded here through a host built from the bridge.
   if (bridge !== null && hasShell(query.kind)) {

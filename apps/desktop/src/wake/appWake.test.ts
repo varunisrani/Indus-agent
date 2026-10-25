@@ -1,5 +1,7 @@
+import { NotConnected } from "@indus/client";
 import { describe, expect, it, vi } from "vitest";
 import {
+  armWhenReady,
   type DictateRequest,
   dictationDone,
   installAppWake,
@@ -61,5 +63,66 @@ describe("the window's wake word hands off to the composer's dictation (P24-20 â
 
   it("requestDictation throws when nobody takes it", () => {
     expect(() => requestDictation(new EventTarget())).toThrow(/no composer/);
+  });
+});
+
+describe("the launch arm waits for the connection (W54-D2-3)", () => {
+  function connection(ready: boolean) {
+    const listeners = new Set<() => void>();
+    let state = { ready };
+    return {
+      getState: () => state,
+      subscribe: (listener: () => void) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+      becomeReady: () => {
+        state = { ready: true };
+        for (const listener of [...listeners]) listener();
+      },
+      listeners,
+    };
+  }
+
+  it("asks wake.start only after the daemon is ready, once", async () => {
+    const { made, calls } = rig();
+    const link = connection(false);
+    armWhenReady(made.controller, link);
+    expect(calls).toEqual([]);
+    link.becomeReady();
+    link.becomeReady();
+    await vi.waitFor(() => expect(calls).toEqual(["wake.start"]));
+    expect(link.listeners.size).toBe(0);
+    made.dispose();
+  });
+
+  it("a launch arm that finds no connection leaves no error under the switch", async () => {
+    const made = installAppWake(
+      () => ({
+        request: async () => {
+          throw new NotConnected();
+        },
+      }),
+      new EventTarget(),
+    );
+    await made.controller.start({ consent: false });
+    expect(made.controller.get().notice).toBeNull();
+    expect(made.controller.get().listening).toBe(false);
+    // the person's own switch still reports the failure
+    await made.controller.start({ consent: true });
+    expect(made.controller.get().notice?.key).toBe("wake.reason.failed");
+    made.dispose();
+  });
+
+  it("at launch, an answer of 'off' is the normal state, not a notice; the switch still hears it", async () => {
+    const made = installAppWake(
+      () => ({ request: async () => ({ started: false, reason: "disabled" }) }),
+      new EventTarget(),
+    );
+    await made.controller.start({ consent: false });
+    expect(made.controller.get().notice).toBeNull();
+    await made.controller.start({ consent: true });
+    expect(made.controller.get().notice?.key).toBe("wake.reason.disabled");
+    made.dispose();
   });
 });

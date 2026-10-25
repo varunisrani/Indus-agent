@@ -748,6 +748,40 @@
   margin: 0;
 }
 
+/* no option offered: what the person can run themselves (W54-D2-4) */
+.settings-uninstall-manual {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--desk-stroke-1);
+  border-radius: var(--desk-radius-card);
+  background: var(--desk-bg-canvas);
+}
+
+.settings-uninstall-manual .settings-row-desc {
+  margin: 0;
+}
+
+.settings-uninstall-commands {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.settings-uninstall-commands > li {
+  display: contents;
+}
+
+.settings-uninstall-commands .settings-code {
+  color: var(--desk-fg-1);
+  user-select: all;
+}
+
 .settings-uninstall-confirm {
   display: flex;
   flex-direction: column;

@@ -854,6 +854,13 @@ export interface IndusDesktopSecrets {
   setPolicy(payload: { store: "keychain" | "file" }): Promise<IndusSecretsPolicyView>;
 }
 
+export interface IndusDesktopVault {
+  /** `indus:vault:detect` (W54-D2) */
+  detect(
+    payload?: Record<string, never>,
+  ): Promise<{ checked: boolean; onepassword: boolean; bitwarden: boolean }>;
+}
+
 export interface IndusDesktopJournal {
   /** `indus:journal:list` (P20-20) */
   list(payload?: Record<string, never>): Promise<{
@@ -982,6 +989,7 @@ export interface IndusDesktopBridge {
   readonly clipboard: IndusDesktopClipboard;
   readonly find: IndusDesktopFind;
   readonly secrets: IndusDesktopSecrets;
+  readonly vault: IndusDesktopVault;
   readonly journal: IndusDesktopJournal;
   readonly prefs: IndusDesktopPrefs;
   readonly work: IndusDesktopWork;
