@@ -31,7 +31,7 @@ import {
   PageHeader,
   usePlaceholderTerm,
 } from "../masterDetail.tsx";
-import { fieldCopy, listEntries } from "./fieldCopy.ts";
+import { fallbackLabel, fieldCopy, listEntries } from "./fieldCopy.ts";
 import "./messaging.css";
 import { TelegramQrSetup } from "./TelegramQrSetup.tsx";
 
@@ -116,6 +116,8 @@ export function PlatformTile(props: { name: string; id: string }) {
 
 function FieldInput(props: {
   field: PlatformField;
+  /** The platform's id, so a key without copy drops its own prefix (W57-H1-3). */
+  platform?: string;
   value: string;
   onChange: (value: string) => void;
   onClear?: () => void;
@@ -129,7 +131,7 @@ function FieldInput(props: {
       ? t("manage.messaging.keep", { preview: field.preview ?? "" })
       : t("manage.messaging.notSet")
     : "";
-  const label = copy.label === null ? field.key : t(copy.label);
+  const label = copy.label === null ? fallbackLabel(field.key, props.platform) : t(copy.label);
   const clear =
     props.onClear !== undefined && field.is_set ? (
       <IconButton
@@ -141,7 +143,7 @@ function FieldInput(props: {
   return (
     <div className="msg-field" data-field={field.key}>
       <div className="msg-field-label">
-        <span className={copy.label === null ? "msg-mono" : undefined}>{label}</span>
+        <span title={field.key}>{label}</span>
         {field.is_set && <span className="msg-saved">{t("manage.messaging.savedTag")}</span>}
       </div>
       {copy.help !== null && <p className="msg-field-help">{t(copy.help)}</p>}
@@ -278,6 +280,7 @@ function PlatformDetail(props: {
     <FieldInput
       key={f.key}
       field={f}
+      platform={platform.id}
       value={shownValue(f)}
       onChange={(value) => setDraft({ ...draft, [f.key]: value })}
       onClear={() => void put({ clear_env: [f.key] })}

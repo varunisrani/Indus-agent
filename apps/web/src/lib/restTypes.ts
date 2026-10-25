@@ -247,6 +247,21 @@ export interface ModelAssignment {
   base_url?: string;
 }
 
+/** `POST /api/model/test-endpoint`: an OpenAI-compatible endpoint's own `/models`, asked by the
+ * backend (P20-32/33); the key is the one given, else the stored `key_env`. */
+export interface EndpointTest {
+  base_url: string;
+  api_key?: string;
+  key_env?: string;
+}
+
+export interface EndpointTestResult {
+  ok: boolean;
+  status: number | null;
+  models: string[];
+  message: string;
+}
+
 export interface AuxiliaryTask {
   task: string;
   provider: string;

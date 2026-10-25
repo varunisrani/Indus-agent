@@ -54,7 +54,9 @@ export function ChatView(props: ChatViewProps) {
         if (connection !== null) void connection.probeLiveness();
         return;
       case "open-logs":
-        void desktopBridge()?.logs.reveal();
+        void desktopBridge()
+          ?.logs.reveal()
+          .catch(() => undefined);
         return;
       case "new-session":
         navigate(NEW_CHAT_PATH);
@@ -100,6 +102,7 @@ export function ChatView(props: ChatViewProps) {
             sessionId={sessionId}
             footer={props.cards}
             onFailureAction={props.onFailureAction ?? defaultAction}
+            canRetry={props.onRetry !== undefined}
           />
         </>
       )}

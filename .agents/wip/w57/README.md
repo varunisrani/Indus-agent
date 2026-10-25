@@ -1,6 +1,6 @@
 # Wave 57 (lead: Agent 2) — bugs from the second compare
 
-## w57h1.patch — H1, base 383e3f5 — PARKED (lead gate with G1+G2 running)
+## w57h1.patch — H1, base 383e3f5 — LANDED with D-16.1278 (lead gate with G1+G2: vitest 3281, Electron 43/2 skipped, Playwright 15)
 - Web Docs panel followed fixed light colours → theme tokens. Messaging labels all 153 gateway catalogue keys (no raw env
   names). Error card: Retry whenever the host can resend (was only for "temporary" failures), Open logs on every layer.
   Web model picker lists models for custom/local endpoints via the existing test-endpoint route (typed id fallback).

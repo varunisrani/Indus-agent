@@ -79,6 +79,8 @@ export function ErrorCard(props: {
   /** The failure sentence the turn's reply carried (hidden above the card, shown in details). */
   echo?: string | null;
   onAction?: ((action: FailureAction, item: ErrorItem) => void) | undefined;
+  /** The host can send the failed turn again (W57-H1-4); without it there is no Retry. */
+  canRetry?: boolean | undefined;
 }) {
   const { item } = props;
   const t = useT();
@@ -87,7 +89,10 @@ export function ErrorCard(props: {
   const said = [props.echo ?? "", item.message].filter((line) => line.trim() !== "");
   const fallback = t(REASON_KEYS[item.reason] ?? "failure.reason.default");
   const details = said.length > 0 ? said : [fallback];
-  const actions = failureActions(item.layer, item.retryable);
+  const actions = failureActions(
+    item.layer,
+    props.canRetry === true && props.onAction !== undefined,
+  );
   return (
     <div className="error-card" role="alert" data-layer={item.layer}>
       <div className="error-head">

@@ -111,11 +111,31 @@ describe("error card", () => {
 
   it("actions reach the host; dismiss hides the card for this view", () => {
     const onAction = vi.fn();
-    render(<ErrorCard item={failure} onAction={onAction} />);
+    render(<ErrorCard item={failure} onAction={onAction} canRetry />);
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(onAction).toHaveBeenCalledWith("retry", failure);
+    fireEvent.click(screen.getByRole("button", { name: "Open logs" }));
+    expect(onAction).toHaveBeenCalledWith("open-logs", failure);
     fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("a provider failure offers Retry and Open logs even when not marked transient (W57-H1-4)", () => {
+    const refused: ErrorItem = { ...failure, retryable: false, message: "HTTP 400 bad request" };
+    const view = render(<ErrorCard item={refused} onAction={vi.fn()} canRetry />);
+    const pills = [...view.container.querySelectorAll(".error-pill")].map((b) => b.textContent);
+    expect(pills).toEqual([
+      "Retry",
+      "Choose a model",
+      "Open settings",
+      "Open logs",
+      "Copy error details",
+    ]);
+    view.unmount();
+    // a host that cannot send the turn again gets no Retry (never a dead button)
+    render(<ErrorCard item={refused} onAction={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Open logs" })).toBeTruthy();
   });
 
   it("recognises the backend's own failure replies only", () => {

@@ -66,18 +66,24 @@ export function classifyFailure(reason: string, text: string): FailureLayer {
   return "runtime";
 }
 
-/** What the card offers, most useful first. */
-export function failureActions(layer: FailureLayer, retryable: boolean): FailureAction[] {
-  const retry: FailureAction[] = retryable ? ["retry"] : [];
+/**
+ * What the card offers, most useful first. W57-H1-4: Retry is offered on every layer but the
+ * connection one whenever the host can send the failed turn again (`canRetry`: the window's chat
+ * slot re-sends its message as a new input), not only when the backend marked the failure
+ * transient: after picking another model or fixing a key the same message is worth sending again.
+ * Open logs (the bridge's log folder) is offered on every layer.
+ */
+export function failureActions(layer: FailureLayer, canRetry: boolean): FailureAction[] {
+  const retry: FailureAction[] = canRetry ? ["retry"] : [];
   switch (layer) {
     case "provider":
-      return [...retry, "choose-model", "open-settings"];
+      return [...retry, "choose-model", "open-settings", "open-logs"];
     case "endpoint":
-      return [...retry, "open-settings"];
+      return [...retry, "open-settings", "open-logs"];
     case "streaming":
-      return ["retry"];
+      return [...retry, "open-logs"];
     case "auth":
-      return ["sign-in", "open-settings"];
+      return ["sign-in", "open-settings", ...retry, "open-logs"];
     case "daemon":
       return ["reconnect", "open-logs"];
     case "disk":

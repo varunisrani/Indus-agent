@@ -196,7 +196,7 @@ describe("Transcript", () => {
 
   it("a failed turn ends in an error card whose actions are reported", async () => {
     const onFailureAction = vi.fn();
-    const { source } = await show([], { onFailureAction });
+    const { source } = await show([], { onFailureAction, canRetry: true });
     act(() => {
       source.emit({ type: "turn.started", turn_id: "t1", generation: 1 });
       source.emit({

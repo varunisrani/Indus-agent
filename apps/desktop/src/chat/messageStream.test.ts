@@ -448,8 +448,21 @@ describe("failure layers", () => {
   });
 
   it("offers sign-in for auth and reconnect for the daemon", () => {
-    expect(failureActions("auth", true)).toEqual(["sign-in", "open-settings"]);
-    expect(failureActions("daemon", false)).toEqual(["reconnect", "open-logs"]);
+    expect(failureActions("auth", false)).toEqual(["sign-in", "open-settings", "open-logs"]);
+    expect(failureActions("auth", true)).toEqual([
+      "sign-in",
+      "open-settings",
+      "retry",
+      "open-logs",
+    ]);
+    expect(failureActions("daemon", true)).toEqual(["reconnect", "open-logs"]);
+    // W57-H1-4: Retry follows the host's ability to send again, not the failure's transient flag
+    expect(failureActions("provider", true)).toEqual([
+      "retry",
+      "choose-model",
+      "open-settings",
+      "open-logs",
+    ]);
     expect(failureActions("provider", false)).not.toContain("retry");
   });
 });

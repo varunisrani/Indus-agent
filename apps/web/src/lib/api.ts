@@ -18,6 +18,8 @@ import type {
   DeliveryTarget,
   DownloadTicket,
   EffectiveConfig,
+  EndpointTest,
+  EndpointTestResult,
   EnvKeys,
   EnvWriteResponse,
   FileContent,
@@ -618,6 +620,9 @@ export const api = {
     options: () => request<ModelOptions>("/api/model/options"),
     auxiliary: () => request<AuxiliaryResponse>("/api/model/auxiliary"),
     set: (body: ModelAssignment) => request<OkResponse>("/api/model/set", { json: body }),
+    /** An OpenAI-compatible endpoint's model list, asked from the backend (W57-H1-5 picker). */
+    testEndpoint: (body: EndpointTest) =>
+      request<EndpointTestResult>("/api/model/test-endpoint", { json: body }),
   },
 
   providerLogin: {

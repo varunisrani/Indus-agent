@@ -55,6 +55,8 @@ export function resetReadingPositions(): void {
 export interface TranscriptProps {
   sessionId: string;
   onFailureAction?: (action: FailureAction, item: ErrorItem) => void;
+  /** The failure action handler can send a failed turn again (the error card's Retry). */
+  canRetry?: boolean;
   /** Rendered after the last item, inside the scroll area (the card stack host). */
   footer?: ReactNode;
 }
@@ -181,6 +183,7 @@ function Row(props: {
   /** The failure sentence the turn's reply repeated (shown in the card's details, not above it). */
   echo: { assistantKey: string; text: string } | null;
   onFailureAction?: ((action: FailureAction, item: ErrorItem) => void) | undefined;
+  canRetry?: boolean | undefined;
 }) {
   const { item } = props;
   switch (item.kind) {
@@ -196,7 +199,12 @@ function Row(props: {
       );
     case "error":
       return (
-        <ErrorCard item={item} echo={props.echo?.text ?? null} onAction={props.onFailureAction} />
+        <ErrorCard
+          item={item}
+          echo={props.echo?.text ?? null}
+          onAction={props.onFailureAction}
+          canRetry={props.canRetry}
+        />
       );
     case "async":
       return <AsyncRow item={item} />;
@@ -343,6 +351,7 @@ export function Transcript(props: TranscriptProps) {
                   showReasoning={showReasoning}
                   echo={echo}
                   onFailureAction={props.onFailureAction}
+                  canRetry={props.canRetry}
                 />
               ))}
             </section>

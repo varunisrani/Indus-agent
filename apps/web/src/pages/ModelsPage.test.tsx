@@ -90,6 +90,103 @@ describe("models page", () => {
     expect(screen.queryByRole("dialog", { name: "Switch model" })).toBeNull();
   });
 
+  it("lists a custom endpoint's own models and keeps the typed id as a fallback (W57-H1-5)", async () => {
+    mock.state.modelOptions.providers.push({
+      name: "custom",
+      label: "Custom endpoint",
+      description: "any OpenAI-compatible endpoint",
+      family: "custom",
+      auth_type: "api_key_optional",
+      configured: true,
+      device_login: false,
+      supports_model_listing: true,
+    });
+    mock.state.modelOptions.current = { provider: "custom", model: "fake-model" };
+    mock.state.config = { model: { provider: "custom", base_url: "http://127.0.0.1:9/v1" } };
+    mock.state.endpointModels["http://127.0.0.1:9/v1"] = ["fake-model", "fake-model-1"];
+    renderPage(<ModelsPage />, "/models");
+    await screen.findByTestId("provider-fake");
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "Switch model" }));
+    const models = within(await dialog.findByRole("list", { name: "Models" }));
+    await models.findByRole("button", { name: /fake-model-1/ });
+    expect(mock.callsTo("POST", "/api/model/test-endpoint")[0]?.body).toEqual({
+      base_url: "http://127.0.0.1:9/v1",
+    });
+    expect(models.getAllByRole("button").map((b) => b.textContent)).toEqual([
+      "fake-modelCURRENT",
+      "fake-model-1",
+    ]);
+    expect(dialog.getByTestId("model-list-hint").textContent).toBe(
+      "Pick a model, or type another id.",
+    );
+    const providers = within(dialog.getByRole("list", { name: "Providers" }));
+    expect(providers.getByRole("button", { name: /Custom endpoint/ }).textContent).toContain(
+      "custom · 2 models",
+    );
+    expect(dialog.getByLabelText("Model id")).toBeTruthy();
+    fireEvent.click(models.getByRole("button", { name: /fake-model-1/ }));
+    fireEvent.click(dialog.getByRole("button", { name: "Switch" }));
+    await waitFor(() =>
+      expect(mock.callsTo("POST", "/api/model/set")[0]?.body).toEqual({
+        scope: "main",
+        provider: "custom",
+        model: "fake-model-1",
+      }),
+    );
+  });
+
+  it("a saved endpoint that does not answer says so and leaves the typed id", async () => {
+    mock.state.modelOptions.providers.push({
+      name: "my-llm",
+      label: "my-llm",
+      description: "",
+      family: "custom",
+      auth_type: "api_key_optional",
+      configured: true,
+      device_login: false,
+      supports_model_listing: true,
+    });
+    mock.state.config = {
+      model: { provider: "fake" },
+      providers: {
+        "my-llm": {
+          base_url: "http://127.0.0.1:7/v1",
+          key_env: "MY_LLM_API_KEY",
+          models: ["saved-one"],
+        },
+      },
+    };
+    renderPage(<ModelsPage />, "/models");
+    await screen.findByTestId("provider-fake");
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "Switch model" }));
+    const list = within(await dialog.findByRole("list", { name: "Providers" }));
+    fireEvent.click(list.getByRole("button", { name: /my-llm/ }));
+    await waitFor(() =>
+      expect(dialog.getByTestId("model-list-hint").textContent).toBe(
+        "The endpoint did not answer (ConnectError). Type the model id instead.",
+      ),
+    );
+    expect(mock.callsTo("POST", "/api/model/test-endpoint")[0]?.body).toEqual({
+      base_url: "http://127.0.0.1:7/v1",
+      key_env: "MY_LLM_API_KEY",
+    });
+    // the entry's saved models are still offered
+    const models = within(dialog.getByRole("list", { name: "Models" }));
+    expect(models.getByRole("button", { name: /saved-one/ })).toBeTruthy();
+  });
+
+  it("a vendor provider asks no endpoint and explains the typed id", async () => {
+    renderPage(<ModelsPage />, "/models");
+    await screen.findByTestId("provider-fake");
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "Switch model" }));
+    await dialog.findByRole("list", { name: "Models" });
+    expect(dialog.getByTestId("model-list-hint").textContent).toContain("cannot list them");
+    expect(mock.callsTo("POST", "/api/model/test-endpoint")).toEqual([]);
+  });
+
   it("picks another provider in the dialog and filters the list", async () => {
     renderPage(<ModelsPage />, "/models");
     await screen.findByTestId("provider-fake");

@@ -1,15 +1,19 @@
 // "Switch model" dialog, shared by the chat rail and the Models page (W52-a / W52-b, one picker
 // since the wave 53 integration). Providers on the left, models on the right, a fuzzy filter over
 // both, the provider and model in use tagged CURRENT. Our server lists providers but not each
-// provider's models, so the model column shows the model in use (for its provider) and a field to
-// type a model id. The caller decides what applying means (`onApply`), and owns the request.
+// vendor's models; it can ask an OpenAI-compatible endpoint for its own list
+// (`POST /api/model/test-endpoint`). W57-H1-5: so a custom or local endpoint (a saved
+// `providers.<name>` entry with a base URL, or the main model's own `model.base_url`) lists its
+// models, with the entry's saved models; every other provider shows the model in use. The typed
+// model id field stays as the fallback. The caller decides what applying means (`onApply`), and
+// owns the request.
 
 import { useQuery } from "@tanstack/react-query";
 import { Check, LoaderCircle, RefreshCw, Search } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { api } from "../lib/api.ts";
-import type { ProviderOption } from "../lib/restTypes.ts";
+import type { ConfigObject, EndpointTest, ProviderOption } from "../lib/restTypes.ts";
 import { errorText } from "../shell/Toasts.tsx";
 import { Button } from "./controls.tsx";
 import { cx } from "./cx.ts";
@@ -55,6 +59,32 @@ function Highlighted({ text, query }: { text: string; query: string }) {
     );
   }
   return <>{out}</>;
+}
+
+/** Where a provider's models can be asked for: its endpoint and saved models, or null. */
+export function endpointSource(
+  config: ConfigObject | undefined,
+  provider: string | null,
+  currentProvider: string | null,
+): { query: EndpointTest; saved: string[] } | null {
+  if (!config || !provider) return null;
+  const record = (value: unknown): Record<string, unknown> =>
+    value !== null && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  const entry = record(record(config.providers)[provider]);
+  const url = typeof entry.base_url === "string" ? entry.base_url.trim() : "";
+  if (url) {
+    const keyEnv = typeof entry.key_env === "string" ? entry.key_env.trim() : "";
+    const saved = Array.isArray(entry.models)
+      ? entry.models.filter((m): m is string => typeof m === "string" && m.trim() !== "")
+      : [];
+    return { query: { base_url: url, ...(keyEnv ? { key_env: keyEnv } : {}) }, saved };
+  }
+  const main = record(config.model);
+  const mainUrl = typeof main.base_url === "string" ? main.base_url.trim() : "";
+  if (provider === currentProvider && mainUrl) return { query: { base_url: mainUrl }, saved: [] };
+  return null;
 }
 
 function CurrentTag() {
@@ -113,10 +143,41 @@ export function ModelPickerDialog({
   }, [options.data, current.provider, current.model, filter]);
 
   const shownProvider = provider ?? current.provider ?? providers[0]?.name ?? null;
-  const models =
-    shownProvider && shownProvider === current.provider && current.model
-      ? [current.model].filter((m) => fuzzyHits(m, filter) !== null)
-      : [];
+  const config = useQuery({
+    queryKey: ["config", "file"],
+    queryFn: () => api.config.get(),
+    enabled: open,
+  });
+  const source = endpointSource(config.data, shownProvider, current.provider);
+  const listed = useQuery({
+    queryKey: ["models", "endpoint", source?.query.base_url ?? "", source?.query.key_env ?? ""],
+    queryFn: () => api.model.testEndpoint(source?.query ?? { base_url: "" }),
+    enabled: open && source !== null,
+    staleTime: 60_000,
+    retry: false,
+  });
+  const listedModels = source !== null && listed.data?.ok ? listed.data.models : [];
+  // the shown provider's models: the one in use, the endpoint's list, the entry's saved ones
+  const known = [
+    ...new Set([
+      ...(shownProvider && shownProvider === current.provider && current.model
+        ? [current.model]
+        : []),
+      ...listedModels,
+      ...(source?.saved ?? []),
+    ]),
+  ];
+  const models = known.filter((m) => fuzzyHits(m, filter) !== null);
+  const listHint =
+    source === null
+      ? "Type the model id as the provider names it; this install cannot list them."
+      : listed.isFetching && !listed.data
+        ? "Asking the endpoint for its models…"
+        : listed.error
+          ? `${errorText(listed.error)} Type the model id instead.`
+          : listed.data && !listed.data.ok
+            ? `${listed.data.message} Type the model id instead.`
+            : "Pick a model, or type another id.";
   const chosen = model ?? (shownProvider === current.provider ? current.model : null);
   const changed =
     !!chosen && !!shownProvider && (chosen !== current.model || shownProvider !== current.provider);
@@ -207,11 +268,13 @@ export function ModelPickerDialog({
                     </span>
                     <span className="truncate text-ink-muted">
                       {p.name}
-                      {inUse && current.model
-                        ? " · 1 models"
-                        : p.configured
-                          ? " · configured"
-                          : " · no key"}
+                      {picked && known.length > 0
+                        ? ` · ${known.length} ${known.length === 1 ? "model" : "models"}`
+                        : inUse && current.model
+                          ? " · 1 model"
+                          : p.configured
+                            ? " · configured"
+                            : " · no key"}
                     </span>
                   </button>
                 </li>
@@ -266,8 +329,11 @@ export function ModelPickerDialog({
                   }}
                 />
               </form>
-              <p className="type-serif m-0 px-3 text-[0.75rem] text-ink-soft">
-                Type the model id as the provider names it; this install cannot list them.
+              <p
+                className="type-serif m-0 px-3 text-[0.75rem] text-ink-soft"
+                data-testid="model-list-hint"
+              >
+                {listHint}
               </p>
             </>
           ) : null}
@@ -283,8 +349,15 @@ export function ModelPickerDialog({
         <div className="flex items-center gap-2">
           <Button
             size="lg"
-            icon={<RefreshCw className={options.isFetching ? "animate-spin" : ""} />}
-            onClick={() => void options.refetch()}
+            icon={
+              <RefreshCw
+                className={options.isFetching || listed.isFetching ? "animate-spin" : ""}
+              />
+            }
+            onClick={() => {
+              void options.refetch();
+              if (source !== null) void listed.refetch();
+            }}
           >
             Refresh Models
           </Button>

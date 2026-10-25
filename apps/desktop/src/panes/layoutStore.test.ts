@@ -189,6 +189,33 @@ describe("the right-side group (W52-m)", () => {
     expect(allPanes(s.layout().root)).toEqual(["chat", "files", "terminal"]);
   });
 
+  it("Ctrl+J's Files over Terminal column gets 236 of the 1180 span; Review 380, Preview 420 (W57-H1-2)", () => {
+    // The split sizes are relative flex weights: at the 1440 px capture the chat area spans
+    // 1143 px, so the column draws at 236 / 1180 × 1143 ≈ 229 px (measured live: 228 px).
+    const s = store(memoryStorage(), ALL, true);
+    const share = () => {
+      const root = s.layout().root;
+      if (root?.kind !== "split") return null;
+      const total = root.sizes.reduce((sum, size) => sum + size, 0);
+      return Math.round((root.sizes[1] ?? 0) * (1180 / total));
+    };
+    s.open("files");
+    s.open("terminal");
+    expect(share()).toBe(236);
+    const right = (() => {
+      const root = s.layout().root;
+      return root?.kind === "split" ? root.children[1] : null;
+    })();
+    expect(right?.kind === "split" && right.orientation).toBe("column");
+    s.close("files");
+    s.close("terminal");
+    s.open("review");
+    expect(share()).toBe(380);
+    s.close("review");
+    s.open("preview");
+    expect(share()).toBe(420);
+  });
+
   it("an arrangement the group did not build opens panes the usual way", () => {
     const s = store(); // the Default preset: every pane already placed
     s.close("review");

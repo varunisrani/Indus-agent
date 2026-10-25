@@ -110,6 +110,9 @@ export interface MockState {
   webhooks: WebhookRoute[];
   modelInfo: ModelInfo;
   modelOptions: ModelOptions;
+  /** Endpoint URL → the models its `/models` lists (`POST /api/model/test-endpoint`); others
+   * do not answer. */
+  endpointModels: Record<string, string[]>;
   auxiliary: AuxiliaryResponse;
   /** The device-code grant a sign-in start answers; null → 400 `no_device_flow`. */
   deviceGrant: Omit<LoginStarted, "session_id" | "provider" | "status" | "message"> | null;
@@ -318,6 +321,7 @@ export function defaultMockState(): MockState {
       ],
       current: { provider: "fake", model: "fake-model" },
     },
+    endpointModels: {},
     auxiliary: { tasks: [], main: { provider: "fake", model: "fake-model" } },
     deviceGrant: null,
     loginPolls: ["pending"],
@@ -1292,6 +1296,30 @@ function adminRoutes(state: MockState): Array<[string, RegExp, Handler]> {
     ["GET", /^\/api\/model\/info$/, () => ok(state.modelInfo)],
     ["GET", /^\/api\/model\/options$/, () => ok(state.modelOptions)],
     ["GET", /^\/api\/model\/auxiliary$/, () => ok(state.auxiliary)],
+    [
+      "POST",
+      /^\/api\/model\/test-endpoint$/,
+      (call) => {
+        const base = text(asRecord(call.body).base_url).replace(/\/+$/, "");
+        if (!/^https?:\/\//.test(base))
+          return fail(400, "invalid_url", "The endpoint URL is not valid.");
+        const models = state.endpointModels[base];
+        if (!models) {
+          return ok({
+            ok: false,
+            status: null,
+            models: [],
+            message: "The endpoint did not answer (ConnectError).",
+          });
+        }
+        return ok({
+          ok: true,
+          status: 200,
+          models,
+          message: `The endpoint offers ${models.length} models.`,
+        });
+      },
+    ],
     [
       "POST",
       /^\/api\/model\/set$/,
