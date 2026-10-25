@@ -6,7 +6,6 @@ The name rules and the pointer reading run everywhere; the real pipe cases need 
 from __future__ import annotations
 
 import asyncio
-import sys
 import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -18,7 +17,7 @@ from indus.gateway.control_socket import ControlServer, ControlSocketError
 from indus.service import control_pipe
 from indus.service import gateway_control as wire
 
-windows_only = pytest.mark.skipif(sys.platform != "win32", reason="named pipes are Windows")
+windows_only = pytest.mark.platforms("windows")  # named pipes are Windows
 
 
 # -- names and the pointer (every OS) --------------------------------------------------------

@@ -8,9 +8,13 @@ One ``McpUpkeep`` per session service (one profile). The session service calls i
   parking, and per-server connect extras: OAuth handler, sampling through the service's auxiliary
   client, elicitation through the session whose call is in flight), registered for the profile
   (``discovery.register_host``, which the TUI bridge's ``reload.mcp`` finds), and discovery runs
-  once. An interactive host also starts the config watcher. A profile without MCP servers never
-  imports the MCP stack (about 0.7 s), so it has no watcher either: servers added later arrive with
-  ``/reload-mcp``.
+  once, in the background. A new session waits for it at most ``discovery_wait`` seconds
+  (``DISCOVERY_WAIT_S``, 5 s, for an interactive run; ``SINGLE_QUERY_DISCOVERY_WAIT_S``, 15 s, for
+  one-shot runs and the daemon, which also serves them): a server that connects later registers its
+  tools then (new sessions get them at once), so a slow or dead server never holds a chat past its
+  start deadline. An interactive host also starts the config watcher. A profile without MCP
+  servers never imports the MCP stack (about 0.7 s), so it has no watcher either: servers added
+  later arrive with ``/reload-mcp``.
 - ``selection(...)`` / ``attach(agent)`` for every agent: a platform bundle's selection gains the
   umbrella toolset ``mcp`` (every server toolset of the profile), so the tools reach the agent's
   first tool array; the agent is told when the tool surface changes (``ToolSurfaceChanged`` from a
@@ -28,6 +32,7 @@ profile had no servers at start). Slash handlers on another thread reach the ser
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
 from concurrent.futures import Future
@@ -41,11 +46,24 @@ if TYPE_CHECKING:
     from indus.mcp.discovery import DiscoveryReport, McpHost
     from indus.mcp.reload import ConfigWatcher, ReloadChoice
 
-__all__ = ["McpUpkeep", "ServerLive", "UpkeepAgent", "configured", "upkeep_for"]
+__all__ = [
+    "DISCOVERY_WAIT_S",
+    "SINGLE_QUERY_DISCOVERY_WAIT_S",
+    "McpUpkeep",
+    "ServerLive",
+    "UpkeepAgent",
+    "configured",
+    "upkeep_for",
+]
 
 log = logging.getLogger(__name__)
 
 MCP_TOOLSET = "mcp"  # discovery.MCP_TOOLSET, without importing the MCP stack
+
+DISCOVERY_WAIT_S = 5.0
+"""How long an interactive session's start waits for discovery still in flight."""
+SINGLE_QUERY_DISCOVERY_WAIT_S = 15.0
+"""The same for one-shot runs: one turn has no later chance to see a server that came late."""
 
 
 class UpkeepAgent(Protocol):
@@ -99,8 +117,10 @@ class McpUpkeep:
         aux: object = None,
         watch: bool = False,
         opener: Any = None,
+        discovery_wait: float = DISCOVERY_WAIT_S,
     ) -> None:
         self.scope = scope
+        self.discovery_wait = discovery_wait
         self.registry = registry
         self.aux = aux
         self.watch = watch
@@ -113,29 +133,47 @@ class McpUpkeep:
         self._started = False
         self._closed = False
         self._lock: asyncio.Lock | None = None
+        self._discovery: asyncio.Task[None] | None = None
 
     # -- lifecycle ------------------------------------------------------------------------------
 
     async def start(self) -> DiscoveryReport | None:
-        """Once per service: build the host and discover when servers are configured. Never
-        raises (a broken MCP setup must not stop sessions)."""
+        """Once per service: build the host and start discovery when servers are configured;
+        every call waits at most ``discovery_wait`` for discovery still running (the report is
+        None until it ends). Never raises (a broken MCP setup must not stop sessions)."""
         if self._lock is None:
             self._lock = asyncio.Lock()
         async with self._lock:
-            if self._started or self._closed:
-                return self.report
-            self._started = True
-            self.loop = asyncio.get_running_loop()
-            _UPKEEP[scope_key(self.scope)] = self
-            if not configured(self.scope):
-                return None
-            try:
-                host = self._open()
-                self.report = await host.discover()
-                self._start_watcher()
-            except Exception:
-                log.warning("MCP servers could not be started", exc_info=True)
-            return self.report
+            if not self._started and not self._closed:
+                self._started = True
+                self.loop = asyncio.get_running_loop()
+                _UPKEEP[scope_key(self.scope)] = self
+                if configured(self.scope):
+                    try:
+                        host = self._open()
+                    except Exception:
+                        log.warning("MCP servers could not be started", exc_info=True)
+                    else:
+                        self._discovery = asyncio.create_task(
+                            self._discover(host), name="mcp discovery"
+                        )
+        task = self._discovery
+        if task is not None and not task.done():
+            done, _ = await asyncio.wait({task}, timeout=self.discovery_wait)
+            if not done:
+                log.warning(
+                    "MCP servers are still connecting after %g s; this session starts without "
+                    "the ones not up yet (they join new sessions when they connect)",
+                    self.discovery_wait,
+                )
+        return self.report
+
+    async def _discover(self, host: McpHost) -> None:
+        try:
+            self.report = await host.discover()
+            self._start_watcher()
+        except Exception:
+            log.warning("MCP servers could not be started", exc_info=True)
 
     def _open(self) -> McpHost:
         from indus.mcp import discovery, extras, oauth
@@ -170,6 +208,11 @@ class McpUpkeep:
     async def shutdown(self) -> None:
         """Service close: stop the watcher, close the servers, unregister the host."""
         self._closed = True
+        discovery, self._discovery = self._discovery, None
+        if discovery is not None and not discovery.done():
+            discovery.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await discovery
         watcher, self.watcher = self.watcher, None
         if watcher is not None:
             try:

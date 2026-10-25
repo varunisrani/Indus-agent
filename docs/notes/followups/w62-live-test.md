@@ -4,7 +4,10 @@ Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`, to compare behavio
 `web/src/App.tsx` (route list), `hermes_cli/web_server_chat.py` (`_resolve_chat_argv`: where a
 fresh chat starts), `ui-tui/src/domain/details.ts` (section defaults),
 `ui-tui/src/components/messageLine.tsx` (finished turns: thinking shown folded),
-`hermes_state_sessions.py` (`INTERNAL_LISTING_SOURCES`).
+`hermes_state_sessions.py` (`INTERNAL_LISTING_SOURCES`), `gateway/run_startup.py`
+(`_start_handle_no_connections`: when a start with nothing connected exits 78),
+`hermes_cli/config_defaults.py` and `hermes_cli/mcp_startup.py` (`mcp_discovery_timeout` 1.5 s,
+`mcp_single_query_discovery_timeout` 15 s), `tui_gateway/server.py` (`_schedule_mcp_late_refresh`).
 Evidence: none (screenshots and captures of both products stayed in the session scratchpad).
 
 What it does (own words): the owner asked for the product to be run and every page, button and
@@ -35,6 +38,20 @@ Fixes:
 - Desktop Settings › Providers › Accounts: wave 61's ChatGPT card hid the "Set up a provider" card,
   so onboarding (custom endpoint, other providers) could no longer be re-run from Settings (the
   Electron lane was red). The setup card shows again beside the ChatGPT card.
+- Gateway daemon: an `ensure`-started daemon exited 78 when the only enabled channel could not
+  start (WhatsApp switched on in Channels without its provider); it is also the host of every CLI,
+  TUI and web chat, so all chat failed ("could not attach"). It now parks the channel (`degraded`)
+  and keeps serving; an explicit or supervised `indus gateway run` keeps the exit-78 contract.
+- MCP: the first session after a start waited for the whole discovery pass (up to 120 s per wave),
+  so one unreachable server (here the catalogue's `fetch`, whose `uvx` download is blocked) made
+  `session.create` pass its 120 s deadline and the chat failed. Discovery now runs in the
+  background; a session waits at most 5 s (interactive) or 15 s (one-shot runs and the daemon) and
+  servers that connect later join new sessions.
+- Config schema: `platforms.line`, `platforms.ntfy` and `platforms.irc` were missing although the
+  adapters ship and the Channels page writes them, so `indus doctor` called them unknown settings.
+- Tests made green: three Windows tests used a bare `skipif(sys.platform …)` (the platforms marker
+  is the rule), and the reference-docs path check failed on a machine whose home is `/root`.
+- Web e2e: the Models test's `/^OpenAI/` locator matched the new ChatGPT row too.
 - `src/indus/protocol/field_docs.json` regenerated (stale line numbers after the Windows gateway
   commit; the generated-twins guard was red).
 
@@ -55,7 +72,13 @@ Compare checklist:
 - [x] finished reasoning folded, hidden with the section (test: `Transcript.test.tsx::folds a finished reply's reasoning into one row, or hides it`)
 - [x] pager counts wrapped rows (tests: `Pager.test.tsx::wraps long lines into rows at word breaks`, `::counts wrapped rows, so no row is drawn over another`)
 - [x] setup card beside the ChatGPT card (test: `chatgptAccount.test.tsx::keeps the provider setup card beside the ChatGPT card`; Electron `chat.electron.test.ts::Settings › Providers re-runs onboarding …`)
-- Deliberate differences: the reference shows a token estimate on the folded thinking row; we show
+- [x] ensure-started daemon parks a failed channel (test: `test_daemon_start.py::test_an_ensure_started_daemon_parks_a_failed_platform_and_keeps_serving`); token conflict on an explicit run still exits 78 (`::test_a_token_collision_with_nothing_connected_exits_78`)
+- [x] a hanging MCP server does not hold the session start (test: `test_mcp_host.py::test_a_server_that_never_answers_does_not_hold_the_session_start`)
+- [x] every chat platform has a config section (test: `tests/unit/gateway/test_config.py::test_every_chat_platform_has_a_config_section`)
+- Deliberate differences: the reference waits 1.5 s for MCP in an interactive session and refreshes
+  a session's tools when a server lands before its first turn; we have no such refresh yet, so the
+  interactive bound is 5 s. The reference exits 78 whenever nothing could start; our daemon hosts
+  chat clients, so only an explicit run does. The reference shows a token estimate on the folded thinking row; we show
   none (no token tallies, P12 tool-trail note).
 
 ## Status

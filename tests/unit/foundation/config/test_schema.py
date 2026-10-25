@@ -349,6 +349,9 @@ def test_decided_defaults() -> None:
         "whatsapp": platform,  # P16-03
         "whatsapp_cloud": platform,  # P16-04
         "sms": platform,  # P16-10
+        "line": platform,  # W62: the adapter shipped without its section
+        "ntfy": platform,
+        "irc": platform,
         "teams": platform,  # P16-11
         "msgraph": platform,  # P16-12
         "google_chat": platform,  # P16-13

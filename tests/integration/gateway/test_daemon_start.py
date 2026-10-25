@@ -455,3 +455,29 @@ def test_the_daemon_process_serves_refuses_a_second_and_drains_on_sigterm(tmp_pa
     assert list((home.spool / "inbound").iterdir()) == []
     assert list((tmp_path / "token-locks").glob("*.lock")) == []
     assert not list(home.home.glob("*.sock"))
+
+
+def test_an_ensure_started_daemon_parks_a_failed_platform_and_keeps_serving(
+    tmp_path: Path,
+) -> None:
+    """The daemon `ensure` starts hosts the chats of the client that asked for it: a channel that
+    cannot start (here a token another profile holds) is parked instead of stopping that host."""
+    scope = daemon_scope(tmp_path, env={"INDUS_GATEWAY_AUTOSTART": "1"})
+    other = TokenLocks(tmp_path / "token-locks", profile="other", pid=os.getppid())
+    assert other.acquire("telegram", bot_token(), startup=True).acquired
+    daemon = GatewayDaemon(
+        scope,
+        options=quick(),
+        registry=fake_registry(fake_entry(fake_platform())),
+        service_factory=fake_service(model_server(), tmp_path / "svc-locks"),
+        parts=[],
+    )
+
+    async def main() -> None:
+        flight = await fly(daemon)
+        assert daemon.status.state == "degraded"
+        assert daemon.platforms["telegram"].state == "fatal"
+        assert daemon.platforms["telegram"].error_code == "token_conflict"
+        assert await flight.stop() == EXIT_OK
+
+    run(main())

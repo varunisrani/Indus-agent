@@ -1011,6 +1011,54 @@ Messaging platforms (indus gateway).
 | `platforms.sms.channel_overrides.provider` | str or null | `null` | provider for this channel |
 | `platforms.sms.channel_overrides.system_prompt` | str or null | `null` | extra system prompt text for this channel |
 | `platforms.sms.extra` | dict[str, Any] | `{}` | platform-specific settings |
+| `platforms.line.enabled` | bool or null | `null` | unset: on when its credentials are present; false: off even with them |
+| `platforms.line.home_channel` | HomeChannelSetting or null |  | default chat for cron output and notices |
+| `platforms.line.home_channel.platform` | str | `null` | platform name; empty = the section's own |
+| `platforms.line.home_channel.chat_id` | str | `null` | chat, channel or user id |
+| `platforms.line.home_channel.name` | str | `null` | display name |
+| `platforms.line.home_channel.thread_id` | str or null | `null` | thread or topic inside the chat |
+| `platforms.line.reply_to_mode` | 'off' \| 'first' \| 'all' | `first` | which chunks of a long reply thread to your message: off, first or all |
+| `platforms.line.restart_notice` | bool | `true` | post a note to the home channel after the gateway restarts |
+| `platforms.line.typing_indicator` | bool | `true` | show typing while a reply runs |
+| `platforms.line.streaming` | bool or null | `null` | edit the reply in place as it is written; unset: the platform default (Telegram on, Discord and Slack off) |
+| `platforms.line.tool_progress` | 'off' \| 'new' \| 'all' \| 'verbose' \| 'log' or null | `null` | tool activity shown: off, new, all, verbose, or log (an audit file only); unset: the platform default (Telegram off, others all) |
+| `platforms.line.channel_overrides` | dict[str, ChannelOverride] |  | per channel id: model, provider or system_prompt |
+| `platforms.line.channel_overrides.model` | str or null | `null` | model id for this channel |
+| `platforms.line.channel_overrides.provider` | str or null | `null` | provider for this channel |
+| `platforms.line.channel_overrides.system_prompt` | str or null | `null` | extra system prompt text for this channel |
+| `platforms.line.extra` | dict[str, Any] | `{}` | platform-specific settings |
+| `platforms.ntfy.enabled` | bool or null | `null` | unset: on when its credentials are present; false: off even with them |
+| `platforms.ntfy.home_channel` | HomeChannelSetting or null |  | default chat for cron output and notices |
+| `platforms.ntfy.home_channel.platform` | str | `null` | platform name; empty = the section's own |
+| `platforms.ntfy.home_channel.chat_id` | str | `null` | chat, channel or user id |
+| `platforms.ntfy.home_channel.name` | str | `null` | display name |
+| `platforms.ntfy.home_channel.thread_id` | str or null | `null` | thread or topic inside the chat |
+| `platforms.ntfy.reply_to_mode` | 'off' \| 'first' \| 'all' | `first` | which chunks of a long reply thread to your message: off, first or all |
+| `platforms.ntfy.restart_notice` | bool | `true` | post a note to the home channel after the gateway restarts |
+| `platforms.ntfy.typing_indicator` | bool | `true` | show typing while a reply runs |
+| `platforms.ntfy.streaming` | bool or null | `null` | edit the reply in place as it is written; unset: the platform default (Telegram on, Discord and Slack off) |
+| `platforms.ntfy.tool_progress` | 'off' \| 'new' \| 'all' \| 'verbose' \| 'log' or null | `null` | tool activity shown: off, new, all, verbose, or log (an audit file only); unset: the platform default (Telegram off, others all) |
+| `platforms.ntfy.channel_overrides` | dict[str, ChannelOverride] |  | per channel id: model, provider or system_prompt |
+| `platforms.ntfy.channel_overrides.model` | str or null | `null` | model id for this channel |
+| `platforms.ntfy.channel_overrides.provider` | str or null | `null` | provider for this channel |
+| `platforms.ntfy.channel_overrides.system_prompt` | str or null | `null` | extra system prompt text for this channel |
+| `platforms.ntfy.extra` | dict[str, Any] | `{}` | platform-specific settings |
+| `platforms.irc.enabled` | bool or null | `null` | unset: on when its credentials are present; false: off even with them |
+| `platforms.irc.home_channel` | HomeChannelSetting or null |  | default chat for cron output and notices |
+| `platforms.irc.home_channel.platform` | str | `null` | platform name; empty = the section's own |
+| `platforms.irc.home_channel.chat_id` | str | `null` | chat, channel or user id |
+| `platforms.irc.home_channel.name` | str | `null` | display name |
+| `platforms.irc.home_channel.thread_id` | str or null | `null` | thread or topic inside the chat |
+| `platforms.irc.reply_to_mode` | 'off' \| 'first' \| 'all' | `first` | which chunks of a long reply thread to your message: off, first or all |
+| `platforms.irc.restart_notice` | bool | `true` | post a note to the home channel after the gateway restarts |
+| `platforms.irc.typing_indicator` | bool | `true` | show typing while a reply runs |
+| `platforms.irc.streaming` | bool or null | `null` | edit the reply in place as it is written; unset: the platform default (Telegram on, Discord and Slack off) |
+| `platforms.irc.tool_progress` | 'off' \| 'new' \| 'all' \| 'verbose' \| 'log' or null | `null` | tool activity shown: off, new, all, verbose, or log (an audit file only); unset: the platform default (Telegram off, others all) |
+| `platforms.irc.channel_overrides` | dict[str, ChannelOverride] |  | per channel id: model, provider or system_prompt |
+| `platforms.irc.channel_overrides.model` | str or null | `null` | model id for this channel |
+| `platforms.irc.channel_overrides.provider` | str or null | `null` | provider for this channel |
+| `platforms.irc.channel_overrides.system_prompt` | str or null | `null` | extra system prompt text for this channel |
+| `platforms.irc.extra` | dict[str, Any] | `{}` | platform-specific settings |
 | `platforms.teams.enabled` | bool or null | `null` | unset: on when its credentials are present; false: off even with them |
 | `platforms.teams.home_channel` | HomeChannelSetting or null |  | default chat for cron output and notices |
 | `platforms.teams.home_channel.platform` | str | `null` | platform name; empty = the section's own |

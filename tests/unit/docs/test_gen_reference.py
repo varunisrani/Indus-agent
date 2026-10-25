@@ -210,9 +210,12 @@ def test_env_scan_reads_constants_and_env_lookups(tmp_path: Path) -> None:
 
 def test_output_holds_no_machine_paths(pages: dict[str, str]) -> None:
     home = str(Path.home())
+    # A leaked path sits under the home. The bare name may be a documented default: the docs
+    # mention a container's `/root`, which is the home itself when the suite runs as root.
+    under_home = home.rstrip("/") + "/"
     for name, text in pages.items():
         assert str(gen.ROOT) not in text, name
-        assert home == "/" or home not in text, name
+        assert home == "/" or under_home not in text, name
 
 
 @pytest.mark.parametrize(

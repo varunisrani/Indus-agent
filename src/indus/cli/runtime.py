@@ -86,7 +86,7 @@ from indus.service.code_host import KernelUpkeep
 from indus.service.host_inprocess import InProcessHost
 from indus.service.lsp_host import LspUpkeep
 from indus.service.maintenance import MaintenanceTimer, learning_timer, profile_idle_s
-from indus.service.mcp_host import McpUpkeep
+from indus.service.mcp_host import DISCOVERY_WAIT_S, SINGLE_QUERY_DISCOVERY_WAIT_S, McpUpkeep
 from indus.service.plugin_host import PluginUpkeep, update_check
 from indus.service.session_service import AgentFactory, SessionService
 from indus.state.registry import StoreHandle
@@ -372,7 +372,15 @@ def build_service(spec: ServiceSpec) -> SessionService:
         maintenance=_maintenance(spec, aux),
         # The CLI owns its process: kernels end at exit; an interactive run reaps idle ones.
         kernels=KernelUpkeep(spec.scope, reaper=spec.run_context == "interactive"),
-        mcp=McpUpkeep(spec.scope, registry, aux=aux, watch=spec.run_context == "interactive"),
+        mcp=McpUpkeep(
+            spec.scope,
+            registry,
+            aux=aux,
+            watch=spec.run_context == "interactive",
+            discovery_wait=DISCOVERY_WAIT_S
+            if spec.run_context == "interactive"
+            else SINGLE_QUERY_DISCOVERY_WAIT_S,
+        ),
         plugins=_plugins(spec, registry, cwd),
         # Language servers check the run's edits (P24-15/16); none start unless a file is edited.
         lsp=LspUpkeep(spec.scope),

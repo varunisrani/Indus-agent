@@ -15,7 +15,7 @@ import pytest
 from indus.platform import winproc
 from indus.state import gateway_runtime
 
-windows_only = pytest.mark.skipif(sys.platform != "win32", reason="Win32 calls")
+windows_only = pytest.mark.platforms("windows")  # Win32 calls
 
 
 def _pause(seconds: float) -> None:
@@ -26,7 +26,7 @@ def _sleeper(seconds: float) -> subprocess.Popen[bytes]:
     return subprocess.Popen([sys.executable, "-c", f"import time; time.sleep({seconds})"])
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="the non-Windows answers")
+@pytest.mark.platforms("not windows")  # the non-Windows answers
 def test_other_platforms_answer_unknown() -> None:
     me = os.getpid()
     assert winproc.pid_alive(me) is False

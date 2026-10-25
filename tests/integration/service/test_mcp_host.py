@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -193,6 +194,45 @@ def test_a_profile_without_servers_starts_no_mcp_host(isolated_home: Path, tmp_p
             ctx.lines.clear()
             dispatch("/reload-mcp", ctx)
             assert ctx.lines == ["No MCP servers are configured."]
+        assert mcp_host.upkeep_for(scope) is None
+    finally:
+        registry.release(store)
+
+
+def test_a_server_that_never_answers_does_not_hold_the_session_start(
+    isolated_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Discovery runs in the background: the first session waits only `discovery_wait` for it
+    (it used to wait for the whole pass, up to 120 s, past the client's session.create deadline)."""
+    config = (
+        "mcp_servers:\n  stuck:\n"
+        f"    command: {json.dumps(sys.executable)}\n"
+        f"    args: [{json.dumps(str(FAKE))}, '--hang']\n"
+        "    connect_timeout: 60\n"
+    )
+    scope = with_config(real_scope(isolated_home), config)
+    monkeypatch.setattr(mcp_host, "DISCOVERY_WAIT_S", 0.5)
+    monkeypatch.setattr(mcp_host, "SINGLE_QUERY_DISCOVERY_WAIT_S", 0.5)
+    monkeypatch.setattr("indus.cli.runtime.DISCOVERY_WAIT_S", 0.5)
+    monkeypatch.setattr("indus.cli.runtime.SINGLE_QUERY_DISCOVERY_WAIT_S", 0.5)
+    model = FakeModelServer(script_of(text_turn("hi")))
+    store = registry.acquire(scope)
+    spec = ServiceSpec(
+        scope=scope,
+        route=fake_route(model),
+        policy=LaunchPolicy(cwd=str(tmp_path)),
+        store=store,
+        overrides=overrides(model),
+    )
+    try:
+        with make_host(spec, call_timeout=WAIT) as host:
+            started = time.monotonic()
+            sid = host.create(SessionCreateParams(cwd=str(tmp_path))).session_id
+            assert time.monotonic() - started < 10.0
+            upkeep = mcp_host.upkeep_for(scope)
+            assert upkeep is not None and upkeep.report is None  # still connecting
+            host.submit(sid, "hello")
+            host.wait(sid, timeout=WAIT)
         assert mcp_host.upkeep_for(scope) is None
     finally:
         registry.release(store)

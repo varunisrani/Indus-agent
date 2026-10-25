@@ -1,6 +1,6 @@
 {
  "note": "generated from foundation/config/schema.py by `python -m indus.foundation.config.defaults_twin`; do not edit",
- "source_sha256": "3ba408f5f4f129582056564ebfc627b17e79a4a31b2bea12ee1e789708f58c74",
+ "source_sha256": "5f212d629acffe3830b3d9f18ab5b69cc821432341fee1752a60b2dce54d25d7",
  "defaults": {
   "model": {
    "default": "",
@@ -650,6 +650,39 @@
     "extra": {}
    },
    "sms": {
+    "enabled": null,
+    "home_channel": null,
+    "reply_to_mode": "first",
+    "restart_notice": true,
+    "typing_indicator": true,
+    "streaming": null,
+    "tool_progress": null,
+    "channel_overrides": {},
+    "extra": {}
+   },
+   "line": {
+    "enabled": null,
+    "home_channel": null,
+    "reply_to_mode": "first",
+    "restart_notice": true,
+    "typing_indicator": true,
+    "streaming": null,
+    "tool_progress": null,
+    "channel_overrides": {},
+    "extra": {}
+   },
+   "ntfy": {
+    "enabled": null,
+    "home_channel": null,
+    "reply_to_mode": "first",
+    "restart_notice": true,
+    "typing_indicator": true,
+    "streaming": null,
+    "tool_progress": null,
+    "channel_overrides": {},
+    "extra": {}
+   },
+   "irc": {
     "enabled": null,
     "home_channel": null,
     "reply_to_mode": "first",

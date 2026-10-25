@@ -7,7 +7,6 @@ import json
 import os
 import socket
 import stat
-import sys
 import threading
 from collections.abc import Awaitable, Callable, Iterator
 from pathlib import Path
@@ -424,7 +423,7 @@ def test_supervisor_kind(env: dict[str, str], kind: str) -> None:
     assert supervisor_kind(env) == kind
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="Windows serves the pipe for real")
+@pytest.mark.platforms("not windows")  # Windows serves the pipe for real
 def test_the_windows_pipe_needs_the_proactor_loop(
     short_home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

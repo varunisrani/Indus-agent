@@ -1453,6 +1453,11 @@ class PlatformsSection(_Section):
         default_factory=PlatformSection, description="WhatsApp Business (Cloud API)"
     )
     sms: PlatformSection = Field(default_factory=PlatformSection, description="SMS (Twilio)")
+    line: PlatformSection = Field(default_factory=PlatformSection, description="LINE")
+    ntfy: PlatformSection = Field(
+        default_factory=PlatformSection, description="ntfy push notifications"
+    )
+    irc: PlatformSection = Field(default_factory=PlatformSection, description="IRC")
     teams: PlatformSection = Field(default_factory=PlatformSection, description="Microsoft Teams")
     msgraph: PlatformSection = Field(
         default_factory=PlatformSection, description="Microsoft Graph change notifications"

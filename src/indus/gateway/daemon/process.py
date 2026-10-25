@@ -36,7 +36,9 @@ Then it waits for a stop or restart (``lifecycle``) and shuts down in reverse: t
 endpoint first (clients detached), the parts and platforms, the intake, then the host (running
 turns interrupted and settled, sessions and the service closed), the control socket (the ticket
 book revoked) last. Without a host (it could not open) chat turns run on the service as before.
-Exit codes: 0 clean, 75 restart me, 78 fatal configuration (``state.gateway_runtime``).
+Exit codes: 0 clean, 75 restart me, 78 fatal configuration (``state.gateway_runtime``). A daemon
+``ensure`` started for a client never exits 78 because no platform could start: it parks them
+(``degraded``) and keeps hosting that client's chats.
 """
 
 from __future__ import annotations
@@ -940,7 +942,16 @@ class GatewayDaemon:
         ]
         if conflicts and not retrying:
             codes = sorted({self.platforms[n].error_code or "fatal" for n in conflicts})
-            raise StartupFailed(EXIT_CONFIG, "no platform could start: " + ", ".join(codes))
+            if not self.autostarted:
+                raise StartupFailed(EXIT_CONFIG, "no platform could start: " + ", ".join(codes))
+            # `ensure` started this daemon for a chat client: it hosts that client's agent, so a
+            # misconfigured channel parks (degraded) instead of taking every chat down with it.
+            log.error(
+                "no platform could start (%s); they stay parked and the gateway keeps serving "
+                "its clients (fix the setting, then `indus gateway restart`)",
+                ", ".join(codes),
+            )
+            return
         log.warning(
             "no platform connected (%s); the gateway keeps running for the background parts",
             ", ".join(f"{n}: {self.platforms[n].error_code}" for n in enabled),
@@ -1435,7 +1446,7 @@ async def _session_service(
     from indus.service.bot_turns import BotChats
     from indus.service.code_host import KernelUpkeep
     from indus.service.lsp_host import LspUpkeep
-    from indus.service.mcp_host import McpUpkeep
+    from indus.service.mcp_host import SINGLE_QUERY_DISCOVERY_WAIT_S, McpUpkeep
     from indus.service.plugin_host import PluginUpkeep
     from indus.service.session_service import SessionService
     from indus.tools.builtin import terminal
@@ -1497,7 +1508,12 @@ async def _session_service(
         toolsets=toolsets,
         answerable_kinds=answerable,
         kernels=KernelUpkeep(scope, reaper=chat),
-        mcp=McpUpkeep(scope, tools, aux=aux, watch=False) if mcp else None,
+        # The daemon also runs one-shot turns (`indus -z`, cron): the longer bound.
+        mcp=McpUpkeep(
+            scope, tools, aux=aux, watch=False, discovery_wait=SINGLE_QUERY_DISCOVERY_WAIT_S
+        )
+        if mcp
+        else None,
         plugins=PluginUpkeep(scope, tools, surface="gateway", interactive=False) if chat else None,
         lsp=LspUpkeep(scope),
         bot_chats=BotChats(scope, handle).shape if bot_chats else None,

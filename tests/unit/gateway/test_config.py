@@ -504,3 +504,15 @@ def test_streaming_and_tool_progress_follow_platform_defaults(scope: Scope) -> N
     got = load_gateway_settings(scope)
     assert got.platforms["telegram"].streaming is False
     assert got.platforms["telegram"].tool_progress == "verbose"
+
+
+def test_every_chat_platform_has_a_config_section() -> None:
+    # `indus doctor` and `config set` treat a key outside the schema as unknown; the web Channels
+    # page writes `platforms.<name>.enabled` for every platform it lists (LINE, ntfy and IRC were
+    # missing). The HTTP surfaces are configured under `gateway:` instead.
+    from indus.foundation.config.schema import PlatformsSection
+    from indus.gateway.registry import BUILTIN_NAMES
+
+    under_gateway = {"api_server", "webhook"}
+    missing = set(BUILTIN_NAMES) - under_gateway - set(PlatformsSection.model_fields)
+    assert missing == set()
