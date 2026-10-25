@@ -93,9 +93,12 @@ LANDED since wave 53 (all D-16.1270–1280, each with a lead gate on the combine
 F2 (`1136463`); wave 56 G2+G1 (`fe10143`); wave 57 H1 (`b8c14c1`: docs theme, messaging labels, error-card Retry, model list);
 wave 58 J1+J2 (`62a1e7a`: usage api_calls/by_model, Tools opens on Terminal, Open in terminal; in-app docs from docs/user,
 GET/PUT /api/config/raw, POST /api/skills/create, sign-in list). Second compare PDFs + gaps in Agent 2's scratchpad `compare2/`.
-IN FLIGHT: wave 59 — K1 parked (`.agents/wip/w59/w59k1.patch`: alerts 3→6, key-action dispatcher + 8 actions, voice/limits
-rows, reply time + Copy; lead narrowed the not-secret names to record_key/hot_key/secret_store), K2 (web host facts, our own
-TUI ASCII banner) building. Then: combined gate main + K1 + K2, land; a third compare.
+Wave 59: K1 LANDED `6a765a3` (D-16.1281). K2 (web host facts, our own TUI ASCII banner) was STOPPED by the owner before
+finishing — saved as `.agents/wip/w59/w59k2-UNFINISHED.patch` (TUI goldens not yet regenerated/reviewed); relaunch only
+on the owner's request. Third compare done at b0bc54d (scratchpad `compare3/`, PDFs sent to the owner): 17 more slugs
+improved (7 fixed, 10 partial). Remaining gaps are mostly backend features (hosted catalogues, usage/credits, OAuth
+providers, voice modes, tool-gateway routing) or owner calls; the "~110 px pane" line is a misreading of the half-scale
+sheet (228 px measured in the app, W57-H1-2).
 Owner calls: Clear Blue preset below AA (D-16.1276); MCP/connector hosted catalogue (none exists, D-16.1275).
 Older text below (wave 52 era) is history.
 
