@@ -33,6 +33,7 @@ import type {
   LogLevel,
   LogsResponse,
   LogTail,
+  McpCatalogResponse,
   McpServerCreate,
   McpServersResponse,
   McpTestResult,
@@ -837,6 +838,7 @@ export const api = {
 
   mcp: {
     servers: () => request<McpServersResponse>("/api/mcp/servers"),
+    catalog: () => request<McpCatalogResponse>("/api/mcp/catalog"),
     add: (body: McpServerCreate, profile?: string) =>
       request<OkResponse>(forProfile("/api/mcp/servers", profile), { json: body }),
     test: (name: string) =>

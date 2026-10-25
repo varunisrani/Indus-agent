@@ -150,6 +150,29 @@ def test_fill_refuses_out_of_schema_unknown_and_missing() -> None:
         bps.fill(check_in, {"target": "x", "interval": "5"})  # this slot's minimum is 15
 
 
+def test_prefill_uses_the_defaults_and_leaves_gaps_for_the_person() -> None:
+    assert bps.prefill(by_key("morning-brief")) == {
+        "name": "Morning briefing",
+        "schedule": "0 8 * * 1-5",
+        "prompt": bps.fill(by_key("morning-brief"))["prompt"],
+        "deliver": "origin",
+    }
+    check_in = bps.prefill(by_key("check-in"))  # ``fill`` refuses it: no default for target
+    assert check_in["schedule"] == "every 60m"
+    assert check_in["prompt"] is not None and check_in["prompt"].startswith("Check {target}.")
+    wrap = bps.prefill(by_key("evening-wrap"))  # an optional slot with no default is blank
+    assert wrap["prompt"] is not None and "{extra}" not in wrap["prompt"]
+    untimed = bps.Blueprint(
+        key="t",
+        title="T",
+        description="",
+        schedule="{minute} {hour} * * *",
+        prompt="p",
+        slots=(bps.Slot("time", "time", "Time"),),
+    )
+    assert bps.prefill(untimed)["schedule"] is None
+
+
 def test_every_catalogue_entry_is_valid() -> None:
     keys = [bp.key for bp in bps.CATALOGUE]
     assert len(keys) == len(set(keys))

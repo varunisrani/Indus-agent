@@ -73,6 +73,32 @@ def test_list_names_every_live_profile(rest: RestApp) -> None:
     assert got["active"] == "default"
 
 
+def test_the_list_counts_each_profile_s_turned_on_skills(rest: RestApp, scope: Scope) -> None:
+    """W55-F2-2: ``skill_count`` is what ``/api/skills`` lists as enabled, per profile."""
+    from indus.foundation.profiles import profile_home
+    from indus.learning.skills.resolver import clear_scan_cache
+
+    for name in ("alpha", "beta", "gamma"):
+        folder = scope.home / "skills" / name
+        folder.mkdir(parents=True)
+        (folder / "SKILL.md").write_text(
+            f"---\nname: {name}\ndescription: d\n---\n\n# {name}\n", encoding="utf-8"
+        )
+    (scope.home / "config.yaml").write_text("skills:\n  disabled: [beta]\n", encoding="utf-8")
+    clear_scan_cache()
+    config_loader.reset()
+    rows = {p["name"]: p for p in rest.client.get("/api/profiles").json()["profiles"]}
+    listed = rest.client.get("/api/skills", params={"profile": "work"}).json()["skills"]
+    assert rows["work"]["skill_count"] == sum(1 for r in listed if r["enabled"])
+    assert rows["work"]["skill_count"] >= 2
+    other = rest.client.get("/api/skills", params={"profile": "default"}).json()["skills"]
+    assert rows["default"]["skill_count"] == sum(1 for r in other if r["enabled"])
+    (profile_home(scope.root, "default") / "config.yaml").write_text("{{bad", encoding="utf-8")
+    config_loader.reset()
+    rows = {p["name"]: p for p in rest.client.get("/api/profiles").json()["profiles"]}
+    assert rows["default"]["skill_count"] is None and rows["work"]["skill_count"] is not None
+
+
 def test_the_list_carries_each_bot_s_forever_chat(rest: RestApp, scope: Scope) -> None:
     """P24-31 wiring (D-16.799): ``profile_rows`` on the real list — the row names the same chat
     ``bots.open`` opens, a profile without one says null, and listing creates no store."""

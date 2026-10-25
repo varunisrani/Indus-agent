@@ -62,6 +62,30 @@ describe("mcp page", () => {
     expect(screen.getByText("Catalog (0)")).toBeTruthy();
   });
 
+  it("lists the catalog presets and installs one through the add route", async () => {
+    mock.state.mcpServers = [];
+    mock.state.mcpCatalog = [
+      {
+        name: "git",
+        description: "Work in a git repository.",
+        transport: "stdio",
+        command: "uvx",
+        args: ["mcp-server-git"],
+        url: null,
+      },
+    ];
+    renderPage(<McpPage />, "/mcp");
+    const row = within(await screen.findByTestId("mcp-catalog-git"));
+    expect(screen.getByText("Catalog (1)")).toBeTruthy();
+    expect(row.getByText("uvx mcp-server-git")).toBeTruthy();
+    fireEvent.click(row.getByRole("button", { name: "Install" }));
+    await waitFor(() => expect(row.getByRole("button", { name: "Installed" })).toBeTruthy());
+    expect(mock.state.mcpServers.map((s) => [s.name, s.command, s.args])).toEqual([
+      ["git", "uvx", ["mcp-server-git"]],
+    ]);
+    expect(await screen.findByTestId("mcp-git")).toBeTruthy();
+  });
+
   it("renders the tool list from a test", async () => {
     renderPage(<McpPage />, "/mcp");
     const row = within(await screen.findByTestId("mcp-files"));

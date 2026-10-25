@@ -9,7 +9,7 @@ function backend() {
   api.route("GET", "/api/profiles", {
     profiles: [
       { name: "default", is_default: true },
-      { name: "coder", is_default: false, has_persona: false },
+      { name: "coder", is_default: false, has_persona: false, skill_count: 7 },
     ],
   });
   api.route("GET", "/api/profiles/coder/persona", { content: "", exists: false });
@@ -53,6 +53,14 @@ function changes(): ProfileChanges & { runs: string[] } {
 }
 
 describe("ProfilesOverlay", () => {
+  it("the detail shows the profile's turned-on skill count from the list", async () => {
+    render(<ProfilesOverlay api={backend()} onClose={() => {}} changes={changes()} />);
+    await selectCoder();
+    const detail = document.querySelector("[data-detail='coder']") as HTMLElement;
+    const rows = [...detail.querySelectorAll(".kit-meta-row")].map((r) => r.textContent);
+    expect(rows).toContain("Skills7");
+  });
+
   it("export sends no key material and says the archive has none", async () => {
     const api = backend();
     render(<ProfilesOverlay api={api} onClose={() => {}} changes={changes()} />);

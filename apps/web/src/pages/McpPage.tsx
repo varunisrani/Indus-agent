@@ -1,13 +1,19 @@
 // MCP (P18-22, look W52-c): configured MCP servers and a catalogue section. Add one (HTTP URL or a
 // stdio command) from the header, test it (connects, lists its tools, disconnects), switch it on or
-// off, or remove it. Env values arrive redacted. The catalogue has no backend yet: it shows an empty
-// section that "Browse catalog" scrolls to.
+// off, or remove it. Env values arrive redacted. The catalogue (W55-F2-3) lists the server presets
+// `indus mcp add --preset` knows (`GET /api/mcp/catalog`); Install adds one through the normal add
+// route. "Browse catalog" scrolls to it.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LoaderCircle, Package, Power, Server, Trash2, Zap } from "lucide-react";
 import { useRef, useState } from "react";
 import { api } from "../lib/api.ts";
-import type { McpServer, McpServersResponse, McpTestResult } from "../lib/restTypes.ts";
+import type {
+  McpCatalogEntry,
+  McpServer,
+  McpServersResponse,
+  McpTestResult,
+} from "../lib/restTypes.ts";
 import { HeaderActions } from "../shell/PageHeader.tsx";
 import { errorText, useToast } from "../shell/Toasts.tsx";
 import {
@@ -129,6 +135,52 @@ function ServerCard({
   );
 }
 
+function CatalogRow({ entry, onAdded }: { entry: McpCatalogEntry; onAdded: () => void }) {
+  const toast = useToast();
+  const client = useQueryClient();
+  const install = useMutation({
+    mutationFn: () =>
+      api.mcp.add(
+        entry.url
+          ? { name: entry.name, url: entry.url }
+          : { name: entry.name, command: entry.command ?? "", args: entry.args },
+      ),
+    onSuccess: () => {
+      toast.show(`${entry.name} added.`, "success");
+      void client.invalidateQueries({ queryKey: ["mcp"] });
+      onAdded();
+    },
+    onError: (error) => toast.show(errorText(error), "error"),
+  });
+  const target = entry.url ?? [entry.command, ...entry.args].join(" ");
+  return (
+    <li
+      className="flex items-start gap-3 border border-line px-4 py-3.5"
+      data-testid={`mcp-catalog-${entry.name}`}
+    >
+      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[0.875rem] font-medium text-ink">{entry.name}</span>
+          <Badge tone={entry.transport === "http" ? "ok" : "warn"}>{entry.transport}</Badge>
+        </div>
+        {entry.description ? (
+          <p className="m-0 text-[0.8125rem] text-ink-muted">{entry.description}</p>
+        ) : null}
+        <code className="type-data min-w-0 truncate text-[0.75rem] text-ink-muted">{target}</code>
+      </div>
+      <Button
+        tone={entry.installed ? "ghost" : "primary"}
+        size="sm"
+        className="shrink-0"
+        disabled={entry.installed || install.isPending}
+        onClick={() => install.mutate()}
+      >
+        {entry.installed ? "Installed" : install.isPending ? "Installing…" : "Install"}
+      </Button>
+    </li>
+  );
+}
+
 export function McpPage() {
   const toast = useToast();
   const client = useQueryClient();
@@ -137,6 +189,7 @@ export function McpPage() {
   const [removing, setRemoving] = useState<string | null>(null);
   const [restartNote, setRestartNote] = useState(false);
   const servers = useQuery({ queryKey: ["mcp", "servers"], queryFn: () => api.mcp.servers() });
+  const presets = useQuery({ queryKey: ["mcp", "catalog"], queryFn: () => api.mcp.catalog() });
   const remove = useMutation({
     mutationFn: (name: string) => api.mcp.remove(name),
     onSuccess: (_reply, name) => {
@@ -147,6 +200,7 @@ export function McpPage() {
     onError: (error) => toast.show(errorText(error), "error"),
   });
   const list = servers.data?.servers ?? [];
+  const entries = presets.data?.entries ?? [];
   const browse = () => catalog.current?.scrollIntoView({ behavior: "smooth", block: "start" });
 
   return (
@@ -197,14 +251,29 @@ export function McpPage() {
 
       <section ref={catalog} aria-label="Catalog" className="flex scroll-mt-4 flex-col gap-3">
         <div className="flex flex-col gap-2">
-          <SectionHeading icon={Package}>Catalog (0)</SectionHeading>
+          <SectionHeading icon={Package}>Catalog ({entries.length})</SectionHeading>
           <p className="m-0 text-[0.75rem] text-ink-muted">
-            Reviewed servers you can add in one step will be listed here.
+            Common servers you can add in one step. Each starts on the dashboard's machine with the
+            command shown.
           </p>
         </div>
-        <Card className="py-6 text-center">
-          <p className="m-0 text-[0.8125rem] text-ink-muted">No catalog entries available.</p>
-        </Card>
+        {presets.isPending ? (
+          <div className="flex justify-center py-6">
+            <Loading />
+          </div>
+        ) : presets.error ? (
+          <ErrorState message={errorText(presets.error)} onRetry={() => void presets.refetch()} />
+        ) : entries.length === 0 ? (
+          <Card className="py-6 text-center">
+            <p className="m-0 text-[0.8125rem] text-ink-muted">No catalog entries available.</p>
+          </Card>
+        ) : (
+          <ul className="m-0 flex list-none flex-col gap-3 p-0" aria-label="Catalog entries">
+            {entries.map((entry) => (
+              <CatalogRow key={entry.name} entry={entry} onAdded={() => setRestartNote(true)} />
+            ))}
+          </ul>
+        )}
       </section>
 
       <AddServerModal open={adding} onClose={() => setAdding(false)} />

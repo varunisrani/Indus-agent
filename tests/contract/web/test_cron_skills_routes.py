@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 
+from indus.cron import blueprints as bps
 from indus.cron.ports import CronBackend
 from indus.foundation.config import loader as config_loader
 from indus.foundation.scope import Scope
@@ -173,7 +174,7 @@ def test_delivery_targets_list_local_and_configured_platforms(rest: RestApp, sco
     assert "slack" not in by_id  # never set up
 
 
-def test_blueprints_come_from_skill_front_matter(rest: RestApp, scope: Scope) -> None:
+def test_blueprints_list_the_starter_catalogue_then_the_skills(rest: RestApp, scope: Scope) -> None:
     _skill(
         scope,
         "morning-brief",
@@ -183,14 +184,49 @@ def test_blueprints_come_from_skill_front_matter(rest: RestApp, scope: Scope) ->
     )
     _skill(scope, "plain", "No blueprint.")
     rows = rest.client.get("/api/cron/blueprints").json()["blueprints"]
-    assert rows == [
+    starters = rows[: len(bps.CATALOGUE)]
+    assert [r["key"] for r in starters] == [bp.key for bp in bps.CATALOGUE]
+    assert {r["source"] for r in starters} == {"catalogue"}
+    morning = starters[0]
+    assert morning["title"] == "Morning briefing" and morning["skill"] is None
+    assert morning["schedule"] == "0 8 * * 1-5" and "{" not in morning["prompt"]
+    assert [f["name"] for f in morning["fields"]] == ["time", "days", "topics"]
+    assert rows[len(bps.CATALOGUE) :] == [
         {
+            "key": "morning-brief:blueprint",
+            "title": "morning-brief",
+            "source": "skill",
             "skill": "morning-brief",
             "description": "Daily brief.",
             "schedule": "daily at 8am",
             "prompt": "Write my brief.",
+            "fields": [],
         }
     ]
+    assert len({r["key"] for r in rows}) == len(rows)
+
+
+def test_a_skills_slotted_blueprints_replace_its_plain_block(rest: RestApp, scope: Scope) -> None:
+    _skill(
+        scope,
+        "releases",
+        "Release notes.",
+        extra="blueprint:\n  key: rollup\n  title: Release rollup\n"
+        "  schedule: '{minute} {hour} * * 1-5'\n  prompt: Summarise {repo}.\n"
+        "  slots:\n    - {name: time, kind: time, default: '09:15'}\n"
+        "    - {name: repo, kind: text}\n"
+        "metadata:\n  indus:\n    blueprint:\n      schedule: daily\n      prompt: Old.\n",
+    )
+    rows = rest.client.get("/api/cron/blueprints").json()["blueprints"]
+    skill_rows = [r for r in rows if r["source"] == "skill"]
+    assert [r["key"] for r in skill_rows] == ["releases:rollup"]
+    assert skill_rows[0]["skill"] == "releases" and skill_rows[0]["title"] == "Release rollup"
+    assert skill_rows[0]["schedule"] == "15 9 * * 1-5"
+    assert skill_rows[0]["prompt"] == "Summarise {repo}."
+    off = rest.client.post("/api/skills/toggle", json={"name": "releases", "enabled": False})
+    assert off.status_code == 200, off.text
+    rows = rest.client.get("/api/cron/blueprints").json()["blueprints"]
+    assert [r["key"] for r in rows] == [bp.key for bp in bps.CATALOGUE]  # a disabled skill: none
 
 
 # -- the fire webhook ------------------------------------------------------------------------------

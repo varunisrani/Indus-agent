@@ -43,6 +43,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.concurrency import run_in_threadpool
 
+from indus.cron import blueprints as bps
 from indus.cron import ports, targets
 from indus.cron import tool as checks
 from indus.cron.errors import CronStoreBusy
@@ -95,6 +96,8 @@ FIRE_TTL_S: Final = 300
 FIRE_TTL_MAX_S: Final = 3600
 FIRE_BODY_LIMIT: Final = 4096
 _FIRE_KEY: Final = "cron.fire_key"
+PLAIN_BLUEPRINT: Final = "blueprint"
+"""Key suffix of a skill's plain ``blueprint`` block (``<skill>:blueprint``)."""
 _FIRE_LABEL: Final = b"indus-cron-fire.v1."
 
 
@@ -476,23 +479,62 @@ def delivery_targets(scope: ReadScope) -> dict[str, Any]:
 
 @router.get("/api/cron/blueprints")
 def blueprints(scope: ReadScope) -> dict[str, Any]:
-    """Skills whose front matter carries a ``blueprint`` block (a suggested job)."""
+    """The suggested jobs: the starter catalogue, then the skills' (W55-F2-1).
+
+    ``cron.blueprints.list_blueprints`` gives the starter catalogue and the skills' slotted
+    blueprints, prefilled from their defaults; a skill whose front matter carries a plain
+    ``blueprint`` block (a schedule and a prompt, no slots) and has no slotted one follows as is.
+    A disabled skill offers neither. Every row has a ``key`` unique in the list.
+    """
     catalog = load_catalog(scope.with_config(config_module.load(scope)))
+    off = {
+        name.lower()
+        for record in catalog.loadable()
+        if record.disabled
+        for name in (record.name, record.load_name)
+        if name
+    }
     rows: list[dict[str, Any]] = []
+    slotted: set[str] = set()
+    for bp in bps.list_blueprints(scope):
+        if bp.skill and bp.skill in off:
+            continue
+        spec = bps.prefill(bp)
+        if bp.skill:
+            slotted.add(bp.skill)
+        rows.append(
+            {
+                "key": bp.key,
+                "title": bp.title,
+                "source": bp.source,
+                "skill": bp.skill,
+                "description": bp.description,
+                "schedule": spec["schedule"],
+                "prompt": spec["prompt"] or None,
+                "fields": bps.form(bp)["fields"],
+            }
+        )
     for record in catalog.loadable():
         if record.disabled or record.frontmatter is None:
             continue
         blueprint: object = record.frontmatter.indus.blueprint
         if not isinstance(blueprint, Mapping):
             continue
+        skill = record.load_name or record.name
+        if skill in slotted:
+            continue
         plan: Mapping[str, Any] = blueprint  # pyright: ignore[reportUnknownVariableType]
         schedule = plan.get("schedule")
         rows.append(
             {
-                "skill": record.load_name or record.name,
+                "key": f"{skill}:{PLAIN_BLUEPRINT}",
+                "title": skill,
+                "source": "skill",
+                "skill": skill,
                 "description": record.description,
                 "schedule": str(schedule) if schedule else None,
                 "prompt": str(plan.get("prompt") or "") or None,
+                "fields": [],
             }
         )
     return {"blueprints": rows}

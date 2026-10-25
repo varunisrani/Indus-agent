@@ -119,6 +119,8 @@ export const CAPABILITY_STRINGS = {
   "connectors.addOwn": "Add your own",
   "connectors.searchApps": "Search {count} apps",
   "connectors.configured": "Configured",
+  "connectors.catalog": "Catalog",
+  "connectors.addPreset": "Add {name}",
   "connectors.kind.local": "Local",
   "connectors.kind.remote": "Remote",
   "connectors.on": "On",

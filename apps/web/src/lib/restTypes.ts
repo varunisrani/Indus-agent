@@ -13,6 +13,8 @@ export interface ProfileSummary {
   provider?: string | null;
   description?: string | null;
   has_persona?: boolean;
+  /** Skills this profile has turned on (null when its settings or skills cannot be read). */
+  skill_count?: number | null;
 }
 
 export interface ProfilesResponse {
@@ -673,12 +675,34 @@ export interface CronJobInput {
   skills?: string[];
 }
 
-/** A suggested job carried by a skill's front matter (`GET /api/cron/blueprints`). */
+/** One slot of a blueprint (`fields` of a `CronBlueprint`): the human part of the job. */
+export interface CronBlueprintField {
+  name: string;
+  kind: "time" | "weekdays" | "choice" | "interval" | "text";
+  label: string;
+  default: string | null;
+  optional: boolean;
+  help: string;
+  options?: string[];
+  min?: number;
+  max?: number;
+}
+
+/**
+ * A suggested job (`GET /api/cron/blueprints`): the starter catalogue (`source: "catalogue"`,
+ * no skill) then the skills' blueprints. `schedule` and `prompt` are prefilled from the slot
+ * defaults; a slot with no default stays `{name}` in the prompt for the person to fill.
+ */
 export interface CronBlueprint {
-  skill: string;
+  /** Unique in the list. */
+  key: string;
+  title: string;
+  source: "catalogue" | "skill";
+  skill: string | null;
   description: string;
   schedule: string | null;
   prompt: string | null;
+  fields: CronBlueprintField[];
 }
 
 export interface DeliveryTarget {
@@ -770,6 +794,22 @@ export interface McpServer {
 
 export interface McpServersResponse {
   servers: McpServer[];
+}
+
+/** One server preset (`GET /api/mcp/catalog`): the entry `indus mcp add --preset` writes. */
+export interface McpCatalogEntry {
+  name: string;
+  description: string;
+  transport: McpTransport;
+  command: string | null;
+  args: string[];
+  url: string | null;
+  /** This profile has a server of that name already. */
+  installed: boolean;
+}
+
+export interface McpCatalogResponse {
+  entries: McpCatalogEntry[];
 }
 
 /** Body of an add: a stdio server gives `command` (+ args, env), an HTTP server gives `url`. */

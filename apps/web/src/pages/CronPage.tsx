@@ -269,10 +269,10 @@ export function CronPage() {
         <Blueprints
           onSetUp={(blueprint) =>
             create({
-              name: blueprint.skill,
+              name: blueprint.title,
               prompt: blueprint.prompt ?? "",
               ...(blueprint.schedule ? { schedule: blueprint.schedule } : {}),
-              skills: [blueprint.skill],
+              skills: blueprint.skill ? [blueprint.skill] : [],
             })
           }
         />

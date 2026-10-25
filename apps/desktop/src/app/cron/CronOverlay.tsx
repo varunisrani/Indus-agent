@@ -1,7 +1,8 @@
 // Scheduled jobs (P24-27): the P14 cron jobs of this profile, or of every profile at once
 // ("All profiles": one `GET /api/cron/jobs` per profile, each row tagged with its owner). Every
 // action — pause, resume, run now, edit, delete — goes to the profile that owns the job, never to
-// the window's own. New jobs start blank or from a blueprint (a skill that suggests a schedule).
+// the window's own. New jobs start blank or from a blueprint (a starter one or a skill's
+// suggestion, W55-F2-1).
 // The last run's time, status and (redacted) error are the run history the REST view carries.
 // W52-l look: an overlay panel (list + detail) and a 512px dialog for new / edited jobs; the
 // "All profiles" switch stays (ours, W52-l-5) as a small checkbox under the search.
@@ -49,9 +50,15 @@ export interface OwnedJob extends CronJob {
   profile: string;
 }
 
+/** A suggested job (`GET /api/cron/blueprints`): starters first (no skill), then the skills'. */
 export interface Blueprint {
-  skill: string;
+  /** Unique in the list. */
+  key: string;
+  title: string;
+  source: "catalogue" | "skill";
+  skill: string | null;
   description: string;
+  /** Prefilled from the slot defaults (null when a time has no default). */
   schedule: string | null;
   prompt: string | null;
 }
@@ -230,7 +237,7 @@ export function CronOverlay(props: {
               <h3 className="cron-plans-label">{t("cron.blueprints")}</h3>
               <ul>
                 {plans.map((plan) => (
-                  <li key={plan.skill}>
+                  <li key={plan.key}>
                     <button
                       type="button"
                       className="cron-plan"
@@ -238,7 +245,7 @@ export function CronOverlay(props: {
                       onClick={() => setDialog({ kind: "new", blueprint: plan })}
                     >
                       <Rocket aria-hidden="true" size={12} />
-                      <span>{plan.skill}</span>
+                      <span>{plan.title}</span>
                     </button>
                   </li>
                 ))}

@@ -275,15 +275,32 @@ describe("cron page", () => {
   it("prefills the job panel from a blueprint", async () => {
     mock.state.cronBlueprints = [
       {
+        key: "weekly-review",
+        title: "Weekly review",
+        source: "catalogue",
+        skill: null,
+        description: "Looks back over the week",
+        schedule: "30 16 * * 5",
+        prompt: "Review the week",
+        fields: [],
+      },
+      {
+        key: "inbox-digest:blueprint",
+        title: "inbox-digest",
+        source: "skill",
         skill: "inbox-digest",
         description: "Sum up mail",
         schedule: "daily at 08:00",
         prompt: "Sum up my mail",
+        fields: [],
       },
     ];
     renderPage(<CronPage />, "/cron");
     fireEvent.click(await screen.findByRole("button", { name: "Blueprints" }));
-    const card = within(await screen.findByTestId("blueprint-inbox-digest"));
+    const starter = within(await screen.findByTestId("blueprint-weekly-review"));
+    expect(starter.getByText("Weekly review")).toBeTruthy();
+    expect(starter.getByText("Starter")).toBeTruthy();
+    const card = within(await screen.findByTestId("blueprint-inbox-digest:blueprint"));
     fireEvent.click(card.getByRole("button", { name: "Set up" }));
     const dialog = within(await screen.findByRole("dialog"));
     expect((dialog.getByLabelText("Prompt") as HTMLTextAreaElement).value).toBe("Sum up my mail");

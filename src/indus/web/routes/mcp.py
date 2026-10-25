@@ -4,6 +4,9 @@
   URL and sign-in kind. Env values are redacted (a ``${NAME}`` reference is shown as written; any
   other value is masked), URLs and args pass through the redactor, header values are never
   shown. A broken entry is listed with its problem.
+- ``GET /api/mcp/catalog``: the server presets ``indus mcp add --preset`` knows (``mcp.presets``),
+  each with the entry it would write and whether this profile has a server of that name
+  (``installed``); the page installs one with the POST below (W55-F2-3).
 - ``POST /api/mcp/servers {name, command | url, args?, env?, auth?}``: validated as
   ``indus mcp add`` does (P13's model; a secret-looking literal is refused: store the value on the
   Keys page and write ``${NAME}``), a duplicate name is 409, saved through the config writer;
@@ -37,7 +40,7 @@ from indus.foundation.clock import SystemClock
 from indus.foundation.errors import ConfigError
 from indus.foundation.redact import mask, redact_text
 from indus.foundation.scope import Scope
-from indus.mcp import oauth, osv
+from indus.mcp import oauth, osv, presets
 from indus.mcp.config import McpServer, parse_server, stdio_launch
 from indus.mcp.connect import Connection, ConnectOptions, first_cause
 from indus.service import integration_offers
@@ -53,6 +56,7 @@ router = APIRouter()
 
 ROUTE_LIST: Final[tuple[tuple[str, str, bool], ...]] = (
     ("GET", "/api/mcp/servers", True),
+    ("GET", "/api/mcp/catalog", True),
     ("POST", "/api/mcp/servers", True),
     ("POST", "/api/mcp/servers/{name}/test", True),
     ("PUT", "/api/mcp/servers/{name}/enabled", True),
@@ -160,6 +164,26 @@ def server_row(name: str, entry: object) -> dict[str, Any]:
 def list_servers(scope: ReadScope) -> dict[str, Any]:
     raw = _servers_raw(scope)
     return {"servers": [server_row(name, raw[name]) for name in sorted(raw)]}
+
+
+@router.get("/api/mcp/catalog")
+def catalog(scope: ReadScope) -> dict[str, Any]:
+    configured = _servers_raw(scope)
+    rows: list[dict[str, Any]] = []
+    for name in sorted(presets.PRESETS):
+        entry = presets.entry(name)
+        rows.append(
+            {
+                "name": name,
+                "description": presets.DESCRIPTIONS.get(name, ""),
+                "transport": "http" if entry.get("url") else "stdio",
+                "command": entry.get("command"),
+                "args": list(entry.get("args") or []),
+                "url": entry.get("url"),
+                "installed": name in configured,
+            }
+        )
+    return {"entries": rows}
 
 
 # -- add -------------------------------------------------------------------------------------------

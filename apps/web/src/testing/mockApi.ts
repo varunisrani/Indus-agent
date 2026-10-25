@@ -24,6 +24,7 @@ import type {
   LogFile,
   LoginStarted,
   LoginStatus,
+  McpCatalogEntry,
   McpServer,
   McpServerCreate,
   McpTool,
@@ -83,6 +84,8 @@ export interface MockState {
   hub: HubResult[];
   plugins: PluginInfo[];
   mcpServers: McpServer[];
+  /** The server presets `GET /api/mcp/catalog` lists (`installed` derived from `mcpServers`). */
+  mcpCatalog: Omit<McpCatalogEntry, "installed">[];
   /** Server name → tools its test lists, or an error string. */
   mcpTools: Record<string, McpTool[] | string>;
   /** Profile name → PERSONA.md text. */
@@ -268,6 +271,7 @@ export function defaultMockState(): MockState {
     hub: [],
     plugins: [],
     mcpServers: [],
+    mcpCatalog: [],
     mcpTools: {},
     personas: {},
     status: {
@@ -852,6 +856,17 @@ function routes(state: MockState): Array<[string, RegExp, Handler]> {
     ],
 
     ["GET", /^\/api\/mcp\/servers$/, () => ok({ servers: state.mcpServers })],
+    [
+      "GET",
+      /^\/api\/mcp\/catalog$/,
+      () =>
+        ok({
+          entries: state.mcpCatalog.map((entry) => ({
+            ...entry,
+            installed: findServer(entry.name) !== undefined,
+          })),
+        }),
+    ],
     [
       "POST",
       /^\/api\/mcp\/servers$/,

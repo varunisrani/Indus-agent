@@ -5,9 +5,11 @@ name is checked against the live profiles under the backend's root first, so a d
 (tombstoned) or unknown profile is 404 for reads and writes alike, and no route ever creates the
 folder of a profile that does not exist.
 
-- ``GET /api/profiles``: each live profile with its model, description, whether it has a persona
-  and its bot's forever-chat (``canonical_session: {session_id} | null``, P24-31: the same lookup
-  as ``bots.open``, read only), plus the sticky profile (``active``) and the one this backend
+- ``GET /api/profiles``: each live profile with its model, description, whether it has a persona,
+  how many skills it has turned on (``skill_count``: what ``/api/skills`` lists as enabled; null
+  when its settings or skills cannot be read; W55-F2-2) and its bot's forever-chat
+  (``canonical_session: {session_id} | null``, P24-31: the same lookup as ``bots.open``, read
+  only), plus the sticky profile (``active``) and the one this backend
   serves (``current``).
 - ``POST /api/profiles {name, clone_from?, clone_all?, description?, no_skills?, alias?}``,
   ``PATCH /api/profiles/{name} {new_name}`` and ``DELETE /api/profiles/{name}`` run the real
@@ -59,6 +61,7 @@ from indus.foundation.profiles import (
 )
 from indus.foundation.redact import redact_text
 from indus.foundation.scope import Scope
+from indus.learning.skills.resolver import load_catalog
 from indus.service import bots_rpc
 from indus.web.actions import ActionBusy, Say, actions_of, child_env
 from indus.web.scope import ProfileScopes, ProfileUnknown, scopes_of
@@ -206,6 +209,19 @@ def _write_meta(home: Path, changes: Mapping[str, Any]) -> None:
     fsio.atomic_write_text(home / META_FILE, text, mode=0o600, preserve_mode=False)
 
 
+def _skill_count(scopes: ProfileScopes, pid: str) -> int | None:
+    """How many skills ``pid`` has on (plugin skills aside, as ``/api/skills``); None if unread."""
+    try:
+        scope = scopes.resolve(pid)
+        view = config_module.load(scope)
+        if view.error is not None:
+            return None
+        records = load_catalog(scope.with_config(view)).loadable()
+    except (ProfileUnknown, IndusError, OSError):
+        return None
+    return sum(1 for r in records if r.plugin is None and not r.disabled)
+
+
 def _row(scopes: ProfileScopes, pid: str, sticky: str) -> dict[str, Any]:
     home = profile_home(scopes.base.root, pid)
     model, provider = _model_of(home)
@@ -218,6 +234,7 @@ def _row(scopes: ProfileScopes, pid: str, sticky: str) -> dict[str, Any]:
         "provider": provider or None,
         "description": str(_read_meta(home).get("description") or "") or None,
         "has_persona": (home / PERSONA_FILE).is_file(),
+        "skill_count": _skill_count(scopes, pid),
     }
 
 

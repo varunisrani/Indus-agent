@@ -38,6 +38,18 @@ export interface McpServerRow {
   auth?: string | null;
 }
 
+/** A server preset from `GET /api/mcp/catalog` (what `indus mcp add --preset` writes). */
+export interface McpCatalogRow {
+  name: string;
+  description: string;
+  transport: "stdio" | "http";
+  command: string | null;
+  args: string[];
+  url: string | null;
+  /** This profile has a server of that name already. */
+  installed: boolean;
+}
+
 export interface AgentPluginRow {
   name: string;
   version: string | null;

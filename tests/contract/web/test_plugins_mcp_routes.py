@@ -247,6 +247,23 @@ def test_mcp_add_list_toggle_delete(rest: RestApp, scope: Scope) -> None:
     assert rest.client.delete("/api/mcp/servers/fake").status_code == 404
 
 
+def test_mcp_catalog_lists_the_presets_and_installs_through_the_add_route(rest: RestApp) -> None:
+    """W55-F2-3: the catalogue is ``indus mcp add --preset``'s list; its entry adds as it reads."""
+    from indus.mcp import presets
+
+    rows = rest.client.get("/api/mcp/catalog").json()["entries"]
+    assert [r["name"] for r in rows] == sorted(presets.PRESETS)
+    assert all(r["description"] and r["transport"] == "stdio" for r in rows)
+    assert not any(r["installed"] for r in rows)
+    git = next(r for r in rows if r["name"] == "git")
+    assert {"command": git["command"], "args": git["args"]} == presets.entry("git")
+    body = {"name": "git", "command": git["command"], "args": git["args"]}
+    assert rest.client.post("/api/mcp/servers", json=body).status_code == 201
+    rows = {r["name"]: r for r in rest.client.get("/api/mcp/catalog").json()["entries"]}
+    assert rows["git"]["installed"] is True and rows["memory"]["installed"] is False
+    assert _servers(rest)["git"]["args"] == git["args"]
+
+
 def test_mcp_add_suggests_the_jobs_waiting_for_the_server(rest: RestApp, scope: Scope) -> None:
     """Wave 45 (D-16.981): a skill blueprint waiting for this server becomes a suggestion."""
     from indus.cron.suggestions import SuggestionStore

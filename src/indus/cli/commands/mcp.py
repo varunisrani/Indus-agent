@@ -51,6 +51,8 @@ from indus.mcp.connect import (
     proxy_for_url,
 )
 from indus.mcp.naming import NameFilter
+from indus.mcp.presets import PRESETS
+from indus.mcp.presets import entry as preset_entry
 from indus.providers.auth import browser
 
 __all__ = [
@@ -63,16 +65,6 @@ __all__ = [
     "status_rows",
 ]
 
-PRESETS: Mapping[str, Mapping[str, Any]] = {
-    "filesystem": {
-        "command": "npx",
-        "args": ["-y", "@modelcontextprotocol/server-filesystem", "${workspaceFolder}"],
-    },
-    "memory": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-memory"]},
-    "fetch": {"command": "uvx", "args": ["mcp-server-fetch"]},
-    "git": {"command": "uvx", "args": ["mcp-server-git"]},
-}
-"""Common server shapes for ``add --preset`` (ours; names only, the owner may extend)."""
 
 BODY_CHARS = 200
 TRANSPORT_WIDTH = 34
@@ -347,9 +339,7 @@ def _entry_from_flags(
         raise click.UsageError("give either --command or --url, not both")
     entry: dict[str, Any] = {}
     if preset is not None and not command and not url:
-        entry.update(
-            {k: (list(v) if isinstance(v, list) else v) for k, v in PRESETS[preset].items()}
-        )
+        entry.update(preset_entry(preset))
     if command:
         entry["command"] = command
         if args:

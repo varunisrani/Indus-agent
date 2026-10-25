@@ -250,6 +250,46 @@ describe("capabilities page", () => {
     );
   });
 
+  it("the catalog lists the presets not added yet; Add posts the preset's entry", async () => {
+    const api = backend();
+    api.route("GET", "/api/mcp/catalog", {
+      entries: [
+        {
+          name: "git",
+          description: "Work in a git repository.",
+          transport: "stdio",
+          command: "uvx",
+          args: ["mcp-server-git"],
+          url: null,
+          installed: false,
+        },
+        {
+          name: "memory",
+          description: "A knowledge graph.",
+          transport: "stdio",
+          command: "npx",
+          args: ["-y", "@modelcontextprotocol/server-memory"],
+          url: null,
+          installed: true,
+        },
+      ],
+    });
+    api.route("POST", "/api/mcp/servers", { name: "git" });
+    wrap(<CapabilitiesPage api={api} profile="default" initialTab="connectors" />);
+    await flush();
+    expect(screen.queryByText("No connectors yet")).toBeNull();
+    const list = screen.getByRole("list", { name: "Catalog" });
+    expect(within(list).getByText("git")).toBeTruthy();
+    expect(within(list).queryByText("memory")).toBeNull(); // already added
+    fireEvent.click(within(list).getByRole("button", { name: "Add git" }));
+    await flush();
+    const posted = api.calls.find((c) => c.method === "POST" && c.path === "/api/mcp/servers");
+    expect(posted).toMatchObject({
+      profile: "default",
+      body: { name: "git", command: "uvx", args: ["mcp-server-git"] },
+    });
+  });
+
   it("a connector card opens its dialog; Test reports the tools", async () => {
     const api = backend();
     api.route("GET", "/api/mcp/servers", {

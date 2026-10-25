@@ -77,6 +77,7 @@ __all__ = [
     "handle_blueprint",
     "list_blueprints",
     "match_blueprint",
+    "prefill",
     "seed",
     "skill_blueprints",
 ]
@@ -351,6 +352,25 @@ def fill(bp: Blueprint, given: Mapping[str, object] | None = None) -> dict[str, 
     return {
         "name": bp.title,
         "schedule": schedule,
+        "prompt": _prompt_text(bp, values),
+        "deliver": bp.deliver,
+    }
+
+
+def prefill(bp: Blueprint) -> dict[str, str | None]:
+    """A job spec from the defaults alone, for a form a person finishes (``fill`` refuses gaps).
+
+    A slot with no default stays ``{name}`` in the prompt; ``schedule`` is ``None`` when a
+    schedule slot has no default. Nothing is checked beyond the slots' own defaults.
+    """
+    values = {
+        s.name: s.check(s.default) for s in bp.slots if s.default not in (None, "") or s.optional
+    }
+    timing = [s for s in bp.slots if s.kind in ("time", "weekdays", "interval")]
+    ready = all(values.get(s.name) for s in timing)
+    return {
+        "name": bp.title,
+        "schedule": _schedule_text(bp, values) if ready else None,
         "prompt": _prompt_text(bp, values),
         "deliver": bp.deliver,
     }

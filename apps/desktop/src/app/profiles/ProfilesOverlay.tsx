@@ -35,6 +35,8 @@ interface ProfileRow {
   model?: string | null;
   provider?: string | null;
   has_persona?: boolean;
+  /** Skills the profile has turned on; null when its settings cannot be read (W55-F2-2). */
+  skill_count?: number | null;
 }
 
 /** What rename/delete need from the switcher (the real one, or a test fake). */
@@ -390,7 +392,10 @@ export function ProfilesOverlay(props: {
                           "—"
                         ),
                       ],
-                      [t("prof.skills"), "—"],
+                      [
+                        t("prof.skills"),
+                        typeof row.skill_count === "number" ? String(row.skill_count) : "—",
+                      ],
                     ]}
                   />
                   <PersonaEditor api={api} name={row.name} />

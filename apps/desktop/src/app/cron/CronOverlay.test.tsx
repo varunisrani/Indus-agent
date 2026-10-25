@@ -36,6 +36,18 @@ function backend() {
   api.route("GET", "/api/cron/blueprints", {
     blueprints: [
       {
+        key: "evening-wrap",
+        title: "Evening wrap-up",
+        source: "catalogue",
+        skill: null,
+        description: "Ends the day",
+        schedule: "0 18 * * 1-5",
+        prompt: "Wrap up my day.",
+      },
+      {
+        key: "weekly-review:blueprint",
+        title: "weekly-review",
+        source: "skill",
         skill: "weekly-review",
         description: "Review the week",
         schedule: "0 9 * * 1",
@@ -72,7 +84,7 @@ describe("CronOverlay", () => {
     await screen.findByText("standup notes");
     fireEvent.click(screen.getAllByRole("button", { name: "New cron" })[0] as HTMLElement);
     fireEvent.change(await screen.findByLabelText("Start from"), {
-      target: { value: "weekly-review" },
+      target: { value: "weekly-review:blueprint" },
     });
     // the blueprint's expression is a preset: the summary names it
     expect(screen.getByText("Every Monday at 9:00 AM")).toBeTruthy();
@@ -88,6 +100,26 @@ describe("CronOverlay", () => {
     expect(((created?.body ?? {}) as Record<string, unknown>).model).toBeUndefined();
   });
 
+  it("a starter blueprint prefills its title and prompt and names no skill", async () => {
+    const api = backend();
+    render(<CronOverlay api={api} profile="work" onClose={() => {}} />);
+    fireEvent.click(await screen.findByText("Evening wrap-up"));
+    expect(((await screen.findByLabelText("Start from")) as HTMLSelectElement).value).toBe(
+      "evening-wrap",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Create cron" }));
+    await waitFor(() =>
+      expect(api.calls.some((c) => c.method === "POST" && c.path === "/api/cron/jobs")).toBe(true),
+    );
+    const created = api.calls.find((c) => c.method === "POST" && c.path === "/api/cron/jobs");
+    expect(created?.body).toMatchObject({
+      name: "Evening wrap-up",
+      prompt: "Wrap up my day.",
+      schedule: "0 18 * * 1-5",
+    });
+    expect(((created?.body ?? {}) as Record<string, unknown>).skills).toBeUndefined();
+  });
+
   it("a blueprint row opens the dialog pre-set, and delivery targets become checkboxes", async () => {
     const api = backend();
     api.route("GET", "/api/cron/delivery-targets", {
@@ -100,7 +132,7 @@ describe("CronOverlay", () => {
     render(<CronOverlay api={api} profile="work" onClose={() => {}} />);
     fireEvent.click(await screen.findByText("weekly-review"));
     expect(((await screen.findByLabelText("Start from")) as HTMLSelectElement).value).toBe(
-      "weekly-review",
+      "weekly-review:blueprint",
     );
     await waitFor(() => expect(screen.getByLabelText("This computer")).toBeTruthy());
     expect((screen.getByLabelText(/Slack/) as HTMLInputElement).disabled).toBe(true);

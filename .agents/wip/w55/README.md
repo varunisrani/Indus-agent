@@ -13,3 +13,8 @@
   today's look. 10 rows stay disabled (6 need backend/features, hide code diffs needs a diff view, 3 renderer-only
   follow-ups: app actions side, file browser default, floating composer; vibe hearts).
 - Gate (builder): desktop vitest 182 / 1825; Electron E2E 43 / 2 skipped; tsc 0; check-ipc + bridge ok; tooling.checks ok.
+
+## w55f2.patch — built-in cron blueprints, profiles skill_count, MCP preset catalogue (F2), base a06a405 — LANDED with D-16.1275
+- Lead gate on main be4bf77 + F2: ruff, pyright 0, lint-imports, codegen, tooling.checks, notices, biome, typecheck, ipc ok;
+  vitest 296 files / 3231 passed; Electron E2E 43 / 2 skipped (the lifecycle failure F2 saw did not recur); web Playwright
+  15/15; pytest 18784 passed / 0 failed / 133 skipped; perf 18 / 1 skipped.

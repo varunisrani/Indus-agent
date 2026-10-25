@@ -53,8 +53,8 @@ export function CronDialog(props: {
 }) {
   const t = useT();
   const start = props.blueprint;
-  const [planId, setPlanId] = useState(start?.skill ?? "");
-  const [name, setName] = useState(props.job?.name ?? start?.skill ?? "");
+  const [planId, setPlanId] = useState(start?.key ?? "");
+  const [name, setName] = useState(props.job?.name ?? start?.title ?? "");
   const [prompt, setPrompt] = useState(
     props.job?.prompt ?? (start === undefined ? "" : (start.prompt ?? start.description)),
   );
@@ -65,25 +65,25 @@ export function CronDialog(props: {
   );
   const [deliver, setDeliver] = useState<string[]>(deliverList(props.job?.deliver));
   const [skills, setSkills] = useState<string[]>(
-    props.job?.skills ?? (start === undefined ? [] : [start.skill]),
+    props.job?.skills ?? (start?.skill ? [start.skill] : []),
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const editing = props.job !== undefined;
-  const plan = props.blueprints.find((b) => b.skill === planId);
+  const plan = props.blueprints.find((b) => b.key === planId);
   const pickPlan = (id: string) => {
     setPlanId(id);
-    const next = props.blueprints.find((b) => b.skill === id);
+    const next = props.blueprints.find((b) => b.key === id);
     if (next === undefined) {
       setSkills([]);
       return;
     }
-    setName(next.skill);
+    setName(next.title);
     setPrompt(next.prompt ?? next.description);
     const schedule = next.schedule ?? FREQUENCIES[0][1];
     setFrequency(presetOf(schedule));
     if (presetOf(schedule) === "custom") setCustom(schedule);
-    setSkills([next.skill]);
+    setSkills(next.skill ? [next.skill] : []);
   };
   const schedule = expressionOf(frequency, custom);
   const submit = async () => {
@@ -141,8 +141,8 @@ export function CronDialog(props: {
           <select id="cron-plan" value={planId} onChange={(e) => pickPlan(e.target.value)}>
             <option value="">{t("cron.custom")}</option>
             {props.blueprints.map((b) => (
-              <option key={b.skill} value={b.skill}>
-                {b.skill}
+              <option key={b.key} value={b.key}>
+                {b.title}
               </option>
             ))}
           </select>
