@@ -1,0 +1,1652 @@
+diff --git a/apps/desktop/electron/ipc/channels.ts b/apps/desktop/electron/ipc/channels.ts
+index 36f67a9..99077b9 100644
+--- a/apps/desktop/electron/ipc/channels.ts
++++ b/apps/desktop/electron/ipc/channels.ts
+@@ -179,6 +179,15 @@ export const CHANNELS = [
+     owner: "P24-28",
+   },
+ 
++  // session export (W56-G1): main reads the transcript and writes the file the person chose
++  {
++    name: "indus:sessions:export",
++    kind: "invoke",
++    group: "sessions",
++    method: "exportToFile",
++    owner: "W56-G1",
++  },
++
+   // REST proxy
+   { name: "indus:api", kind: "invoke", group: "api", method: "request", owner: "P20-14" },
+ 
+diff --git a/apps/desktop/electron/ipc/schemas.ts b/apps/desktop/electron/ipc/schemas.ts
+index 5f98414..2484e0c 100644
+--- a/apps/desktop/electron/ipc/schemas.ts
++++ b/apps/desktop/electron/ipc/schemas.ts
+@@ -435,6 +435,8 @@ const tabStrip = z.enum(["auto", "always", "never"]);
+ const textDirection = z.enum(["auto", "rtl", "ltr"]);
+ /** "product" hides raw tool payloads; "technical" shows the arguments and the output. */
+ const toolCallDisplay = z.enum(["product", "technical"]);
++/** Which end of the window band holds the app's own tool cluster (W56-G1). */
++const appActionsSide = z.enum(["right", "left"]);
+ 
+ /** Settings main holds for this device (P20-32); P20-35/36 read them in main. */
+ export const prefsSnapshot = z.object({
+@@ -470,6 +472,12 @@ export const prefsSnapshot = z.object({
+   toolCallDisplay: toolCallDisplay,
+   /** Streamed reasoning stays closed until opened. */
+   collapseThinking: z.boolean(),
++  // Window & layout rows made real in W56-G1.
++  appActionsSide: appActionsSide,
++  /** Show the Files pane whenever the window gets a workspace folder. */
++  fileBrowser: z.boolean(),
++  /** The composer can be dragged out of its dock into a floating card. */
++  floatingComposer: z.boolean(),
+ });
+ 
+ export const prefsPatch = z.strictObject({
+@@ -497,6 +505,9 @@ export const prefsPatch = z.strictObject({
+   hideTimeline: z.boolean().optional(),
+   toolCallDisplay: toolCallDisplay.optional(),
+   collapseThinking: z.boolean().optional(),
++  appActionsSide: appActionsSide.optional(),
++  fileBrowser: z.boolean().optional(),
++  floatingComposer: z.boolean().optional(),
+ });
+ 
+ // -- the table -----------------------------------------------------------------------------------
+@@ -620,6 +631,15 @@ export const SCHEMAS = {
+     response: z.object({ savedTo: z.string() }),
+   },
+ 
++  // only the session id: main fetches the export and asks for the target file itself
++  "indus:sessions:export": {
++    request: z.strictObject({ sessionId: id }),
++    response: z.union([
++      z.strictObject({ saved: z.literal(false) }),
++      z.strictObject({ saved: z.literal(true), fileName: z.string() }),
++    ]),
++  },
++
+   "indus:api": { request: apiRequest, response: apiResult },
+ 
+   "indus:profile:get": { request: none, response: profileState },
+diff --git a/apps/desktop/electron/main.ts b/apps/desktop/electron/main.ts
+index 76739db..f19672f 100644
+--- a/apps/desktop/electron/main.ts
++++ b/apps/desktop/electron/main.ts
+@@ -95,6 +95,7 @@ import {
+   installPermissionPolicy,
+   type PermissionSession,
+ } from "./security/permissions.ts";
++import { installSessionExportIpc } from "./sessions/export.ts";
+ import { mergeLoginShellPath } from "./shellPath.ts";
+ import {
+   acquireSingleInstance,
+@@ -452,6 +453,19 @@ async function boot(): Promise<void> {
+     downloadsDir: () => app.getPath("downloads"),
+     log: logLine,
+   }); // P24-28
++  installSessionExportIpc(context.registry, {
++    request: (request) => backend.proxy.request(request),
++    chooseFile: async (senderId, defaultPath) => {
++      const answer = await paneElectron(windows).showDialog(senderId, {
++        mode: "save",
++        multiple: false,
++        defaultPath,
++      });
++      return answer.canceled ? null : (answer.paths[0] ?? null);
++    },
++    downloadsDir: () => app.getPath("downloads"),
++    log: logLine,
++  }); // W56-G1
+   backendPort = {
+     attachedProfile: () => {
+       const descriptor = backend.orchestrator.current()?.descriptor;
+diff --git a/apps/desktop/electron/prefs.test.ts b/apps/desktop/electron/prefs.test.ts
+index 9f6bb67..e096707 100644
+--- a/apps/desktop/electron/prefs.test.ts
++++ b/apps/desktop/electron/prefs.test.ts
+@@ -51,6 +51,26 @@ describe("desktop preferences", () => {
+     expect(() => applyPatch(DEFAULT_PREFS, { bubbleTransparency: 101 })).toThrow();
+   });
+ 
++  it("window choices (W56-G1): actions right, no file browser, docked composer by default", () => {
++    expect(DEFAULT_PREFS).toMatchObject({
++      appActionsSide: "right",
++      fileBrowser: false,
++      floatingComposer: false,
++    });
++    // an older file without the fields, and one with a bad side
++    expect(readPrefs({ minimizeToTray: true }).appActionsSide).toBe("right");
++    const prefs = readPrefs({ appActionsSide: "top", fileBrowser: true, floatingComposer: "yes" });
++    expect(prefs.appActionsSide).toBe("right");
++    expect(prefs.fileBrowser).toBe(true);
++    expect(prefs.floatingComposer).toBe(false);
++    const next = applyPatch(DEFAULT_PREFS, { appActionsSide: "left", floatingComposer: true });
++    expect(next.appActionsSide).toBe("left");
++    expect(next.floatingComposer).toBe(true);
++    expect(() =>
++      applyPatch(DEFAULT_PREFS, { appActionsSide: "middle" as unknown as "left" }),
++    ).toThrow();
++  });
++
+   it("a patch merges notifications and replaces the binding overrides", () => {
+     const start = applyPatch(DEFAULT_PREFS, { keybindings: { a: "X" } });
+     const next = applyPatch(start, { notifications: { sounds: false }, keybindings: { b: "Y" } });
+diff --git a/apps/desktop/electron/prefs.ts b/apps/desktop/electron/prefs.ts
+index 1303925..26411dd 100644
+--- a/apps/desktop/electron/prefs.ts
++++ b/apps/desktop/electron/prefs.ts
+@@ -36,6 +36,9 @@ export const DEFAULT_PREFS: DesktopPrefsValue = {
+   hideTimeline: false,
+   toolCallDisplay: "technical",
+   collapseThinking: false,
++  appActionsSide: "right",
++  fileBrowser: false,
++  floatingComposer: false,
+ };
+ 
+ function clone(value: DesktopPrefsValue): DesktopPrefsValue {
+diff --git a/apps/desktop/electron/sessions/export.test.ts b/apps/desktop/electron/sessions/export.test.ts
+new file mode 100644
+index 0000000..1f00f10
+--- /dev/null
++++ b/apps/desktop/electron/sessions/export.test.ts
+@@ -0,0 +1,143 @@
++import fs from "node:fs";
++import os from "node:os";
++import path from "node:path";
++import { afterAll, describe, expect, it } from "vitest";
++import type { ApiRequest, ApiResult } from "../api/proxy.ts";
++import { IpcError } from "../ipc/envelope.ts";
++import { SCHEMAS } from "../ipc/schemas.ts";
++import { exportFileName, exportSession, type SessionExportDeps, toJsonLines } from "./export.ts";
++
++const dirs: string[] = [];
++afterAll(() => {
++  for (const dir of dirs) fs.rmSync(dir, { recursive: true, force: true });
++});
++
++const OBJECTS = [
++  { kind: "session", format: "indus.session/1", id: "s-1", title: "Plan" },
++  { kind: "message", session_id: "s-1", role: "user", content: "hello" },
++];
++
++function deps(
++  answer: ApiResult | (() => Promise<ApiResult>),
++  choose: string | null,
++): SessionExportDeps & { asked: ApiRequest[]; dialogs: Array<[number, string]>; lines: string[] } {
++  const asked: ApiRequest[] = [];
++  const dialogs: Array<[number, string]> = [];
++  const lines: string[] = [];
++  return {
++    asked,
++    dialogs,
++    lines,
++    request: async (request) => {
++      asked.push(request);
++      return typeof answer === "function" ? answer() : answer;
++    },
++    chooseFile: async (senderId, defaultPath) => {
++      dialogs.push([senderId, defaultPath]);
++      return choose;
++    },
++    downloadsDir: () => "/home/person/Downloads",
++    log: (line) => lines.push(line),
++  };
++}
++
++const ok = (body: unknown): ApiResult => ({ kind: "response", status: 200, body });
++
++describe("session export (W56-G1)", () => {
++  it("reads the export over the proxy, asks for a file in the sender's window, writes JSON Lines", async () => {
++    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "indus-export-"));
++    dirs.push(dir);
++    const target = path.join(dir, "mine.jsonl");
++    const d = deps(ok({ format: "indus.session/1", session_id: "s-1", objects: OBJECTS }), target);
++    const answer = await exportSession(d, 7, "s-1");
++    expect(answer).toEqual({ saved: true, fileName: "mine.jsonl" });
++    expect(d.asked).toEqual([
++      { method: "GET", path: "/api/sessions/s-1/export", timeoutMs: 120_000 },
++    ]);
++    // the connection's profile comes from main's proxy target, never from the window
++    expect(d.asked[0]?.profile).toBeUndefined();
++    expect(d.dialogs).toEqual([
++      [7, path.join("/home/person/Downloads", "indus-session-s-1.jsonl")],
++    ]);
++    const lines = fs.readFileSync(target, "utf8").trimEnd().split("\n");
++    expect(lines.map((line) => JSON.parse(line))).toEqual(OBJECTS);
++    if (process.platform !== "win32") expect(fs.statSync(target).mode & 0o777).toBe(0o600);
++    expect(d.lines.join("\n")).not.toContain("hello");
++  });
++
++  it("an existing file is replaced and tightened to 0600", async () => {
++    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "indus-export-"));
++    dirs.push(dir);
++    const target = path.join(dir, "old.jsonl");
++    fs.writeFileSync(target, "older", { mode: 0o644 });
++    await exportSession(deps(ok({ objects: OBJECTS }), target), 1, "s-1");
++    expect(fs.readFileSync(target, "utf8")).toContain('"role":"user"');
++    if (process.platform !== "win32") expect(fs.statSync(target).mode & 0o777).toBe(0o600);
++  });
++
++  it("a cancelled dialog writes nothing", async () => {
++    const written: string[] = [];
++    const d = {
++      ...deps(ok({ objects: OBJECTS }), null),
++      write: (file: string) => written.push(file),
++    };
++    expect(await exportSession(d, 3, "s-1")).toEqual({ saved: false });
++    expect(written).toEqual([]);
++  });
++
++  it("the id is encoded in the route and made safe in the default name", async () => {
++    const d = deps(ok({ objects: OBJECTS }), null);
++    await exportSession(d, 3, "a/b c");
++    expect(d.asked[0]?.path).toBe("/api/sessions/a%2Fb%20c/export");
++    expect(exportFileName("a/b c")).toBe("indus-session-a_b_c.jsonl");
++    expect(exportFileName("../..")).toBe("indus-session-.._...jsonl"); // no separator survives
++  });
++
++  it("server failures become errors before any dialog opens", async () => {
++    const missing = deps({ kind: "not-found", status: 404, body: null }, "/x");
++    await expect(exportSession(missing, 1, "gone")).rejects.toMatchObject({ code: "not-found" });
++    expect(missing.dialogs).toEqual([]);
++    const large = deps(
++      {
++        kind: "response",
++        status: 413,
++        body: { detail: { code: "export_too_large", message: "too large here" } },
++      },
++      "/x",
++    );
++    await expect(exportSession(large, 1, "big")).rejects.toMatchObject({
++      code: "too-large",
++      message: "too large here",
++    });
++    const empty = deps(ok({ objects: [] }), "/x");
++    await expect(exportSession(empty, 1, "s")).rejects.toBeInstanceOf(IpcError);
++    expect(empty.dialogs).toEqual([]);
++    const offline = deps(async () => {
++      throw new IpcError("not-connected", "Indus is not connected yet");
++    }, "/x");
++    await expect(exportSession(offline, 1, "s")).rejects.toMatchObject({ code: "not-connected" });
++  });
++
++  it("a failed write answers save-failed", async () => {
++    const d = {
++      ...deps(ok({ objects: OBJECTS }), "/nowhere/x.jsonl"),
++      write: () => {
++        throw new Error("read-only");
++      },
++    };
++    await expect(exportSession(d, 1, "s-1")).rejects.toMatchObject({ code: "save-failed" });
++  });
++
++  it("the window may send only a session id (no path, no profile)", () => {
++    const request = SCHEMAS["indus:sessions:export"].request;
++    expect(request.safeParse({ sessionId: "s-1" }).success).toBe(true);
++    expect(request.safeParse({ sessionId: "s-1", path: "/etc/passwd" }).success).toBe(false);
++    expect(request.safeParse({ sessionId: "s-1", profile: "work" }).success).toBe(false);
++    expect(request.safeParse({ sessionId: "" }).success).toBe(false);
++  });
++
++  it("JSON Lines: one object per line", () => {
++    expect(toJsonLines({ objects: [{ a: 1 }, { b: "x\ny" }] })).toBe('{"a":1}\n{"b":"x\\ny"}\n');
++    expect(() => toJsonLines(null)).toThrow(IpcError);
++  });
++});
+diff --git a/apps/desktop/electron/sessions/export.ts b/apps/desktop/electron/sessions/export.ts
+new file mode 100644
+index 0000000..e8d1504
+--- /dev/null
++++ b/apps/desktop/electron/sessions/export.ts
+@@ -0,0 +1,106 @@
++// Session export through main (W56-G1): the sidebar row's "Export". The window sends only the
++// session id. Main reads the conversation from the server itself (`GET
++// /api/sessions/{id}/export` over the REST proxy, so the current connection's credential and
++// profile apply), asks the person where to put it with the system save dialog (parented to the
++// window that asked), and writes the file there. No path ever comes from the window, and the
++// window gets back only whether a file was written and its name.
++//
++// The file is JSON Lines — one exported object per line, the shape `indus sessions export`
++// writes — so `indus sessions import` reads it back. Mode 0600: a transcript can hold secrets.
++
++import fs from "node:fs";
++import path from "node:path";
++import type { ApiRequest, ApiResult } from "../api/proxy.ts";
++import { IpcError } from "../ipc/envelope.ts";
++import type { IpcRegistry } from "../ipc/registry.ts";
++
++export interface SessionExportDeps {
++  /** The REST proxy (main's own credential; refuses when nothing is connected). */
++  request(request: ApiRequest): Promise<ApiResult>;
++  /** The save dialog for the window `senderId`; the chosen file, or null when cancelled. */
++  chooseFile(senderId: number, defaultPath: string): Promise<string | null>;
++  downloadsDir(): string;
++  write?(file: string, text: string): void;
++  log(line: string): void;
++}
++
++export type ExportAnswer = { saved: false } | { saved: true; fileName: string };
++
++/** A file name that is safe on every platform for `sessionId`. */
++export function exportFileName(sessionId: string): string {
++  const safe = sessionId.replace(/[^A-Za-z0-9._-]+/g, "_").slice(0, 120) || "session";
++  return `indus-session-${safe}.jsonl`;
++}
++
++function serverMessage(body: unknown): string | null {
++  if (body === null || typeof body !== "object") return null;
++  const record = body as Record<string, unknown>;
++  const detail = record.detail;
++  if (detail !== null && typeof detail === "object") {
++    const message = (detail as Record<string, unknown>).message;
++    if (typeof message === "string" && message !== "") return message;
++  }
++  if (typeof record.message === "string" && record.message !== "") return record.message;
++  if (typeof detail === "string" && detail !== "") return detail;
++  return null;
++}
++
++/** The export's objects as JSON Lines (one object per line, a final newline). */
++export function toJsonLines(body: unknown): string {
++  const objects = (body as { objects?: unknown } | null)?.objects;
++  if (!Array.isArray(objects) || objects.length === 0) {
++    throw new IpcError("not-found", "that conversation has nothing to export");
++  }
++  return `${objects.map((item) => JSON.stringify(item)).join("\n")}\n`;
++}
++
++function defaultWrite(file: string, text: string): void {
++  fs.writeFileSync(file, text, { encoding: "utf8", mode: 0o600 });
++  // an existing file keeps its old mode with writeFileSync: tighten it as well
++  try {
++    fs.chmodSync(file, 0o600);
++  } catch {
++    // a file system without modes (FAT, some network shares): the write itself counted
++  }
++}
++
++export async function exportSession(
++  deps: SessionExportDeps,
++  senderId: number,
++  sessionId: string,
++): Promise<ExportAnswer> {
++  const result = await deps.request({
++    method: "GET",
++    path: `/api/sessions/${encodeURIComponent(sessionId)}/export`,
++    timeoutMs: 120_000,
++  });
++  if (result.kind === "not-found") {
++    throw new IpcError("not-found", "no such conversation on this server");
++  }
++  if (result.status !== 200) {
++    throw new IpcError(
++      result.status === 413 ? "too-large" : "export-failed",
++      serverMessage(result.body) ?? `the server answered ${result.status}`,
++    );
++  }
++  const text = toJsonLines(result.body);
++  const file = await deps.chooseFile(
++    senderId,
++    path.join(deps.downloadsDir(), exportFileName(sessionId)),
++  );
++  if (file === null || file === "") return { saved: false };
++  try {
++    (deps.write ?? defaultWrite)(file, text);
++  } catch {
++    deps.log("[sessions] could not write a session export");
++    throw new IpcError("save-failed", "the file could not be written there");
++  }
++  deps.log(`[sessions] exported one conversation (${Buffer.byteLength(text)} bytes)`);
++  return { saved: true, fileName: path.basename(file) };
++}
++
++export function installSessionExportIpc(registry: IpcRegistry, deps: SessionExportDeps): void {
++  registry.handle("indus:sessions:export", (request, context) =>
++    exportSession(deps, context.senderId, request.sessionId),
++  );
++}
+diff --git a/apps/desktop/src/app/App.tsx b/apps/desktop/src/app/App.tsx
+index 0573c2a..8130a40 100644
+--- a/apps/desktop/src/app/App.tsx
++++ b/apps/desktop/src/app/App.tsx
+@@ -89,6 +89,7 @@ export function AppRoutes(props: { slots?: AppSlots }) {
+     main = (
+       <ChatView
+         sessionId={sessionId}
++        floatableComposer
+         composer={slots.composer?.(sessionId)}
+         cards={slots.cards?.(sessionId)}
+         {...(sessionId !== null && slots.retry !== undefined
+diff --git a/apps/desktop/src/app/Shell.tsx b/apps/desktop/src/app/Shell.tsx
+index 9e895d2..885a63f 100644
+--- a/apps/desktop/src/app/Shell.tsx
++++ b/apps/desktop/src/app/Shell.tsx
+@@ -326,6 +326,30 @@ function LeftSidebar(props: {
+                     );
+                   },
+                 })}
++            {...(desktopBridge()?.sessions?.exportToFile === undefined
++              ? {}
++              : {
++                  onExport: (id: string) => {
++                    const sessionsBridge = desktopBridge()?.sessions;
++                    if (sessionsBridge === undefined) return;
++                    // main fetches the conversation and asks where to save it (W56-G1)
++                    void sessionsBridge.exportToFile({ sessionId: id }).then(
++                      (answer) => {
++                        if (answer.saved)
++                          notify({
++                            tone: "success",
++                            title: t("sidebar.exported", { name: answer.fileName }),
++                          });
++                      },
++                      (error: unknown) =>
++                        notify({
++                          tone: "error",
++                          title: t("sidebar.exportFailed"),
++                          message: error instanceof Error ? error.message : String(error),
++                        }),
++                    );
++                  },
++                })}
+             onNewChat={() => navigate(NEW_CHAT_PATH)}
+             events={props.connection}
+             homeDir={launchFacts().homeDir || null}
+diff --git a/apps/desktop/src/chat/ChatView.tsx b/apps/desktop/src/chat/ChatView.tsx
+index 3592f4e..b0b71b1 100644
+--- a/apps/desktop/src/chat/ChatView.tsx
++++ b/apps/desktop/src/chat/ChatView.tsx
+@@ -10,6 +10,7 @@ import { useConnectionState, useMaybeConnectionStore } from "../gateway/react.ts
+ import { useT } from "../i18n/index.tsx";
+ import { useDisplayPrefs } from "../settings/displayPrefs.ts";
+ import { Wordmark } from "../ui/components.tsx";
++import { ComposerDock } from "./ComposerDock.tsx";
+ import type { FailureAction } from "./failure.ts";
+ import type { ErrorItem } from "./messageStream.ts";
+ import { Transcript } from "./Transcript.tsx";
+@@ -22,6 +23,8 @@ export interface ChatViewProps {
+   /** The error card's Retry (slice C sends the failed turn's message again). */
+   onRetry?: (item: ErrorItem) => void;
+   onFailureAction?: (action: FailureAction, item: ErrorItem) => void;
++  /** The main window's chat: the Floating composer setting applies (W56-G1); the HUD's never. */
++  floatableComposer?: boolean;
+ }
+ 
+ /** A note while the watchdog finds the running turn silent (never "finished"). */
+@@ -103,7 +106,11 @@ export function ChatView(props: ChatViewProps) {
+       {connection !== null && sessionId !== null && (
+         <StalledNote connection={connection} sessionId={sessionId} />
+       )}
+-      {props.composer !== undefined && <div className="chat-composer">{props.composer}</div>}
++      {props.composer !== undefined && (
++        <ComposerDock floatable={props.floatableComposer === true && display.floatingComposer}>
++          {props.composer}
++        </ComposerDock>
++      )}
+     </section>
+   );
+ }
+diff --git a/apps/desktop/src/chat/ComposerDock.tsx b/apps/desktop/src/chat/ComposerDock.tsx
+new file mode 100644
+index 0000000..72bccab
+--- /dev/null
++++ b/apps/desktop/src/chat/ComposerDock.tsx
+@@ -0,0 +1,187 @@
++// The composer's dock (W56-G1 "Floating composer"). Docked, the composer sits under the
++// conversation as before. With the setting on, a grip above it lifts it into a card over the
++// conversation: drag the grip to move it (the first few pixels of a drag pull it out of the
++// dock), press the grip to float or dock it, and use the arrow keys on the grip to move a
++// floating one. The card stays inside the chat column. Its place lives in this window only;
++// turning the setting off docks it again.
++
++import {
++  type KeyboardEvent,
++  type PointerEvent,
++  type ReactNode,
++  useEffect,
++  useLayoutEffect,
++  useRef,
++  useState,
++} from "react";
++import { useT } from "../i18n/index.tsx";
++
++export interface FloatPlace {
++  /** px from the chat column's left edge */
++  readonly x: number;
++  /** px from the chat column's top edge */
++  readonly y: number;
++}
++
++interface Size {
++  readonly width: number;
++  readonly height: number;
++}
++
++/** A drag shorter than this is a press, not a move. */
++export const DRAG_THRESHOLD = 4;
++/** How far one arrow key moves a floating composer. */
++export const NUDGE = 16;
++/** How far above its dock a pressed grip lifts the composer. */
++export const LIFT = 96;
++
++/** `place` moved so a `box` there lies inside `area` (top-left wins when it cannot fit). */
++export function clampPlace(place: FloatPlace, box: Size, area: Size): FloatPlace {
++  const x = Math.min(Math.max(0, place.x), Math.max(0, area.width - box.width));
++  const y = Math.min(Math.max(0, place.y), Math.max(0, area.height - box.height));
++  return { x: Math.round(x), y: Math.round(y) };
++}
++
++function sameSpot(a: FloatPlace | null, b: FloatPlace | null): boolean {
++  return a === b || (a !== null && b !== null && a.x === b.x && a.y === b.y);
++}
++
++interface Drag {
++  readonly startX: number;
++  readonly startY: number;
++  readonly fromX: number;
++  readonly fromY: number;
++  moved: boolean;
++}
++
++export function ComposerDock(props: { floatable: boolean; children: ReactNode }) {
++  const t = useT();
++  const ref = useRef<HTMLDivElement>(null);
++  const [place, setPlace] = useState<FloatPlace | null>(null);
++  const drag = useRef<Drag | null>(null);
++  const swallowClick = useRef(false);
++  const floating = props.floatable && place !== null;
++
++  // the setting turned off: dock again
++  useEffect(() => {
++    if (!props.floatable) setPlace(null);
++  }, [props.floatable]);
++
++  /** The dock's box and the chat column's size, relative to the column. */
++  const measure = (): { box: Size & FloatPlace; area: Size } | null => {
++    const own = ref.current;
++    const area = own?.parentElement ?? null;
++    if (own === null || area === null) return null;
++    const a = area.getBoundingClientRect();
++    const b = own.getBoundingClientRect();
++    return {
++      box: { x: b.left - a.left, y: b.top - a.top, width: b.width, height: b.height },
++      area: { width: a.width, height: a.height },
++    };
++  };
++
++  /** Keep a floating card inside the column (after every move, and when the window resizes). */
++  const keepInside = () => {
++    const m = measure();
++    if (m === null) return;
++    setPlace((now) => {
++      if (now === null) return now;
++      const next = clampPlace(now, m.box, m.area);
++      return sameSpot(now, next) ? now : next;
++    });
++  };
++  // biome-ignore lint/correctness/useExhaustiveDependencies: re-checked whenever the place changes
++  useLayoutEffect(() => {
++    if (floating) keepInside();
++  }, [floating, place]);
++  useEffect(() => {
++    if (!floating) return;
++    window.addEventListener("resize", keepInside);
++    return () => window.removeEventListener("resize", keepInside);
++  });
++
++  const onPointerDown = (event: PointerEvent<HTMLButtonElement>) => {
++    if (event.button !== 0) return;
++    const m = measure();
++    drag.current = {
++      startX: event.clientX,
++      startY: event.clientY,
++      fromX: place?.x ?? m?.box.x ?? 0,
++      fromY: place?.y ?? m?.box.y ?? 0,
++      moved: false,
++    };
++    event.currentTarget.setPointerCapture?.(event.pointerId);
++  };
++  const onPointerMove = (event: PointerEvent<HTMLButtonElement>) => {
++    const d = drag.current;
++    if (d === null) return;
++    const dx = event.clientX - d.startX;
++    const dy = event.clientY - d.startY;
++    if (!d.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
++    d.moved = true;
++    setPlace({ x: Math.round(d.fromX + dx), y: Math.round(d.fromY + dy) });
++  };
++  const onPointerUp = (event: PointerEvent<HTMLButtonElement>) => {
++    const d = drag.current;
++    drag.current = null;
++    event.currentTarget.releasePointerCapture?.(event.pointerId);
++    // a drag ends with a click on the grip: it must not dock the card it just moved
++    if (d?.moved === true) swallowClick.current = true;
++  };
++  const onClick = () => {
++    if (swallowClick.current) {
++      swallowClick.current = false;
++      return;
++    }
++    if (floating) {
++      setPlace(null);
++      return;
++    }
++    const m = measure();
++    setPlace(m === null ? { x: 0, y: 0 } : { x: m.box.x, y: Math.max(0, m.box.y - LIFT) });
++  };
++  const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
++    if (!floating || place === null) return;
++    const step: Record<string, [number, number]> = {
++      ArrowLeft: [-NUDGE, 0],
++      ArrowRight: [NUDGE, 0],
++      ArrowUp: [0, -NUDGE],
++      ArrowDown: [0, NUDGE],
++    };
++    const delta = step[event.key];
++    if (delta === undefined) return;
++    event.preventDefault();
++    setPlace({ x: place.x + delta[0], y: place.y + delta[1] });
++  };
++
++  return (
++    <div
++      ref={ref}
++      className="chat-composer"
++      data-floatable={props.floatable ? "true" : undefined}
++      data-floating={floating ? "true" : undefined}
++      style={floating && place !== null ? { left: place.x, top: place.y } : undefined}
++    >
++      {props.floatable && (
++        <button
++          type="button"
++          className="composer-grip"
++          aria-label={t(floating ? "chat.composer.dock" : "chat.composer.float")}
++          title={t(floating ? "chat.composer.dock" : "chat.composer.float")}
++          aria-pressed={floating}
++          onPointerDown={onPointerDown}
++          onPointerMove={onPointerMove}
++          onPointerUp={onPointerUp}
++          onPointerCancel={() => {
++            drag.current = null;
++          }}
++          onClick={onClick}
++          onKeyDown={onKeyDown}
++        >
++          <span aria-hidden="true" />
++        </button>
++      )}
++      {props.children}
++    </div>
++  );
++}
+diff --git a/apps/desktop/src/global.d.ts b/apps/desktop/src/global.d.ts
+index 858e93a..ff2f9a0 100644
+--- a/apps/desktop/src/global.d.ts
++++ b/apps/desktop/src/global.d.ts
+@@ -158,6 +158,9 @@ export type IndusPrefsPatch = {
+   hideTimeline?: boolean;
+   toolCallDisplay?: "product" | "technical";
+   collapseThinking?: boolean;
++  appActionsSide?: "right" | "left";
++  fileBrowser?: boolean;
++  floatingComposer?: boolean;
+ };
+ 
+ export type IndusPrefsSnapshot = {
+@@ -179,6 +182,9 @@ export type IndusPrefsSnapshot = {
+   hideTimeline: boolean;
+   toolCallDisplay: "product" | "technical";
+   collapseThinking: boolean;
++  appActionsSide: "right" | "left";
++  fileBrowser: boolean;
++  floatingComposer: boolean;
+ };
+ 
+ export type IndusProfileState = {
+@@ -485,6 +491,13 @@ export interface IndusDesktopArtifacts {
+   }): Promise<{ savedTo: string }>;
+ }
+ 
++export interface IndusDesktopSessions {
++  /** `indus:sessions:export` (W56-G1) */
++  exportToFile(payload: {
++    sessionId: string;
++  }): Promise<{ saved: false } | { saved: true; fileName: string }>;
++}
++
+ export interface IndusDesktopApi {
+   /** `indus:api` (P20-14) */
+   request(payload: IndusApiRequest): Promise<IndusApiResult>;
+@@ -986,6 +999,7 @@ export interface IndusDesktopBridge {
+   readonly connection: IndusDesktopConnection;
+   readonly connections: IndusDesktopConnections;
+   readonly artifacts: IndusDesktopArtifacts;
++  readonly sessions: IndusDesktopSessions;
+   readonly api: IndusDesktopApi;
+   readonly profile: IndusDesktopProfile;
+   readonly windows: IndusDesktopWindows;
+diff --git a/apps/desktop/src/i18n/en.ts b/apps/desktop/src/i18n/en.ts
+index 6529e25..2adf87f 100644
+--- a/apps/desktop/src/i18n/en.ts
++++ b/apps/desktop/src/i18n/en.ts
+@@ -76,6 +76,8 @@ export const en = {
+   "chat.empty.title": "INDUS AGENT",
+   "chat.empty.body":
+     "Describe a task, ask a question or paste a snippet. Indus keeps the whole session in mind and asks before it guesses.",
++  "chat.composer.float": "Float the message box (drag to move)",
++  "chat.composer.dock": "Dock the message box (drag or arrow keys to move)",
+ 
+   "transcript.label": "Messages",
+   "transcript.showEarlier": "Show earlier messages",
+diff --git a/apps/desktop/src/panes/PaneShell.tsx b/apps/desktop/src/panes/PaneShell.tsx
+index 66cec10..d2218a1 100644
+--- a/apps/desktop/src/panes/PaneShell.tsx
++++ b/apps/desktop/src/panes/PaneShell.tsx
+@@ -37,6 +37,7 @@ import {
+ } from "react";
+ import type { ChatConnection } from "../gateway/connectionStore.ts";
+ import { type MessageKey, useT } from "../i18n/index.tsx";
++import { useDisplayPrefs } from "../settings/displayPrefs.ts";
+ import { LayoutEditor } from "./LayoutEditor.tsx";
+ import { type LayoutStore, withoutUnknown } from "./layoutStore.ts";
+ import {
+@@ -278,6 +279,8 @@ interface ShellContext {
+   bandEdge: string | null;
+   /** Zones whose top edge is the window's top (their header is part of the title band). */
+   topZones: ReadonlySet<string>;
++  /** With the app actions on the left (W56-G1): the top-left zone, whose tabs start after them. */
++  bandStart: string | null;
+ }
+ 
+ /** Panes that draw their own titled header (W52-m): alone in a zone they show no tab strip. */
+@@ -302,6 +305,14 @@ export function bandEndZone(layout: PaneLayout, node: LayoutNode | null): string
+   return pick === undefined ? null : bandEndZone(layout, pick);
+ }
+ 
++/** The top-left zone: the first shown child of a row or a column, down to a zone (W56-G1). */
++export function bandStartZone(layout: PaneLayout, node: LayoutNode | null): string | null {
++  if (node === null) return null;
++  if (node.kind === "zone") return node.id;
++  const pick = node.children.find((child) => !nodeCollapsed(layout, child));
++  return pick === undefined ? null : bandStartZone(layout, pick);
++}
++
+ /** A top zone's box along the band, for placing the tool cluster. */
+ export interface BandZoneBox {
+   readonly id: string;
+@@ -542,6 +553,7 @@ function ZoneView(props: { ctx: ShellContext; zone: ZoneNode }) {
+       data-zone-id={z.id}
+       data-band-end={ctx.bandEnd === z.id ? (ctx.bandInner ? "inner" : "true") : undefined}
+       data-band-edge={ctx.bandEdge === z.id && ctx.bandEnd !== z.id ? "true" : undefined}
++      data-band-start={ctx.bandStart === z.id ? "true" : undefined}
+       data-focused={focused ? "true" : "false"}
+       data-chrome={chrome}
+       data-self-labelled={selfLabelled ? "true" : undefined}
+@@ -922,9 +934,20 @@ export function PaneShell(props: PaneShellProps) {
+     bandInner: false,
+     bandEdge: null,
+     topZones: topZoneIds(layout.root),
++    bandStart: null,
+   };
+   const [band, setBand] = useState<BandPlacement | null>(null);
+-  if (props.toolbar !== false) {
++  // App actions (W56-G1): the band's tool cluster at the pane area's left end instead of at the
++  // window controls; the top-left zone's tabs start after it, the top-right one keeps clear of
++  // the window controls only, and the W55-F1-3 shift does not apply
++  const display = useDisplayPrefs();
++  const actionsLeft = props.toolbar !== false && display.appActionsSide === "left";
++  const actionsLeftRef = useRef(actionsLeft);
++  actionsLeftRef.current = actionsLeft;
++  if (actionsLeft) {
++    ctx.bandStart = bandStartZone(layout, layout.root);
++    ctx.bandEdge = bandEndZone(layout, layout.root);
++  } else if (props.toolbar !== false) {
+     // the measured placement while its zones are still on the band; the tree's guess before
+     const measured =
+       band !== null &&
+@@ -944,6 +967,11 @@ export function PaneShell(props: PaneShellProps) {
+     const host = shellRef.current;
+     const tools = host?.querySelector<HTMLElement>(":scope > .pane-toolbar") ?? null;
+     if (host === null || tools === null) return;
++    if (actionsLeftRef.current) {
++      host.style.removeProperty("--band-shift");
++      setBand(null);
++      return;
++    }
+     // the cluster's box less the shift applied now: its usual place, at the window controls
+     const applied = Number.parseFloat(host.style.getPropertyValue("--band-shift")) || 0;
+     const usual = tools.getBoundingClientRect();
+@@ -969,11 +997,35 @@ export function PaneShell(props: PaneShellProps) {
+     }
+     setBand((before) => (samePlacement(before, next) ? before : next));
+   }, []);
++  // biome-ignore lint/correctness/useExhaustiveDependencies: placed again when the side changes
+   useLayoutEffect(() => {
+     if (props.toolbar === false || layout.root === null || typeof ResizeObserver === "undefined")
+       return;
+     placeBand();
+-  }, [layout, placeBand, props.toolbar]);
++  }, [layout, placeBand, props.toolbar, actionsLeft]);
++  // File browser (W56-G1): each workspace folder the window gets shows the Files pane once;
++  // closing it lasts until the folder changes (or the setting is turned off and on again)
++  const workspace = props.workspace ?? null;
++  const hasFiles = registry.ids().includes("files");
++  const shownFor = useRef<string | null>(null);
++  const store = props.store;
++  useEffect(() => {
++    if (props.toolbar === false) return;
++    if (!display.fileBrowser || workspace === null) {
++      shownFor.current = null;
++      return;
++    }
++    if (!hasFiles || shownFor.current === workspace) return;
++    shownFor.current = workspace;
++    const current = store.layout();
++    const host = zones(current.root).find((z) => z.tabs.includes("files"));
++    const showing =
++      host !== undefined &&
++      host.active === "files" &&
++      !host.minimized &&
++      !isHidden(current, "files");
++    if (!showing) store.open("files");
++  }, [display.fileBrowser, workspace, hasFiles, store, props.toolbar]);
+   useEffect(() => {
+     const host = shellRef.current;
+     const tools = host?.querySelector<HTMLElement>(":scope > .pane-toolbar") ?? null;
+@@ -998,6 +1050,7 @@ export function PaneShell(props: PaneShellProps) {
+     <div
+       className="pane-shell"
+       data-mode={snapshot.mode}
++      data-app-actions={actionsLeft ? "left" : undefined}
+       data-layout-editing={editing ? "true" : undefined}
+       ref={shellRef}
+     >
+diff --git a/apps/desktop/src/panes/panes.css b/apps/desktop/src/panes/panes.css
+index 83c11f1..d075f9f 100644
+--- a/apps/desktop/src/panes/panes.css
++++ b/apps/desktop/src/panes/panes.css
+@@ -29,6 +29,13 @@
+   -webkit-app-region: no-drag;
+ }
+ 
++/* App actions on the left (W56-G1): the cluster at the pane area's left end */
++.pane-shell[data-app-actions="left"] > .pane-toolbar {
++  right: auto;
++  left: 0;
++  padding-right: 8px;
++}
++
+ .pane-toolbar-field {
+   position: relative;
+   display: inline-grid;
+@@ -180,6 +187,11 @@
+   padding-right: calc(var(--band-controls) + 8px);
+ }
+ 
++/* the top-left zone's tabs start after the cluster when it sits on the left (W56-G1) */
++.pane-zone[data-band-start="true"] > .pane-zone-header {
++  padding-left: calc(var(--band-tools-width, 220px) + 16px);
++}
++
+ .pane-tabs {
+   display: flex;
+   flex: 1;
+diff --git a/apps/desktop/src/settings/appearancePages.tsx b/apps/desktop/src/settings/appearancePages.tsx
+index 6b3aab0..5936675 100644
+--- a/apps/desktop/src/settings/appearancePages.tsx
++++ b/apps/desktop/src/settings/appearancePages.tsx
+@@ -38,8 +38,15 @@ type SwitchField =
+   | "reopenLastChat"
+   | "chatBackdrop"
+   | "hideTimeline"
+-  | "collapseThinking";
+-type ChoiceField = "sessionDensity" | "tabStrip" | "textDirection" | "toolCallDisplay";
++  | "collapseThinking"
++  | "fileBrowser"
++  | "floatingComposer";
++type ChoiceField =
++  | "sessionDensity"
++  | "tabStrip"
++  | "textDirection"
++  | "toolCallDisplay"
++  | "appActionsSide";
+ 
+ /** A desktop-pref switch: live once main answered, the "not available" caption when it cannot. */
+ function PrefSwitchRow(props: {
+@@ -707,9 +714,12 @@ export function AppearanceWindowPage() {
+           { value: "never", label: t("settingsA.window.never") },
+         ]}
+       />
+-      <PlaceholderSegmentedRow
++      <PrefChoiceRow
++        handle={handle}
++        rowId="app-actions"
++        field="appActionsSide"
+         title={t("settingsA.window.actions")}
+-        value="right"
++        description={t("settingsA.window.actionsBody")}
+         options={[
+           { value: "right", label: t("settingsA.window.right") },
+           { value: "left", label: t("settingsA.window.left") },
+@@ -744,8 +754,20 @@ export function AppearanceWindowPage() {
+         title={t("settingsA.window.backdrop")}
+         description={t("settingsA.window.backdropBody")}
+       />
+-      <PlaceholderSwitchRow title={t("settingsA.window.files")} />
+-      <PlaceholderSwitchRow title={t("settingsA.window.floating")} />
++      <PrefSwitchRow
++        handle={handle}
++        rowId="file-browser"
++        field="fileBrowser"
++        title={t("settingsA.window.files")}
++        description={t("settingsA.window.filesBody")}
++      />
++      <PrefSwitchRow
++        handle={handle}
++        rowId="floating-composer"
++        field="floatingComposer"
++        title={t("settingsA.window.floating")}
++        description={t("settingsA.window.floatingBody")}
++      />
+     </PageBody>
+   );
+ }
+diff --git a/apps/desktop/src/settings/displayPrefs.css b/apps/desktop/src/settings/displayPrefs.css
+index a337ec0..9103385 100644
+--- a/apps/desktop/src/settings/displayPrefs.css
++++ b/apps/desktop/src/settings/displayPrefs.css
+@@ -102,3 +102,45 @@
+   text-overflow: ellipsis;
+   white-space: nowrap;
+ }
++
++/* Floating composer (W56-G1): the grip above the composer, and the lifted card */
++.composer-grip {
++  display: flex;
++  align-items: center;
++  justify-content: center;
++  width: 100%;
++  height: 12px;
++  margin: 0;
++  padding: 0;
++  border: 0;
++  background: transparent;
++  cursor: grab;
++  touch-action: none;
++}
++
++.composer-grip > span {
++  width: 36px;
++  height: 4px;
++  border-radius: 2px;
++  background: var(--desk-stroke-3);
++}
++
++.composer-grip:hover > span,
++.composer-grip:focus-visible > span {
++  background: var(--desk-fg-3);
++}
++
++.composer-grip:active {
++  cursor: grabbing;
++}
++
++.chat-composer[data-floating="true"] {
++  position: absolute;
++  z-index: 6;
++  width: min(640px, calc(100% - 32px));
++  padding: 0 8px 8px;
++  border: 1px solid var(--desk-stroke-2);
++  border-radius: var(--desk-radius-card);
++  background: var(--desk-bg-canvas);
++  box-shadow: var(--desk-shadow-menu);
++}
+diff --git a/apps/desktop/src/settings/displayPrefs.test.tsx b/apps/desktop/src/settings/displayPrefs.test.tsx
+index 1210534..17657dc 100644
+--- a/apps/desktop/src/settings/displayPrefs.test.tsx
++++ b/apps/desktop/src/settings/displayPrefs.test.tsx
+@@ -186,10 +186,22 @@ describe("Settings rows (W55-F3)", () => {
+       fireEvent.click(control("Chat backdrop"));
+     });
+     expect(set).toHaveBeenLastCalledWith({ chatBackdrop: true });
+-    for (const name of ["File browser", "Floating composer"]) {
+-      expect(control(name).disabled).toBe(true);
+-    }
+-    expect(screen.getByRole("radio", { name: "Left" }).closest("fieldset")?.disabled).toBe(true);
++    // W56-G1: the last three rows of the page are live too
++    expect(screen.getByRole("radio", { name: "Left" }).closest("fieldset")?.disabled).toBe(false);
++    await act(async () => {
++      fireEvent.click(screen.getByRole("radio", { name: "Left" }));
++    });
++    expect(set).toHaveBeenLastCalledWith({ appActionsSide: "left" });
++    expect(control("File browser").checked).toBe(false);
++    await act(async () => {
++      fireEvent.click(control("File browser"));
++    });
++    expect(set).toHaveBeenLastCalledWith({ fileBrowser: true });
++    expect(control("Floating composer").checked).toBe(false);
++    await act(async () => {
++      fireEvent.click(control("Floating composer"));
++    });
++    expect(set).toHaveBeenLastCalledWith({ floatingComposer: true });
+   });
+ });
+ 
+diff --git a/apps/desktop/src/settings/displayPrefs.ts b/apps/desktop/src/settings/displayPrefs.ts
+index 1931c74e..48a0dda 100644
+--- a/apps/desktop/src/settings/displayPrefs.ts
++++ b/apps/desktop/src/settings/displayPrefs.ts
+@@ -1,5 +1,5 @@
+-// The display preferences this window draws with (W55-F3): the renderer-only rows of Settings ›
+-// Appearance (General, Window & layout, Chat display). Main keeps them in the desktop prefs file;
++// The display preferences this window draws with (W55-F3, W56-G1): the renderer-only rows of
++// Settings › Appearance (General, Window & layout, Chat display). Main keeps them in the desktop prefs file;
+ // `PrefsEffects` reads that once per window and publishes it here, so every transcript row, the
+ // sidebar and the shell read one snapshot instead of each asking main.
+ 
+@@ -18,6 +18,9 @@ export type DisplayPrefs = Pick<
+   | "hideTimeline"
+   | "toolCallDisplay"
+   | "collapseThinking"
++  | "appActionsSide"
++  | "fileBrowser"
++  | "floatingComposer"
+ >;
+ 
+ /** What a window draws before main answers (and without a bridge): the same as main's defaults. */
+@@ -32,6 +35,9 @@ export const DISPLAY_DEFAULTS: DisplayPrefs = {
+   hideTimeline: false,
+   toolCallDisplay: "technical",
+   collapseThinking: false,
++  appActionsSide: "right",
++  fileBrowser: false,
++  floatingComposer: false,
+ };
+ 
+ let current: DisplayPrefs = DISPLAY_DEFAULTS;
+diff --git a/apps/desktop/src/settings/pages.ts b/apps/desktop/src/settings/pages.ts
+index c845d67..5450294 100644
+--- a/apps/desktop/src/settings/pages.ts
++++ b/apps/desktop/src/settings/pages.ts
+@@ -867,6 +867,30 @@ export const MANIFEST: readonly ManifestRow[] = [
+     description: "settingsA.window.backdropBody",
+     keywords: ["backdrop", "background", "wordmark", "watermark"],
+   },
++  {
++    id: "app-actions",
++    view: "appearance",
++    page: "window",
++    label: "settingsA.window.actions",
++    description: "settingsA.window.actionsBody",
++    keywords: ["title bar", "band", "settings button", "layout", "left", "right"],
++  },
++  {
++    id: "file-browser",
++    view: "appearance",
++    page: "window",
++    label: "settingsA.window.files",
++    description: "settingsA.window.filesBody",
++    keywords: ["files", "file tree", "explorer", "workspace", "folder", "startup"],
++  },
++  {
++    id: "floating-composer",
++    view: "appearance",
++    page: "window",
++    label: "settingsA.window.floating",
++    description: "settingsA.window.floatingBody",
++    keywords: ["composer", "floating", "drag", "dock", "message box", "input"],
++  },
+   {
+     id: "message-bubble",
+     view: "appearance",
+diff --git a/apps/desktop/src/settings/stringsA.en.ts b/apps/desktop/src/settings/stringsA.en.ts
+index 1c0bb10..65d6b2c 100644
+--- a/apps/desktop/src/settings/stringsA.en.ts
++++ b/apps/desktop/src/settings/stringsA.en.ts
+@@ -227,12 +227,18 @@ export const SETTINGS_A_STRINGS = {
+   "settingsA.window.always": "Always",
+   "settingsA.window.never": "Never",
+   "settingsA.window.actions": "App actions",
++  "settingsA.window.actionsBody":
++    "Which end of the top band holds settings, layouts and the pane buttons. Left frees the right end for pane tabs next to the window controls.",
+   "settingsA.window.right": "Right",
+   "settingsA.window.left": "Left",
+   "settingsA.window.backdrop": "Chat backdrop",
+   "settingsA.window.backdropBody": "A faint Indus wordmark behind the conversation.",
+   "settingsA.window.files": "File browser",
++  "settingsA.window.filesBody":
++    "Open the Files pane beside the chat whenever this window works in a folder. Closing it lasts until you switch to another folder.",
+   "settingsA.window.floating": "Floating composer",
++  "settingsA.window.floatingBody":
++    "Give the message box a grip so it can be lifted off the bottom and moved over the chat. Off keeps it docked.",
+ 
+   // Appearance › Chat display
+   "settingsA.display.bubble": "Message bubble",
+diff --git a/apps/desktop/src/settings/windowPrefs.test.tsx b/apps/desktop/src/settings/windowPrefs.test.tsx
+new file mode 100644
+index 0000000..45e8aae
+--- /dev/null
++++ b/apps/desktop/src/settings/windowPrefs.test.tsx
+@@ -0,0 +1,297 @@
++// @vitest-environment jsdom
++// The Window & layout rows made real in W56-G1: App actions (the band cluster's side), File
++// browser (Files shown when a workspace arrives), Floating composer (the dock's grip), and the
++// session row menu's Export.
++import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
++import { MemoryRouter } from "react-router";
++import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
++import { ChatView } from "../chat/ChatView.tsx";
++import { ComposerDock, clampPlace, LIFT, NUDGE } from "../chat/ComposerDock.tsx";
++import { TranscriptStoreProvider } from "../chat/transcriptReact.tsx";
++import { type TranscriptSource, TranscriptStore } from "../chat/transcriptStore.ts";
++import { LayoutStore, type StorageLike } from "../panes/layoutStore.ts";
++import { PaneRegistry, PaneRegistryProvider, PaneShell } from "../panes/PaneShell.tsx";
++import { allPanes, zoneOf } from "../panes/paneTree.ts";
++import { SessionRowMenu } from "../sidebar/SessionRowMenu.tsx";
++import { DISPLAY_DEFAULTS, publishDisplayPrefs, resetDisplayPrefs } from "./displayPrefs.ts";
++
++function memory(): StorageLike {
++  const data = new Map<string, string>();
++  return {
++    getItem: (key) => data.get(key) ?? null,
++    setItem: (key, value) => {
++      data.set(key, value);
++    },
++    removeItem: (key) => {
++      data.delete(key);
++    },
++  };
++}
++
++function shell(options: { preset?: boolean } = {}) {
++  const registry = new PaneRegistry();
++  registry.register({ id: "files", stateful: false, render: () => <p>file tree</p> });
++  registry.register({ id: "review", stateful: false, render: () => <p>diffs</p> });
++  registry.register({ id: "preview", stateful: true, render: () => <p>page</p> });
++  const store = new LayoutStore({ storage: memory(), available: () => registry.ids() });
++  if (options.preset === true) store.applyPreset("default");
++  const ui = (workspace: string | null) => (
++    <PaneRegistryProvider registry={registry}>
++      <PaneShell
++        store={store}
++        chat={<p>the chat</p>}
++        sessionId="s1"
++        profile="default"
++        workspace={workspace}
++      />
++    </PaneRegistryProvider>
++  );
++  const view = render(ui(null));
++  return { store, view, show: (workspace: string | null) => view.rerender(ui(workspace)) };
++}
++
++const filesShowing = (store: LayoutStore) =>
++  zoneOf(store.layout().root, "files")?.active === "files";
++
++beforeEach(() => resetDisplayPrefs());
++afterEach(() => {
++  cleanup();
++  resetDisplayPrefs();
++  vi.restoreAllMocks();
++});
++
++describe("App actions (W56-G1)", () => {
++  it("right by default; left moves the cluster and marks the top-left zone for its tabs", () => {
++    const { view } = shell({ preset: true });
++    const host = view.container.querySelector(".pane-shell") as HTMLElement;
++    expect(host.dataset.appActions).toBeUndefined();
++    expect(view.container.querySelector("[data-band-start]")).toBeNull();
++    expect(view.container.querySelector("[data-band-end]")).not.toBeNull();
++    act(() => publishDisplayPrefs({ ...DISPLAY_DEFAULTS, appActionsSide: "left" }));
++    expect(host.dataset.appActions).toBe("left");
++    const start = view.container.querySelector("[data-band-start='true']") as HTMLElement;
++    expect(start).not.toBeNull();
++    // the left-most top zone holds the chat in the default preset
++    expect(start.textContent).toContain("the chat");
++    expect(view.container.querySelector("[data-band-end]")).toBeNull();
++    // the top-right zone keeps clear of the window controls
++    expect(view.container.querySelector("[data-band-edge='true']")).not.toBeNull();
++    expect(host.style.getPropertyValue("--band-shift")).toBe("");
++    act(() => publishDisplayPrefs({ ...DISPLAY_DEFAULTS, appActionsSide: "right" }));
++    expect(host.dataset.appActions).toBeUndefined();
++    expect(view.container.querySelector("[data-band-start]")).toBeNull();
++  });
++});
++
++describe("File browser (W56-G1)", () => {
++  it("off by default: a workspace leaves the layout alone", () => {
++    const { store, show } = shell();
++    show("/home/me/repo");
++    expect(allPanes(store.layout().root)).not.toContain("files");
++  });
++
++  it("on: each new workspace shows Files once; closing it lasts until the folder changes", () => {
++    const { store, show } = shell();
++    act(() => publishDisplayPrefs({ ...DISPLAY_DEFAULTS, fileBrowser: true }));
++    expect(allPanes(store.layout().root)).not.toContain("files"); // no workspace yet
++    show("/home/me/repo");
++    expect(filesShowing(store)).toBe(true);
++    act(() => store.close("files"));
++    show("/home/me/repo");
++    expect(allPanes(store.layout().root)).not.toContain("files");
++    show("/home/me/other");
++    expect(filesShowing(store)).toBe(true);
++  });
++
++  it("turning it on with a workspace set shows Files at once; Simple mode never does", () => {
++    const { store, show } = shell();
++    show("/home/me/repo");
++    act(() => publishDisplayPrefs({ ...DISPLAY_DEFAULTS, fileBrowser: true }));
++    expect(filesShowing(store)).toBe(true);
++    act(() => store.close("files"));
++    act(() => store.setMode("simple"));
++    show("/home/me/elsewhere");
++    expect(allPanes(store.layout().root)).not.toContain("files");
++  });
++});
++
++// -- the floating composer -------------------------------------------------------------------------
++
++/** jsdom has no layout: the chat column is 800×600 and the dock sits at its bottom. */
++function fakeBoxes() {
++  vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
++    const el = this as HTMLElement;
++    if (el.classList.contains("column")) return new DOMRect(0, 0, 800, 600);
++    if (el.classList.contains("chat-composer")) {
++      if (el.dataset.floating === "true") {
++        return new DOMRect(
++          Number.parseFloat(el.style.left) || 0,
++          Number.parseFloat(el.style.top) || 0,
++          640,
++          80,
++        );
++      }
++      return new DOMRect(16, 510, 768, 80);
++    }
++    return new DOMRect(0, 0, 0, 0);
++  });
++}
++
++function dock(floatable: boolean) {
++  return (
++    <section className="column">
++      <ComposerDock floatable={floatable}>
++        <textarea aria-label="Message" />
++      </ComposerDock>
++    </section>
++  );
++}
++
++const card = () => document.querySelector(".chat-composer") as HTMLElement;
++
++describe("Floating composer (W56-G1)", () => {
++  it("off: no grip, the composer stays docked", () => {
++    render(dock(false));
++    expect(screen.queryByRole("button", { name: /Float the message box/ })).toBeNull();
++    expect(card().dataset.floating).toBeUndefined();
++  });
++
++  it("the grip floats the composer above its dock and docks it again", () => {
++    fakeBoxes();
++    render(dock(true));
++    const grip = screen.getByRole("button", { name: /Float the message box/ });
++    expect(grip.getAttribute("aria-pressed")).toBe("false");
++    fireEvent.click(grip);
++    expect(card().dataset.floating).toBe("true");
++    expect(card().style.top).toBe(`${510 - LIFT}px`);
++    expect(card().style.left).toBe("16px");
++    const docker = screen.getByRole("button", { name: /Dock the message box/ });
++    expect(docker.getAttribute("aria-pressed")).toBe("true");
++    fireEvent.click(docker);
++    expect(card().dataset.floating).toBeUndefined();
++    expect(card().style.top).toBe("");
++  });
++
++  it("a drag pulls it out of the dock and moves it; the click that ends a drag does not dock", () => {
++    fakeBoxes();
++    render(dock(true));
++    const grip = screen.getByRole("button", { name: /Float the message box/ });
++    fireEvent.pointerDown(grip, { button: 0, clientX: 100, clientY: 520, pointerId: 1 });
++    fireEvent.pointerMove(grip, { clientX: 101, clientY: 519, pointerId: 1 }); // under the threshold
++    expect(card().dataset.floating).toBeUndefined();
++    fireEvent.pointerMove(grip, { clientX: 140, clientY: 300, pointerId: 1 });
++    expect(card().dataset.floating).toBe("true");
++    expect(card().style.left).toBe("56px");
++    expect(card().style.top).toBe("290px");
++    fireEvent.pointerUp(grip, { clientX: 140, clientY: 300, pointerId: 1 });
++    fireEvent.click(grip);
++    expect(card().dataset.floating).toBe("true");
++    // dragged far right and down: kept inside the column (800 - 640, 600 - 80)
++    fireEvent.pointerDown(grip, { button: 0, clientX: 140, clientY: 300, pointerId: 2 });
++    fireEvent.pointerMove(grip, { clientX: 2000, clientY: 2000, pointerId: 2 });
++    fireEvent.pointerUp(grip, { pointerId: 2 });
++    expect(card().style.left).toBe("160px");
++    expect(card().style.top).toBe("520px");
++  });
++
++  it("arrow keys move a floating composer; turning the setting off docks it", () => {
++    fakeBoxes();
++    const view = render(dock(true));
++    const grip = screen.getByRole("button", { name: /Float the message box/ });
++    fireEvent.keyDown(grip, { key: "ArrowRight" }); // docked: nothing to move
++    expect(card().dataset.floating).toBeUndefined();
++    fireEvent.click(grip);
++    fireEvent.keyDown(grip, { key: "ArrowRight" });
++    fireEvent.keyDown(grip, { key: "ArrowUp" });
++    expect(card().style.left).toBe(`${16 + NUDGE}px`);
++    expect(card().style.top).toBe(`${510 - LIFT - NUDGE}px`);
++    view.rerender(dock(false));
++    expect(card().dataset.floating).toBeUndefined();
++    expect(screen.queryByRole("button", { name: /message box/ })).toBeNull();
++  });
++
++  it("clampPlace keeps the card inside, top-left first when it cannot fit", () => {
++    const area = { width: 800, height: 600 };
++    const box = { width: 640, height: 80 };
++    expect(clampPlace({ x: -20, y: -5 }, box, area)).toEqual({ x: 0, y: 0 });
++    expect(clampPlace({ x: 500, y: 900 }, box, area)).toEqual({ x: 160, y: 520 });
++    expect(clampPlace({ x: 50, y: 50 }, { width: 900, height: 700 }, area)).toEqual({
++      x: 0,
++      y: 0,
++    });
++  });
++
++  it("only the main window's chat view offers the grip (the HUD keeps its own composer)", () => {
++    const source: TranscriptSource = {
++      history: async () => ({ messages: [], total: 0 }),
++      onEvent: () => () => undefined,
++    } as unknown as TranscriptSource;
++    const store = new TranscriptStore(source);
++    const view = (floatable: boolean) => (
++      <MemoryRouter>
++        <TranscriptStoreProvider store={store}>
++          <ChatView
++            sessionId={null}
++            composer={<textarea aria-label="Message" />}
++            {...(floatable ? { floatableComposer: true } : {})}
++          />
++        </TranscriptStoreProvider>
++      </MemoryRouter>
++    );
++    const shown = render(view(true));
++    expect(screen.queryByRole("button", { name: /Float the message box/ })).toBeNull(); // pref off
++    act(() => publishDisplayPrefs({ ...DISPLAY_DEFAULTS, floatingComposer: true }));
++    expect(screen.getByRole("button", { name: /Float the message box/ })).toBeTruthy();
++    shown.rerender(view(false));
++    expect(screen.queryByRole("button", { name: /Float the message box/ })).toBeNull();
++  });
++});
++
++// -- Export in the row menu ------------------------------------------------------------------------
++
++describe("session row menu Export (W56-G1)", () => {
++  const base = {
++    rename: () => undefined,
++    togglePin: () => undefined,
++    toggleUnread: () => undefined,
++    copyId: () => undefined,
++    toggleArchive: () => undefined,
++    remove: () => undefined,
++  };
++
++  it("offers Export when the window can export, and runs it after closing the menu", () => {
++    const exportFile = vi.fn();
++    const onClose = vi.fn();
++    render(
++      <SessionRowMenu
++        x={10}
++        y={10}
++        title="Plan"
++        pinned={false}
++        unread={false}
++        archived={false}
++        actions={{ ...base, exportFile }}
++        onClose={onClose}
++      />,
++    );
++    fireEvent.click(screen.getByRole("menuitem", { name: /Export/ }));
++    expect(onClose).toHaveBeenCalled();
++    expect(exportFile).toHaveBeenCalledTimes(1);
++  });
++
++  it("no Export item without an exporter", () => {
++    render(
++      <SessionRowMenu
++        x={10}
++        y={10}
++        title="Plan"
++        pinned={false}
++        unread={false}
++        archived={false}
++        actions={base}
++        onClose={() => undefined}
++      />,
++    );
++    expect(screen.queryByRole("menuitem", { name: /Export/ })).toBeNull();
++  });
++});
+diff --git a/apps/desktop/src/sidebar/SessionRowMenu.tsx b/apps/desktop/src/sidebar/SessionRowMenu.tsx
+index 80cce4c..0784c85 100644
+--- a/apps/desktop/src/sidebar/SessionRowMenu.tsx
++++ b/apps/desktop/src/sidebar/SessionRowMenu.tsx
+@@ -1,12 +1,13 @@
+ // The sidebar row's menu (W52-h): right-click a session row, or Shift+F10 / the context-menu key on
+ // a focused one. Only actions Indus really has: open in a floating window, rename, pin, unread,
+-// copy the id, branch (`session.branch`, W54-D1-8), archive, delete (W52-h-4 lists what the
+-// reference has that we leave out).
++// copy the id, branch (`session.branch`, W54-D1-8), export (main writes the file, W56-G1),
++// archive, delete (W52-h-4 lists what the reference has that we leave out).
+ 
+ import {
+   Archive,
+   ArchiveRestore,
+   Copy,
++  Download,
+   ExternalLink,
+   GitBranch,
+   Mail,
+@@ -27,6 +28,8 @@ export interface RowMenuActions {
+   copyId: () => void;
+   /** Start a new chat from this one's history (absent: no connection to ask). */
+   branch?: (() => void) | undefined;
++  /** Save the conversation to a file the person picks (absent: no desktop bridge). */
++  exportFile?: (() => void) | undefined;
+   toggleArchive: () => void;
+   remove: () => void;
+ }
+@@ -84,15 +87,20 @@ export function SessionRowMenu(props: {
+         label={t("sidebar.menu.copyId")}
+         onSelect={run(a.copyId)}
+       />
++      {(a.branch !== undefined || a.exportFile !== undefined) && <MenuSeparator />}
+       {a.branch !== undefined && (
+-        <>
+-          <MenuSeparator />
+-          <MenuRow
+-            icon={<GitBranch aria-hidden="true" />}
+-            label={t("sidebar.menu.branch")}
+-            onSelect={run(a.branch)}
+-          />
+-        </>
++        <MenuRow
++          icon={<GitBranch aria-hidden="true" />}
++          label={t("sidebar.menu.branch")}
++          onSelect={run(a.branch)}
++        />
++      )}
++      {a.exportFile !== undefined && (
++        <MenuRow
++          icon={<Download aria-hidden="true" />}
++          label={t("sidebar.menu.export")}
++          onSelect={run(a.exportFile)}
++        />
+       )}
+       <MenuSeparator />
+       <MenuRow
+diff --git a/apps/desktop/src/sidebar/Sidebar.tsx b/apps/desktop/src/sidebar/Sidebar.tsx
+index e7cd304..218c6eb 100644
+--- a/apps/desktop/src/sidebar/Sidebar.tsx
++++ b/apps/desktop/src/sidebar/Sidebar.tsx
+@@ -149,6 +149,8 @@ export interface SidebarProps {
+   onPopOut?(sessionId: string): void;
+   /** Branch the conversation (`session.branch`, W54-D1-8); no menu item without it. */
+   onBranch?(sessionId: string): void;
++  /** Export the conversation to a file (main asks where, W56-G1); no menu item without it. */
++  onExport?(sessionId: string): void;
+   onNewChat(): void;
+   events?: EventSource | null;
+   /** The default root of the repo scan. */
+@@ -218,6 +220,7 @@ interface RowHost {
+   onOpen(id: string): void;
+   onPopOut?: ((id: string) => void) | undefined;
+   onBranch?: ((id: string) => void) | undefined;
++  onExport?: ((id: string) => void) | undefined;
+   onDelete(row: SessionRow): void;
+ }
+ 
+@@ -386,6 +389,7 @@ function SessionItem(
+             toggleUnread: () => (unread ? list.markSeen(row) : list.markUnread(row)),
+             copyId: () => void copyText(row.durableId),
+             branch: props.onBranch === undefined ? undefined : () => props.onBranch?.(row.id),
++            exportFile: props.onExport === undefined ? undefined : () => props.onExport?.(row.id),
+             toggleArchive: () => void list.setArchived(row, !row.archived),
+             remove: () => props.onDelete(row),
+           }}
+@@ -638,6 +642,7 @@ export function Sidebar(props: SidebarProps) {
+     onOpen: openSession,
+     onPopOut: props.onPopOut,
+     onBranch: props.onBranch,
++    onExport: props.onExport,
+     onDelete: (row: SessionRow) => setDeleting(row),
+   };
+   const confirmDelete = async () => {
+diff --git a/apps/desktop/src/sidebar/strings.en.ts b/apps/desktop/src/sidebar/strings.en.ts
+index 4c458e3..cdf3c63 100644
+--- a/apps/desktop/src/sidebar/strings.en.ts
++++ b/apps/desktop/src/sidebar/strings.en.ts
+@@ -64,6 +64,9 @@ export const SIDEBAR_STRINGS = {
+   "sidebar.menu.copyId": "Copy ID",
+   "sidebar.menu.branch": "Branch",
+   "sidebar.branchFailed": "Could not branch this chat",
++  "sidebar.menu.export": "Export…",
++  "sidebar.exported": "Chat exported to {name}",
++  "sidebar.exportFailed": "Could not export this chat",
+   "sidebar.menu.archive": "Archive",
+   "sidebar.menu.unarchive": "Unarchive",
+   "sidebar.menu.delete": "Delete",
+diff --git a/docs/notes/ui-parity/w56-g1-desktop-prefs-export.md b/docs/notes/ui-parity/w56-g1-desktop-prefs-export.md
+new file mode 100644
+index 0000000..7a3da1a
+--- /dev/null
++++ b/docs/notes/ui-parity/w56-g1-desktop-prefs-export.md
+@@ -0,0 +1,107 @@
++# Task: Desktop window prefs + session Export (W56-G1) Phase: ui-parity Owner: builder w56g1
++
++Status: Done for wave 56 (2026-10-25); see the end.
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`):
++`apps/desktop/src/app/settings/settings-manifest.ts` (the appActions / fileBrowser / composerPopout
++entries: page and search words only), `apps/desktop/src/i18n/en.ts` (the three rows' one-line
++descriptions, to learn what each row means), a name search for "floating composer" / "file browser"
++/ "app actions" over `apps/desktop/src` (file names and comments only, no component code opened).
++Evidence: the wave-53 desktop compare set, slugs `settings-appearance-window-and-layout--{light,dark}`
++(reference and ours), `context-menu--{light,dark}`, and `$S/compare/deliver/gaps.md` (lines for
++those slugs). Nothing copied; the rows and the IPC below are written from this note.
++
++What it does (own words):
++- Settings › Appearance › Window & layout gets the last three rows that were disabled since W55-F3,
++  each a desktop pref kept by main (one file per device), defaults keeping today's look:
++  - **App actions** (Right | Left): where the window band's own tool cluster sits — settings,
++    layout preset, layout editor, Files / Review toggles, Simple / Advanced. Right (default) is
++    today: at the window controls. Left puts the cluster at the left end of the pane area; the
++    top-left zone's tabs then start after it and the top-right zone keeps clear of the window
++    controls only.
++  - **File browser** (off by default): when on, each time the window gets a workspace folder (at
++    start, or on opening a chat in another folder) the Files pane is shown beside the chat;
++    turning it on with a workspace already set shows it at once. Off leaves the layout alone.
++  - **Floating composer** (off by default): when on, the composer carries a grip; dragging the
++    grip lifts the composer off the bottom into a card over the conversation, kept inside the
++    chat column; the grip as a button floats / docks it (keyboard: Enter or Space; the arrow keys
++    move a floating one). Off docks it again and hides the grip. The HUD keeps its own composer.
++- The session row menu gains **Export**: the renderer sends only the session id; main reads the
++  conversation from the server (`GET /api/sessions/{id}/export` over the REST proxy, the current
++  connection and its profile), asks where to save with the system save dialog (parented to the
++  asking window, a default name in Downloads), and writes the file there. The window never names
++  a path and never sees the file's contents.
++
++Inputs → outputs: Settings rows → `indus:prefs:set {appActionsSide | fileBrowser |
++floatingComposer}` → `indus:prefs:changed` → the display store → `.pane-shell[data-app-actions]`,
++a `store.open("files")`, the composer dock's grip. Row menu Export → `indus:sessions:export
++{sessionId}` → main: REST GET → save dialog → file (JSON Lines, the same objects `indus sessions
++export` writes, so `indus sessions import` reads it back) → `{saved: false}` or `{saved: true,
++fileName}` → a toast.
++
++Files: apps/desktop/electron/{prefs.ts,prefs.test.ts,ipc/schemas.ts,ipc/channels.ts,main.ts},
++apps/desktop/electron/sessions/{export.ts,export.test.ts} (new), apps/desktop/src/global.d.ts
++(generated), apps/desktop/src/settings/{displayPrefs.ts,appearancePages.tsx,stringsA.en.ts,…},
++apps/desktop/src/panes/{PaneShell.tsx,panes.css}, apps/desktop/src/chat/{ChatView.tsx,
++ComposerDock.tsx (new)}, apps/desktop/src/app/{App.tsx,Shell.tsx}, apps/desktop/src/sidebar/
++{SessionRowMenu.tsx,Sidebar.tsx,strings.en.ts}, tests beside them.
++
++Edge cases / failure modes:
++- A prefs file from an older build has none of the three fields: the defaults apply (readPrefs).
++- File browser with no Files pane registered or in Simple mode (Files hidden): nothing opens.
++- The same workspace again (re-render, same chat): no reopen, so closing Files sticks until the
++  folder changes.
++- Floating composer: a window resize can leave the card outside the column; it is clamped back on
++  the next move, and a column narrower than the card docks nothing (the card shrinks to the
++  column). Turning the pref off while floating docks it.
++- Export: no connection → "not connected" error toast; 404 → "no such session"; 413 → the server's
++  "too large here" message; cancel → nothing written, no toast; a write failure → error toast. The
++  dialog is parented to the sender's window only when main knows that web contents.
++
++Our design differences / decisions:
++- W56-G1-1 App actions moves our band cluster (the reference's moves its own titlebar actions).
++  The W55-F1-3 "shift to a wider zone" placement applies on the right only; on the left the
++  cluster always sits at the pane area's start.
++- W56-G1-2 File browser: the band's Files toggle does not write the setting (the reference's
++  titlebar toggle does). Our layout already persists per mode, so the toggle's state survives a
++  restart by itself; the setting only adds "show Files when a workspace arrives".
++- W56-G1-3 Floating composer position lives in the window (not saved): a restart docks it.
++- W56-G1-4 Export writes JSON Lines named `indus-session-<id>.jsonl`, the CLI's format, rather
++  than the web page's one-object JSON, so the file round-trips through `indus sessions import`;
++  written with mode 0600 (a transcript can hold secrets).
++
++Tests we will write:
++- prefs: defaults for the three fields, an old file without them, a bad value ignored, patch.
++- displayPrefs/appearance: the three rows enabled, each writes its field.
++- PaneShell: `data-app-actions="left"` and the top-left zone marked; File browser opens Files when
++  a workspace arrives, not again for the same one, never when off.
++- ComposerDock: no grip when off; grip floats/docks; drag moves; pref off docks.
++- Export: proxy path and profile, JSONL written to the chosen file, cancel writes nothing, 404 /
++  413 / not-connected errors, the renderer's payload carries no path (schema strict).
++- Row menu: Export item present with an exporter, absent without.
++
++## Decisions for the lead
++- W56-G1-1..4 above.
++
++Compare checklist (filled after the rewrite; reopened the manifest entries and the en.ts lines):
++- [x] App actions Left/Right live (test: `src/settings/windowPrefs.test.tsx::App actions`)
++- [x] File browser opens Files with a workspace, once per folder, never in Simple mode (test:
++  `windowPrefs.test.tsx::File browser`)
++- [x] Floating composer: grip float/dock, drag out of the dock, clamped, arrow keys, setting off
++  docks, main window only (test: `windowPrefs.test.tsx::Floating composer`)
++- [x] Export item in the row menu (test: `windowPrefs.test.tsx::session row menu Export`); main
++  side: proxy route, dialog in the sender's window, JSON Lines 0600, cancel, 404/413/offline,
++  strict payload (test: `electron/sessions/export.test.ts`)
++- [x] The three Settings rows write their prefs (test: `displayPrefs.test.tsx::General and Window
++  & layout`, which pinned them disabled before and now pins them live); prefs defaults and old
++  files (test: `electron/prefs.test.ts::window choices`)
++- Deliberate differences: see W56-G1-1..4.
++- Not taken: Open in terminal, Appearance ›, Move to project › in the row menu (out of this slice).
++
++## Status
++
++Done (2026-10-25). The three Window & layout rows are live desktop prefs with today's look as the
++default; Export runs through main (`indus:sessions:export`). The Export path is covered by unit
++tests (main and renderer); the save dialog itself was not driven in the Electron lane. The re-shot
++captures (window-and-layout row page, the row menu with Export, all three prefs on over a chat)
++stay in the scratchpad.
