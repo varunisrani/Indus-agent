@@ -27,6 +27,7 @@ import {
   type Unsubscribe,
   WsTransport,
 } from "@indus/client";
+import { BRAND_NAME } from "@indus/ui";
 import type { Env } from "../app/launchOptions.ts";
 import { planRestart } from "../app/recovery.ts";
 import { splitCommand } from "../composer/externalEditor.ts";
@@ -249,7 +250,7 @@ export function grantRunner(options: GrantRunnerOptions): GrantRunner {
                   true,
                   "helper_failed",
                   `could not run ${options.command} (${String(code)})`,
-                  "Install Indus Agent so `indus` is on PATH, or start with `indus --tui --local`.",
+                  `Install ${BRAND_NAME} so \`indus\` is on PATH, or start with \`indus --tui --local\`.`,
                 ),
               );
               return;

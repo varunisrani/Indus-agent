@@ -100,11 +100,34 @@ describe("virtual transcript", () => {
       info: { model: "m-large", provider: "acme", cwd: "/work", tools: ["a", "b"] },
     };
     const out = draw([banner, ...many(2)], 80, 30).join("\n");
-    expect(out).toContain("indus agent");
+    // the mark's first rows with the two-line wordmark beside them, then the full name
+    expect(out).toMatch(/██ {4}████\n/);
+    expect(out).toMatch(/ {2}███▄ {2}██ {3}INDUS\n/);
+    expect(out).toMatch(/ {3}▀██▄ {6}AGI\n/);
+    expect(out).toMatch(/██ {2}▀███ {5}Indus AGI Agent\n/);
+    expect(out).not.toMatch(/indus agent/);
     expect(out).toContain("m-large · acme");
     expect(out).toContain("2 available");
     expect(out).toContain("s-123");
     uiStore.getState().patch({ sid: null });
+  });
+
+  it("draws the mark lockup in the accent and falls back to one line when narrow", () => {
+    const banner: TranscriptItem = { id: "banner", role: "banner", text: "" };
+    const wide = layoutMessage(banner, 60, ctx);
+    expect(wide.slice(0, 5).map(lineText)).toEqual([
+      "██    ████",
+      "  ███▄  ██   INDUS",
+      "   ▀██▄      AGI",
+      "██  ▀███     Indus AGI Agent",
+      "████    ██",
+    ]);
+    expect(wide.slice(0, 5).every((line) => line[0]?.color === theme.color.accent)).toBe(true);
+    expect(wide[1]?.at(-1)).toMatchObject({ bold: true, color: theme.color.text });
+    expect(wide[3]?.at(-1)).toMatchObject({ color: theme.color.muted });
+    const narrow = layoutMessage(banner, 20, ctx).map(lineText);
+    expect(narrow).toEqual(["Indus AGI Agent"]);
+    expect(layoutMessage(banner, 12, ctx).map(lineText)).toEqual(["Indus AGI"]);
   });
 
   it("shows the live turn: settled segment, running tool and streaming text", () => {

@@ -1,8 +1,9 @@
 // The TUI theme: colour tokens plus brand marks. Two seed sets (dark, light) built from the
-// `@indus/ui` ramps — clay accent, deep teal secondary, slate neutrals — every secondary tone
-// derived from the seeds and the real background, and every foreground lifted to a contrast floor.
+// `@indus/ui` brand colours — ember accent, sand secondary, gold warnings, warm near-black and
+// near-white neutrals — every secondary tone derived from the seeds and the real background, and
+// every foreground lifted to a contrast floor.
 
-import { makeSwatch, palette } from "@indus/ui";
+import { BRAND_COLORS, BRAND_NAME, makeSwatch, palette } from "@indus/ui";
 import { createContext, createElement, type ReactNode, useContext } from "react";
 import { useStore } from "zustand";
 import { createStore, type StoreApi } from "zustand/vanilla";
@@ -68,8 +69,10 @@ export interface Theme {
 export const THEME_DARK = "indus-dark";
 export const THEME_LIGHT = "indus-light";
 
-const slate = (l: number): string => makeSwatch({ l, c: 0.018, h: 252 }).hex;
-const teal = (l: number): string => makeSwatch({ l, c: 0.09, h: 192 }).hex;
+/** Warm, almost-neutral greys: the brand lockup is ember on black and white. */
+const neutral = (l: number): string => makeSwatch({ l, c: 0.006, h: 75 }).hex;
+/** A muted earth brown for the light secondary (sand is too pale on a light background). */
+const umber = (l: number): string => makeSwatch({ l, c: 0.035, h: 60 }).hex;
 
 interface Seeds {
   background: string;
@@ -82,27 +85,29 @@ interface Seeds {
 }
 
 const DARK_SEEDS: Seeds = {
-  background: slate(0.2),
-  text: slate(0.93),
-  accent: palette.clay[400].hex,
-  secondary: teal(0.74),
+  background: BRAND_COLORS.black,
+  text: mix(BRAND_COLORS.cream, BRAND_COLORS.white, 0.4),
+  accent: BRAND_COLORS.ember,
+  secondary: BRAND_COLORS.sand,
   ok: palette.reed[400].hex,
-  warn: palette.ochre[300].hex,
+  // Brand gold, well clear of the ember accent.
+  warn: BRAND_COLORS.gold,
   error: palette.kiln[400].hex,
 };
 
 const LIGHT_SEEDS: Seeds = {
-  background: slate(0.985),
-  text: slate(0.24),
-  accent: palette.clay[700].hex,
-  secondary: teal(0.45),
+  background: neutral(0.985),
+  text: neutral(0.22),
+  // Halfway to the deep ember: the bright ember is too thin a stroke on white.
+  accent: mix(BRAND_COLORS.ember, BRAND_COLORS.emberDeep, 0.5),
+  secondary: umber(0.45),
   ok: palette.reed[700].hex,
-  warn: palette.ochre[700].hex,
+  warn: palette.ochre[600].hex,
   error: palette.kiln[700].hex,
 };
 
 const BRAND: Omit<ThemeBrand, "accent"> = {
-  name: "Indus Agent",
+  name: BRAND_NAME,
   prompt: "›",
   tool: "│",
   welcome: "Ask anything, or type / for commands.",

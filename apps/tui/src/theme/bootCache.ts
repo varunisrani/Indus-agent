@@ -8,7 +8,8 @@ import { detectFromEnv, type Env } from "./detect.ts";
 import { normaliseHex } from "./palette.ts";
 import { buildTheme, type Theme, themeStore } from "./theme.ts";
 
-const VERSION = 1;
+// 2: the Indus AGI palette (W63); a cache of the older palette would paint one stale frame.
+const VERSION = 2;
 
 export function bootCachePath(env: Env): string {
   const home = env.INDUS_HOME?.trim() || join(homedir(), ".indus");

@@ -1,6 +1,8 @@
-╷ ┌╮╷ ┌─╮ ╷ ╷ ╭─╴
-│ │││ │ │ │ │ ╰─╮  indus agent
-╵ ╵╰┘ └─╯ ╰─╯ ╶─╯
+██    ████
+  ███▄  ██   INDUS
+   ▀██▄      AGI
+██  ▀███     Indus AGI Agent
+████    ██
 
 model    fake-model · custom
 folder   <work>
@@ -20,8 +22,6 @@ session  <session>
   └ ✓ terminal(chmod +x count.sh && ./count.sh) (<t>)
 
   All done: count.sh printed counted.
-
-
 
 
 

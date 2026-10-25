@@ -3,6 +3,7 @@
  * and notice rows. Each row is laid out into styled lines (so its height is exact) behind a
  * two-cell gutter glyph.
  */
+import { BRAND_NAME, BRAND_SHORT, BRAND_WORDMARK } from "@indus/ui";
 import { layoutMarkdown } from "../render/markdown.tsx";
 import { layoutStream, type ScanState } from "../render/streamingMarkdown.tsx";
 import {
@@ -122,24 +123,46 @@ function diffLines(text: string, width: number, theme: Theme): StyledLine[] {
     });
 }
 
-// "INDUS" in three rows of box-drawing strokes.
-const LETTERS = [
-  ["╷", "│", "╵"],
-  ["┌╮╷", "│││", "╵╰┘"],
-  ["┌─╮", "│ │", "└─╯"],
-  ["╷ ╷", "│ │", "╰─╯"],
-  ["╭─╴", "╰─╮", "╶─╯"],
+// The brand mark in half blocks: each cell is two square pixels, so five rows by ten columns is a
+// 10 x 10 grid. The top-left square, the thick diagonal bar and the bottom-right square run corner
+// to corner; the two L brackets sit in the other two corners, opening toward the bar.
+// biome-ignore format: the rows are a picture
+const MARK = [
+  "██    ████",
+  "  ███▄  ██",
+  "   ▀██▄   ",
+  "██  ▀███  ",
+  "████    ██",
 ];
-const WORDMARK = [0, 1, 2].map((row) => LETTERS.map((letter) => letter[row]).join(" "));
+const MARK_WIDTH = Math.max(...MARK.map(cellWidth));
+const MARK_GAP = "   ";
+const LOCKUP_WIDTH = MARK_WIDTH + MARK_GAP.length + cellWidth(BRAND_NAME);
+
+/** What sits right of each mark row: the two-line wordmark in bold ink, then the name, muted. */
+function lockupText(theme: Theme): (Span | null)[] {
+  const [top, bottom] = BRAND_WORDMARK;
+  return [
+    null,
+    { ...colour(theme, "text"), bold: true, text: top },
+    { ...colour(theme, "text"), bold: true, text: bottom },
+    { ...colour(theme, "muted"), text: BRAND_NAME },
+    null,
+  ];
+}
 
 function bannerLines(item: TranscriptItem, width: number, ctx: RowContext): StyledLine[] {
   const { theme } = ctx;
   const out: StyledLine[] = [];
-  if (width >= 32) {
-    for (const row of WORDMARK) out.push([{ ...colour(theme, "accent"), text: row }]);
-    out[1]?.push({ ...colour(theme, "text"), bold: true, text: "  indus agent" });
+  if (width >= LOCKUP_WIDTH) {
+    const beside = lockupText(theme);
+    MARK.forEach((row, i) => {
+      const text = beside[i];
+      const mark: Span = { ...colour(theme, "accent"), text: text ? row : row.trimEnd() };
+      out.push(text ? [mark, { text: MARK_GAP }, text] : [mark]);
+    });
   } else {
-    out.push([{ ...colour(theme, "accent"), bold: true, text: "indus agent" }]);
+    const name = cellWidth(BRAND_NAME) <= width ? BRAND_NAME : BRAND_SHORT;
+    out.push([{ ...colour(theme, "accent"), bold: true, text: name }]);
   }
   const info = item.info ?? {};
   const facts: [string, string][] = [];

@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { BRAND_COLORS, BRAND_NAME } from "@indus/ui";
 import { render } from "ink";
 import { createElement as h, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -62,15 +63,37 @@ describe("palettes", () => {
     assertFloors(theme);
   });
 
-  it("uses a clay accent and our own brand marks", () => {
+  it("uses the brand ember on near-black and the brand name", () => {
     const dark = buildTheme({ light: false });
-    expect(dark.brand.name).toBe("Indus Agent");
+    expect(dark.brand.name).toBe(BRAND_NAME);
     expect(dark.brand.prompt).toBe("›");
     expect(dark.brand.accent).toBe(dark.color.accent);
-    const [r, , b] = [1, 3, 5].map((i) =>
-      Number.parseInt((dark.color.accent ?? "").slice(i, i + 2), 16),
-    );
-    expect(r ?? 0).toBeGreaterThan(b ?? 0);
+    expect(dark.color.accent).toBe(BRAND_COLORS.ember);
+    expect(dark.background).toBe(BRAND_COLORS.black);
+    const light = buildTheme({ light: true });
+    expect(light.brand.name).toBe(BRAND_NAME);
+    for (const theme of [dark, light]) {
+      const [r, g, b] = [1, 3, 5].map((i) =>
+        Number.parseInt((theme.color.accent ?? "").slice(i, i + 2), 16),
+      );
+      // an ember: red well above green, green above blue
+      expect(r ?? 0).toBeGreaterThan((g ?? 0) * 2);
+      expect(g ?? 0).toBeGreaterThan(b ?? 0);
+    }
+  });
+
+  it("keeps the status colours apart from the accent", () => {
+    const distance = (a: string, b: string): number => {
+      const ca = [1, 3, 5].map((i) => Number.parseInt(a.slice(i, i + 2), 16));
+      const cb = [1, 3, 5].map((i) => Number.parseInt(b.slice(i, i + 2), 16));
+      return Math.hypot(...ca.map((v, i) => v - (cb[i] ?? 0)));
+    };
+    for (const light of [false, true]) {
+      const { color } = buildTheme({ light });
+      for (const token of ["secondary", "ok", "warn", "error"] as const) {
+        expect(distance(color[token], color.accent)).toBeGreaterThan(60);
+      }
+    }
   });
 });
 
@@ -179,7 +202,7 @@ describe("boot cache", () => {
   it("lives under INDUS_HOME", () => {
     expect(bootCachePath({ INDUS_HOME: dir })).toBe(join(dir, "tui", "theme-boot.json"));
     writeBootTheme(bootCachePath({ INDUS_HOME: dir }), buildTheme({ light: false }));
-    expect(JSON.parse(readFileSync(bootCachePath({ INDUS_HOME: dir }), "utf8")).version).toBe(1);
+    expect(JSON.parse(readFileSync(bootCachePath({ INDUS_HOME: dir }), "utf8")).version).toBe(2);
   });
 
   it("pins a theme for a subtree with ThemeProvider", () => {

@@ -16,6 +16,7 @@ import type {
   SessionUndoResult,
   SessionUsageResult,
 } from "@indus/protocol";
+import { BRAND_NAME } from "@indus/ui";
 import type { ModelPickerPayload } from "../cards/payloads.ts";
 import { errorText } from "../cards/rpcLike.ts";
 import { PET_COMMAND } from "../commands/pet.ts";
@@ -166,12 +167,12 @@ export const LOCAL_COMMANDS: readonly LocalCommand[] = [
   {
     name: "quit",
     aliases: ["exit"],
-    summary: "leave Indus Agent",
+    summary: `leave ${BRAND_NAME}`,
     run: (_arg, ctx) => ctx.exit(0),
   },
   {
     name: "update",
-    summary: "close the TUI and update Indus Agent",
+    summary: `close the TUI and update ${BRAND_NAME}`,
     run: (_arg, ctx) => {
       ctx.systemLine("Closing to update…");
       ctx.later(() => ctx.exit(UPDATE_EXIT_CODE), UPDATE_DELAY_MS);
