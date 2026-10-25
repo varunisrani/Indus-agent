@@ -22,6 +22,7 @@ beforeEach(() => {
         provider: "fake",
         description: null,
         has_persona: false,
+        skill_count: 1,
       },
       {
         name: "home",
@@ -42,6 +43,7 @@ beforeEach(() => {
         provider: null,
         description: "Office tasks",
         has_persona: true,
+        skill_count: null,
       },
     ],
   };
@@ -82,6 +84,8 @@ describe("profiles page", () => {
     expect(main.getByText("No description")).toBeTruthy();
     expect(await main.findByText(/Daemon (running|stopped)/)).toBeTruthy();
     expect(await main.findByText("Skills: 1")).toBeTruthy();
+    // The count comes with the profile row (W56-G2-2): no per-card `/api/skills` round trip.
+    expect(mock.callsTo("GET", "/api/skills")).toHaveLength(0);
     expect(mock.callsTo("GET", "/api/status").some((c) => c.query.get("profile") === "work")).toBe(
       true,
     );
@@ -90,6 +94,8 @@ describe("profiles page", () => {
     const work = await card("work");
     expect(work.getByText("Office tasks")).toBeTruthy();
     expect(work.getByText("Model: inherited")).toBeTruthy();
+    // An uncounted profile (null) shows no skills line rather than a wrong zero.
+    expect(work.queryByText(/^Skills:/)).toBeNull();
   });
 
   it("never offers rename or delete for the default, and locks the served profile", async () => {

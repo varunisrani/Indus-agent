@@ -179,6 +179,15 @@ export const CHANNELS = [
     owner: "P24-28",
   },
 
+  // session export (W56-G1): main reads the transcript and writes the file the person chose
+  {
+    name: "indus:sessions:export",
+    kind: "invoke",
+    group: "sessions",
+    method: "exportToFile",
+    owner: "W56-G1",
+  },
+
   // REST proxy
   { name: "indus:api", kind: "invoke", group: "api", method: "request", owner: "P20-14" },
 

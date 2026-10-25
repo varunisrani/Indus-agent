@@ -6,7 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Clock, Pause, Pencil, Play, Trash2, Zap } from "lucide-react";
 import { useId, useState } from "react";
 import { api } from "../lib/api.ts";
-import type { CronJob, CronState } from "../lib/restTypes.ts";
+import type { CronBlueprint, CronJob, CronState } from "../lib/restTypes.ts";
 import { HeaderActions } from "../shell/PageHeader.tsx";
 import { errorText, useToast } from "../shell/Toasts.tsx";
 import {
@@ -185,11 +185,12 @@ export function CronPage() {
   });
 
   const list = jobs.data ?? [];
-  const create = (prefill?: JobModalStart["prefill"]) =>
+  const create = (prefill?: JobModalStart["prefill"], blueprint?: CronBlueprint) =>
     setEditing({
       job: null,
       profile: filter || home || "default",
       ...(prefill ? { prefill } : {}),
+      ...(blueprint ? { blueprint } : {}),
     });
 
   return (
@@ -268,12 +269,15 @@ export function CronPage() {
       ) : (
         <Blueprints
           onSetUp={(blueprint) =>
-            create({
-              name: blueprint.title,
-              prompt: blueprint.prompt ?? "",
-              ...(blueprint.schedule ? { schedule: blueprint.schedule } : {}),
-              skills: blueprint.skill ? [blueprint.skill] : [],
-            })
+            create(
+              {
+                name: blueprint.title,
+                prompt: blueprint.prompt ?? "",
+                ...(blueprint.schedule ? { schedule: blueprint.schedule } : {}),
+                skills: blueprint.skill ? [blueprint.skill] : [],
+              },
+              blueprint,
+            )
           }
         />
       )}

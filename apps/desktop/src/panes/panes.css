@@ -29,6 +29,13 @@
   -webkit-app-region: no-drag;
 }
 
+/* App actions on the left (W56-G1): the cluster at the pane area's left end */
+.pane-shell[data-app-actions="left"] > .pane-toolbar {
+  right: auto;
+  left: 0;
+  padding-right: 8px;
+}
+
 .pane-toolbar-field {
   position: relative;
   display: inline-grid;
@@ -178,6 +185,11 @@
 
 .pane-zone[data-band-edge="true"] > .pane-zone-header {
   padding-right: calc(var(--band-controls) + 8px);
+}
+
+/* the top-left zone's tabs start after the cluster when it sits on the left (W56-G1) */
+.pane-zone[data-band-start="true"] > .pane-zone-header {
+  padding-left: calc(var(--band-tools-width, 220px) + 16px);
 }
 
 .pane-tabs {

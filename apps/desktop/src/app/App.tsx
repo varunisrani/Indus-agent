@@ -89,6 +89,7 @@ export function AppRoutes(props: { slots?: AppSlots }) {
     main = (
       <ChatView
         sessionId={sessionId}
+        floatableComposer
         composer={slots.composer?.(sessionId)}
         cards={slots.cards?.(sessionId)}
         {...(sessionId !== null && slots.retry !== undefined

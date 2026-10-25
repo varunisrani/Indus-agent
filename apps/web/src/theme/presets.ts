@@ -2,10 +2,22 @@
 // ink used for text, rules and filled controls. Every other surface is a mix of the two, worked out
 // in index.css, so a preset only has to name its pair (plus its light/dark side, which the chat
 // terminal and the status colours follow).
+//
+// Eight presets, four on each side (W56-G2-1). The four added in wave 56 are our own pairs, chosen
+// so ink and the muted and soft ink mixes all clear WCAG AA (4.5:1) on the canvas and the raised
+// surface; presets.test.ts measures every preset against the mixes in index.css.
 
 import type { ThemeName } from "@indus/ui";
 
-export type PresetId = "deep-teal" | "deep-teal-large" | "clear-blue" | "graphite";
+export type PresetId =
+  | "deep-teal"
+  | "deep-teal-large"
+  | "clear-blue"
+  | "graphite"
+  | "monsoon"
+  | "sandstone"
+  | "neem"
+  | "indigo-paper";
 
 export interface Preset {
   id: PresetId;
@@ -54,6 +66,42 @@ export const PRESETS: readonly Preset[] = [
     scheme: "indus-dark",
     canvas: "#121314",
     ink: "#e6e6e3",
+    rootPx: 16,
+  },
+  {
+    id: "monsoon",
+    label: "Monsoon",
+    description: "Rain-cloud blue canvas with pale mist ink",
+    scheme: "indus-dark",
+    canvas: "#0f1a24",
+    ink: "#d6e6f2",
+    rootPx: 16,
+  },
+  {
+    id: "sandstone",
+    label: "Sandstone",
+    description: "Light mode: dark umber ink on warm sand paper",
+    scheme: "indus-light",
+    canvas: "#fdfaf4",
+    ink: "#1a1208",
+    rootPx: 16,
+  },
+  {
+    id: "neem",
+    label: "Neem",
+    description: "Light mode: deep leaf-green ink on a pale green wash",
+    scheme: "indus-light",
+    canvas: "#fcfdfa",
+    ink: "#03180a",
+    rootPx: 16,
+  },
+  {
+    id: "indigo-paper",
+    label: "Indigo Paper",
+    description: "Light mode: indigo-dye ink on cool white paper",
+    scheme: "indus-light",
+    canvas: "#fbfaff",
+    ink: "#110e3e",
     rootPx: 16,
   },
 ];

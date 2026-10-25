@@ -53,7 +53,7 @@ export function ThemeMenu({ compact }: { compact: boolean }) {
           id={menuId}
           role="menu"
           aria-label="Theme"
-          className="fixed bottom-[4.5rem] left-3 z-50 w-[min(24.5rem,calc(100vw-1.5rem))] border border-line-strong bg-canvas text-ink shadow-2xl [animation:indus-fade-in_120ms_ease-out]"
+          className="fixed bottom-[4.5rem] left-3 z-50 max-h-[calc(100dvh-6rem)] w-[min(24.5rem,calc(100vw-1.5rem))] overflow-y-auto border border-line-strong bg-canvas text-ink shadow-2xl [animation:indus-fade-in_120ms_ease-out]"
         >
           <p className="m-0 border-b border-line px-3 py-2.5 text-[0.75rem] tracking-[0.08em] text-ink-muted">
             Theme

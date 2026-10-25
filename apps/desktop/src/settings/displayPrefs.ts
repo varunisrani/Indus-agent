@@ -1,5 +1,5 @@
-// The display preferences this window draws with (W55-F3): the renderer-only rows of Settings ›
-// Appearance (General, Window & layout, Chat display). Main keeps them in the desktop prefs file;
+// The display preferences this window draws with (W55-F3, W56-G1): the renderer-only rows of
+// Settings › Appearance (General, Window & layout, Chat display). Main keeps them in the desktop prefs file;
 // `PrefsEffects` reads that once per window and publishes it here, so every transcript row, the
 // sidebar and the shell read one snapshot instead of each asking main.
 
@@ -18,6 +18,9 @@ export type DisplayPrefs = Pick<
   | "hideTimeline"
   | "toolCallDisplay"
   | "collapseThinking"
+  | "appActionsSide"
+  | "fileBrowser"
+  | "floatingComposer"
 >;
 
 /** What a window draws before main answers (and without a bridge): the same as main's defaults. */
@@ -32,6 +35,9 @@ export const DISPLAY_DEFAULTS: DisplayPrefs = {
   hideTimeline: false,
   toolCallDisplay: "technical",
   collapseThinking: false,
+  appActionsSide: "right",
+  fileBrowser: false,
+  floatingComposer: false,
 };
 
 let current: DisplayPrefs = DISPLAY_DEFAULTS;

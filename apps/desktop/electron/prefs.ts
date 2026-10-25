@@ -36,6 +36,9 @@ export const DEFAULT_PREFS: DesktopPrefsValue = {
   hideTimeline: false,
   toolCallDisplay: "technical",
   collapseThinking: false,
+  appActionsSide: "right",
+  fileBrowser: false,
+  floatingComposer: false,
 };
 
 function clone(value: DesktopPrefsValue): DesktopPrefsValue {

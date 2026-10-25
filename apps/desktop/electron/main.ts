@@ -95,6 +95,7 @@ import {
   installPermissionPolicy,
   type PermissionSession,
 } from "./security/permissions.ts";
+import { installSessionExportIpc } from "./sessions/export.ts";
 import { mergeLoginShellPath } from "./shellPath.ts";
 import {
   acquireSingleInstance,
@@ -452,6 +453,19 @@ async function boot(): Promise<void> {
     downloadsDir: () => app.getPath("downloads"),
     log: logLine,
   }); // P24-28
+  installSessionExportIpc(context.registry, {
+    request: (request) => backend.proxy.request(request),
+    chooseFile: async (senderId, defaultPath) => {
+      const answer = await paneElectron(windows).showDialog(senderId, {
+        mode: "save",
+        multiple: false,
+        defaultPath,
+      });
+      return answer.canceled ? null : (answer.paths[0] ?? null);
+    },
+    downloadsDir: () => app.getPath("downloads"),
+    log: logLine,
+  }); // W56-G1
   backendPort = {
     attachedProfile: () => {
       const descriptor = backend.orchestrator.current()?.descriptor;

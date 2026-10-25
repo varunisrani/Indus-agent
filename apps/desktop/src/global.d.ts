@@ -158,6 +158,9 @@ export type IndusPrefsPatch = {
   hideTimeline?: boolean;
   toolCallDisplay?: "product" | "technical";
   collapseThinking?: boolean;
+  appActionsSide?: "right" | "left";
+  fileBrowser?: boolean;
+  floatingComposer?: boolean;
 };
 
 export type IndusPrefsSnapshot = {
@@ -179,6 +182,9 @@ export type IndusPrefsSnapshot = {
   hideTimeline: boolean;
   toolCallDisplay: "product" | "technical";
   collapseThinking: boolean;
+  appActionsSide: "right" | "left";
+  fileBrowser: boolean;
+  floatingComposer: boolean;
 };
 
 export type IndusProfileState = {
@@ -483,6 +489,13 @@ export interface IndusDesktopArtifacts {
     profile: string | null;
     sessionId: string;
   }): Promise<{ savedTo: string }>;
+}
+
+export interface IndusDesktopSessions {
+  /** `indus:sessions:export` (W56-G1) */
+  exportToFile(payload: {
+    sessionId: string;
+  }): Promise<{ saved: false } | { saved: true; fileName: string }>;
 }
 
 export interface IndusDesktopApi {
@@ -986,6 +999,7 @@ export interface IndusDesktopBridge {
   readonly connection: IndusDesktopConnection;
   readonly connections: IndusDesktopConnections;
   readonly artifacts: IndusDesktopArtifacts;
+  readonly sessions: IndusDesktopSessions;
   readonly api: IndusDesktopApi;
   readonly profile: IndusDesktopProfile;
   readonly windows: IndusDesktopWindows;

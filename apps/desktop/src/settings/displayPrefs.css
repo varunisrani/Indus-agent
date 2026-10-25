@@ -102,3 +102,45 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Floating composer (W56-G1): the grip above the composer, and the lifted card */
+.composer-grip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 12px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: grab;
+  touch-action: none;
+}
+
+.composer-grip > span {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--desk-stroke-3);
+}
+
+.composer-grip:hover > span,
+.composer-grip:focus-visible > span {
+  background: var(--desk-fg-3);
+}
+
+.composer-grip:active {
+  cursor: grabbing;
+}
+
+.chat-composer[data-floating="true"] {
+  position: absolute;
+  z-index: 6;
+  width: min(640px, calc(100% - 32px));
+  padding: 0 8px 8px;
+  border: 1px solid var(--desk-stroke-2);
+  border-radius: var(--desk-radius-card);
+  background: var(--desk-bg-canvas);
+  box-shadow: var(--desk-shadow-menu);
+}

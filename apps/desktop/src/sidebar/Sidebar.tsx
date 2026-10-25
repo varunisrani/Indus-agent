@@ -149,6 +149,8 @@ export interface SidebarProps {
   onPopOut?(sessionId: string): void;
   /** Branch the conversation (`session.branch`, W54-D1-8); no menu item without it. */
   onBranch?(sessionId: string): void;
+  /** Export the conversation to a file (main asks where, W56-G1); no menu item without it. */
+  onExport?(sessionId: string): void;
   onNewChat(): void;
   events?: EventSource | null;
   /** The default root of the repo scan. */
@@ -218,6 +220,7 @@ interface RowHost {
   onOpen(id: string): void;
   onPopOut?: ((id: string) => void) | undefined;
   onBranch?: ((id: string) => void) | undefined;
+  onExport?: ((id: string) => void) | undefined;
   onDelete(row: SessionRow): void;
 }
 
@@ -386,6 +389,7 @@ function SessionItem(
             toggleUnread: () => (unread ? list.markSeen(row) : list.markUnread(row)),
             copyId: () => void copyText(row.durableId),
             branch: props.onBranch === undefined ? undefined : () => props.onBranch?.(row.id),
+            exportFile: props.onExport === undefined ? undefined : () => props.onExport?.(row.id),
             toggleArchive: () => void list.setArchived(row, !row.archived),
             remove: () => props.onDelete(row),
           }}
@@ -638,6 +642,7 @@ export function Sidebar(props: SidebarProps) {
     onOpen: openSession,
     onPopOut: props.onPopOut,
     onBranch: props.onBranch,
+    onExport: props.onExport,
     onDelete: (row: SessionRow) => setDeleting(row),
   };
   const confirmDelete = async () => {

@@ -227,12 +227,18 @@ export const SETTINGS_A_STRINGS = {
   "settingsA.window.always": "Always",
   "settingsA.window.never": "Never",
   "settingsA.window.actions": "App actions",
+  "settingsA.window.actionsBody":
+    "Which end of the top band holds settings, layouts and the pane buttons. Left frees the right end for pane tabs next to the window controls.",
   "settingsA.window.right": "Right",
   "settingsA.window.left": "Left",
   "settingsA.window.backdrop": "Chat backdrop",
   "settingsA.window.backdropBody": "A faint Indus wordmark behind the conversation.",
   "settingsA.window.files": "File browser",
+  "settingsA.window.filesBody":
+    "Open the Files pane beside the chat whenever this window works in a folder. Closing it lasts until you switch to another folder.",
   "settingsA.window.floating": "Floating composer",
+  "settingsA.window.floatingBody":
+    "Give the message box a grip so it can be lifted off the bottom and moved over the chat. Off keeps it docked.",
 
   // Appearance › Chat display
   "settingsA.display.bubble": "Message bubble",

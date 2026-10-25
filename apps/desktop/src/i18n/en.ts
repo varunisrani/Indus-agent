@@ -76,6 +76,8 @@ export const en = {
   "chat.empty.title": "INDUS AGENT",
   "chat.empty.body":
     "Describe a task, ask a question or paste a snippet. Indus keeps the whole session in mind and asks before it guesses.",
+  "chat.composer.float": "Float the message box (drag to move)",
+  "chat.composer.dock": "Dock the message box (drag or arrow keys to move)",
 
   "transcript.label": "Messages",
   "transcript.showEarlier": "Show earlier messages",

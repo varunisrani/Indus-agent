@@ -186,10 +186,22 @@ describe("Settings rows (W55-F3)", () => {
       fireEvent.click(control("Chat backdrop"));
     });
     expect(set).toHaveBeenLastCalledWith({ chatBackdrop: true });
-    for (const name of ["File browser", "Floating composer"]) {
-      expect(control(name).disabled).toBe(true);
-    }
-    expect(screen.getByRole("radio", { name: "Left" }).closest("fieldset")?.disabled).toBe(true);
+    // W56-G1: the last three rows of the page are live too
+    expect(screen.getByRole("radio", { name: "Left" }).closest("fieldset")?.disabled).toBe(false);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("radio", { name: "Left" }));
+    });
+    expect(set).toHaveBeenLastCalledWith({ appActionsSide: "left" });
+    expect(control("File browser").checked).toBe(false);
+    await act(async () => {
+      fireEvent.click(control("File browser"));
+    });
+    expect(set).toHaveBeenLastCalledWith({ fileBrowser: true });
+    expect(control("Floating composer").checked).toBe(false);
+    await act(async () => {
+      fireEvent.click(control("Floating composer"));
+    });
+    expect(set).toHaveBeenLastCalledWith({ floatingComposer: true });
   });
 });
 

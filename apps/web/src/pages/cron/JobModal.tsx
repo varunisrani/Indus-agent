@@ -1,16 +1,30 @@
 // The cron job panel (W52-c): create or edit one job. Profile (create only), name, prompt, a
 // schedule picker that writes our grammar directly, delivery target, skills to load first, and an
 // "Advanced fields" box kept as a placeholder (per-job model and script settings do not exist yet).
+// Set up from a blueprint, the blueprint's prompt slots show as inputs that fill the prompt
+// (W56-G2-3, blueprintSlots.ts); its timing slots are the schedule picker's prefill.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LoaderCircle } from "lucide-react";
 import { type FormEvent, useId, useState } from "react";
 import { api } from "../../lib/api.ts";
-import type { CronJob, CronJobInput } from "../../lib/restTypes.ts";
+import type {
+  CronBlueprint,
+  CronBlueprintField,
+  CronJob,
+  CronJobInput,
+} from "../../lib/restTypes.ts";
 import { errorText, useToast } from "../../shell/Toasts.tsx";
 import { Button, Checkbox, Field, Input, Notice, Select, Textarea } from "../../ui/controls.tsx";
 import { cx } from "../../ui/cx.ts";
 import { Modal } from "../../ui/Dialog.tsx";
+import {
+  fillTemplate,
+  missingSlots,
+  openPlaceholders,
+  planSlots,
+  startValues,
+} from "./blueprintSlots.ts";
 import {
   draftProblem,
   draftToSchedule,
@@ -29,6 +43,75 @@ export interface JobModalStart {
   /** The profile the job lives in (edit) or the one preselected (create). */
   profile: string;
   prefill?: Partial<CronJobInput>;
+  /** The blueprint the prefill came from: its prompt slots become inputs. */
+  blueprint?: CronBlueprint;
+}
+
+/** The blueprint's prompt slots: a text box or a list of options each, with the slot's help. */
+function SlotFields({
+  slots,
+  values,
+  detached,
+  onChange,
+  onReattach,
+}: {
+  slots: readonly CronBlueprintField[];
+  values: Readonly<Record<string, string>>;
+  detached: boolean;
+  onChange: (name: string, value: string) => void;
+  onReattach: () => void;
+}) {
+  const ids = useId();
+  return (
+    <fieldset className="m-0 flex flex-col gap-3 border border-line p-3">
+      <legend className="type-label px-1 text-ink-muted">Blueprint fields</legend>
+      {slots.map((slot) => {
+        const id = `${ids}-${slot.name}`;
+        const label = slot.optional ? `${slot.label} (optional)` : slot.label;
+        return (
+          <Field
+            key={slot.name}
+            label={label}
+            htmlFor={id}
+            {...(slot.help ? { hint: slot.help } : {})}
+          >
+            {slot.kind === "choice" ? (
+              <Select
+                id={id}
+                value={values[slot.name] ?? ""}
+                disabled={detached}
+                onChange={(e) => onChange(slot.name, e.currentTarget.value)}
+              >
+                {(slot.options ?? []).map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </Select>
+            ) : (
+              <Input
+                id={id}
+                value={values[slot.name] ?? ""}
+                maxLength={slot.max ?? 200}
+                disabled={detached}
+                onChange={(e) => onChange(slot.name, e.currentTarget.value)}
+              />
+            )}
+          </Field>
+        );
+      })}
+      {detached ? (
+        <p className="m-0 flex flex-wrap items-center gap-2 text-[0.75rem] text-ink-soft">
+          The prompt was edited by hand, so these fields no longer fill it.
+          <Button size="sm" onClick={onReattach}>
+            Fill from fields again
+          </Button>
+        </p>
+      ) : (
+        <p className="type-serif m-0 text-[0.75rem] text-ink-soft">These fill the prompt below.</p>
+      )}
+    </fieldset>
+  );
 }
 
 function SchedulePicker({
@@ -190,7 +273,15 @@ export function JobModal({
   const { job } = start;
   const [profile, setProfile] = useState(start.profile);
   const [name, setName] = useState(job?.name ?? start.prefill?.name ?? "");
-  const [prompt, setPrompt] = useState(job?.prompt ?? start.prefill?.prompt ?? "");
+  const [plan] = useState(() => (job || !start.blueprint ? null : planSlots(start.blueprint)));
+  const slots = plan?.slots ?? [];
+  const [slotValues, setSlotValues] = useState<Record<string, string>>(() => startValues(slots));
+  const [detached, setDetached] = useState(false);
+  const [prompt, setPrompt] = useState(() =>
+    plan && slots.length
+      ? fillTemplate(plan.template, slots, slotValues)
+      : (job?.prompt ?? start.prefill?.prompt ?? ""),
+  );
   const [draft, setDraft] = useState<ScheduleDraft>(() => {
     const from = job?.schedule ?? start.prefill?.schedule;
     return from ? scheduleToDraft(from) : scheduleToDraft("every 30m");
@@ -224,6 +315,13 @@ export function JobModal({
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (!prompt.trim()) return setProblem("Write the prompt the job should run.");
+    const missing = detached ? [] : missingSlots(slots, slotValues);
+    if (missing.length) return setProblem(`Fill in: ${missing.join(", ")}.`);
+    const open = start.blueprint ? openPlaceholders(prompt, start.blueprint.fields) : [];
+    if (open.length)
+      return setProblem(
+        `Replace ${open.map((name) => `{${name}}`).join(", ")} in the prompt with what you mean.`,
+      );
     const scheduleProblem = draftProblem(draft);
     if (scheduleProblem) return setProblem(scheduleProblem);
     setProblem("");
@@ -278,6 +376,22 @@ export function JobModal({
             onChange={(e) => setName(e.currentTarget.value)}
           />
         </Field>
+        {plan && slots.length ? (
+          <SlotFields
+            slots={slots}
+            values={slotValues}
+            detached={detached}
+            onChange={(name, value) => {
+              const next = { ...slotValues, [name]: value };
+              setSlotValues(next);
+              setPrompt(fillTemplate(plan.template, slots, next));
+            }}
+            onReattach={() => {
+              setDetached(false);
+              setPrompt(fillTemplate(plan.template, slots, slotValues));
+            }}
+          />
+        ) : null}
         <Field label="Prompt" htmlFor={`${ids}-prompt`}>
           <Textarea
             id={`${ids}-prompt`}
@@ -285,7 +399,10 @@ export function JobModal({
             rows={3}
             placeholder="What the agent should do on each run."
             value={prompt}
-            onChange={(e) => setPrompt(e.currentTarget.value)}
+            onChange={(e) => {
+              setPrompt(e.currentTarget.value);
+              if (slots.length) setDetached(true);
+            }}
           />
         </Field>
         <SchedulePicker draft={draft} onChange={(patch) => setDraft((d) => ({ ...d, ...patch }))} />

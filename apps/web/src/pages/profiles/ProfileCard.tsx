@@ -41,15 +41,10 @@ function DaemonLine({ name }: { name: string }) {
   );
 }
 
-/** "Skills: N" (enabled skills), hidden when the list cannot be read. */
-function SkillsLine({ name }: { name: string }) {
-  const skills = useQuery({
-    queryKey: ["profiles", "skills", name],
-    queryFn: () => api.skills.list(name),
-    staleTime: 30_000,
-  });
-  if (!skills.data) return null;
-  return <span>Skills: {skills.data.skills.filter((s) => s.enabled).length}</span>;
+/** "Skills: N" from the row's `skill_count` (W56-G2-2); hidden when the backend could not count. */
+function SkillsLine({ count }: { count: number | null | undefined }) {
+  if (typeof count !== "number") return null;
+  return <span>Skills: {count}</span>;
 }
 
 export function ProfileCard({
@@ -188,7 +183,7 @@ export function ProfileCard({
             )}
             <div className="mt-auto flex flex-col pt-2 text-[0.75rem] leading-[17px] text-ink-muted">
               <span>Model: {modelLine}</span>
-              <SkillsLine name={profile.name} />
+              <SkillsLine count={profile.skill_count} />
             </div>
           </>
         )}

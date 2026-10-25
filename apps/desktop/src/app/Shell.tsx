@@ -326,6 +326,30 @@ function LeftSidebar(props: {
                     );
                   },
                 })}
+            {...(desktopBridge()?.sessions?.exportToFile === undefined
+              ? {}
+              : {
+                  onExport: (id: string) => {
+                    const sessionsBridge = desktopBridge()?.sessions;
+                    if (sessionsBridge === undefined) return;
+                    // main fetches the conversation and asks where to save it (W56-G1)
+                    void sessionsBridge.exportToFile({ sessionId: id }).then(
+                      (answer) => {
+                        if (answer.saved)
+                          notify({
+                            tone: "success",
+                            title: t("sidebar.exported", { name: answer.fileName }),
+                          });
+                      },
+                      (error: unknown) =>
+                        notify({
+                          tone: "error",
+                          title: t("sidebar.exportFailed"),
+                          message: error instanceof Error ? error.message : String(error),
+                        }),
+                    );
+                  },
+                })}
             onNewChat={() => navigate(NEW_CHAT_PATH)}
             events={props.connection}
             homeDir={launchFacts().homeDir || null}

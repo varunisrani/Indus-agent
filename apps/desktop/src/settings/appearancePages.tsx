@@ -38,8 +38,15 @@ type SwitchField =
   | "reopenLastChat"
   | "chatBackdrop"
   | "hideTimeline"
-  | "collapseThinking";
-type ChoiceField = "sessionDensity" | "tabStrip" | "textDirection" | "toolCallDisplay";
+  | "collapseThinking"
+  | "fileBrowser"
+  | "floatingComposer";
+type ChoiceField =
+  | "sessionDensity"
+  | "tabStrip"
+  | "textDirection"
+  | "toolCallDisplay"
+  | "appActionsSide";
 
 /** A desktop-pref switch: live once main answered, the "not available" caption when it cannot. */
 function PrefSwitchRow(props: {
@@ -707,9 +714,12 @@ export function AppearanceWindowPage() {
           { value: "never", label: t("settingsA.window.never") },
         ]}
       />
-      <PlaceholderSegmentedRow
+      <PrefChoiceRow
+        handle={handle}
+        rowId="app-actions"
+        field="appActionsSide"
         title={t("settingsA.window.actions")}
-        value="right"
+        description={t("settingsA.window.actionsBody")}
         options={[
           { value: "right", label: t("settingsA.window.right") },
           { value: "left", label: t("settingsA.window.left") },
@@ -744,8 +754,20 @@ export function AppearanceWindowPage() {
         title={t("settingsA.window.backdrop")}
         description={t("settingsA.window.backdropBody")}
       />
-      <PlaceholderSwitchRow title={t("settingsA.window.files")} />
-      <PlaceholderSwitchRow title={t("settingsA.window.floating")} />
+      <PrefSwitchRow
+        handle={handle}
+        rowId="file-browser"
+        field="fileBrowser"
+        title={t("settingsA.window.files")}
+        description={t("settingsA.window.filesBody")}
+      />
+      <PrefSwitchRow
+        handle={handle}
+        rowId="floating-composer"
+        field="floatingComposer"
+        title={t("settingsA.window.floating")}
+        description={t("settingsA.window.floatingBody")}
+      />
     </PageBody>
   );
 }

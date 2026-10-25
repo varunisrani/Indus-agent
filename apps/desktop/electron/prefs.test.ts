@@ -51,6 +51,26 @@ describe("desktop preferences", () => {
     expect(() => applyPatch(DEFAULT_PREFS, { bubbleTransparency: 101 })).toThrow();
   });
 
+  it("window choices (W56-G1): actions right, no file browser, docked composer by default", () => {
+    expect(DEFAULT_PREFS).toMatchObject({
+      appActionsSide: "right",
+      fileBrowser: false,
+      floatingComposer: false,
+    });
+    // an older file without the fields, and one with a bad side
+    expect(readPrefs({ minimizeToTray: true }).appActionsSide).toBe("right");
+    const prefs = readPrefs({ appActionsSide: "top", fileBrowser: true, floatingComposer: "yes" });
+    expect(prefs.appActionsSide).toBe("right");
+    expect(prefs.fileBrowser).toBe(true);
+    expect(prefs.floatingComposer).toBe(false);
+    const next = applyPatch(DEFAULT_PREFS, { appActionsSide: "left", floatingComposer: true });
+    expect(next.appActionsSide).toBe("left");
+    expect(next.floatingComposer).toBe(true);
+    expect(() =>
+      applyPatch(DEFAULT_PREFS, { appActionsSide: "middle" as unknown as "left" }),
+    ).toThrow();
+  });
+
   it("a patch merges notifications and replaces the binding overrides", () => {
     const start = applyPatch(DEFAULT_PREFS, { keybindings: { a: "X" } });
     const next = applyPatch(start, { notifications: { sounds: false }, keybindings: { b: "Y" } });

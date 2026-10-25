@@ -305,5 +305,91 @@ describe("cron page", () => {
     const dialog = within(await screen.findByRole("dialog"));
     expect((dialog.getByLabelText("Prompt") as HTMLTextAreaElement).value).toBe("Sum up my mail");
     expect((dialog.getByLabelText("Schedule") as HTMLSelectElement).value).toBe("daily");
+    // A blueprint with no slots shows no slot inputs.
+    expect(dialog.queryByRole("group", { name: "Blueprint fields" })).toBeNull();
+  });
+
+  it("shows a blueprint's prompt slots as inputs that fill the prompt (W56-G2-3)", async () => {
+    mock.state.cronBlueprints = [
+      {
+        key: "check-in",
+        title: "Regular check-in",
+        source: "catalogue",
+        skill: null,
+        description: "Checks something on a fixed interval",
+        schedule: "every 60m",
+        // As the server sends it: filled from the defaults ("low"), `{target}` has none.
+        prompt: "Check {target} at low detail. Answer unchanged when nothing moved.",
+        fields: [
+          {
+            name: "interval",
+            kind: "interval",
+            label: "Minutes between checks",
+            default: "60",
+            optional: false,
+            help: "",
+            min: 15,
+            max: 1440,
+          },
+          {
+            name: "target",
+            kind: "text",
+            label: "What to check",
+            default: null,
+            optional: false,
+            help: "a page, a folder, a service",
+            max: 200,
+          },
+          {
+            name: "detail",
+            kind: "choice",
+            label: "Level of detail",
+            default: "low",
+            optional: false,
+            help: "",
+            options: ["low", "high"],
+          },
+        ],
+      },
+    ];
+    renderPage(<CronPage />, "/cron");
+    fireEvent.click(await screen.findByRole("button", { name: "Blueprints" }));
+    const card = within(await screen.findByTestId("blueprint-check-in"));
+    fireEvent.click(card.getByRole("button", { name: "Set up" }));
+    const dialog = within(await screen.findByRole("dialog"));
+    const slots = within(dialog.getByRole("group", { name: "Blueprint fields" }));
+    // Timing slots stay with the schedule picker.
+    expect(slots.queryByLabelText(/Minutes between checks/)).toBeNull();
+    expect((dialog.getByLabelText("Schedule") as HTMLSelectElement).value).toBe("interval");
+    expect(slots.getByText("a page, a folder, a service")).toBeTruthy();
+
+    const prompt = dialog.getByLabelText("Prompt") as HTMLTextAreaElement;
+    fireEvent.click(dialog.getByRole("button", { name: "Create" }));
+    expect(await dialog.findByText("Fill in: What to check.")).toBeTruthy();
+    expect(mock.callsTo("POST", "/api/cron/jobs")).toHaveLength(0);
+
+    fireEvent.change(slots.getByLabelText("What to check"), {
+      target: { value: "the build page" },
+    });
+    fireEvent.change(slots.getByLabelText("Level of detail"), { target: { value: "high" } });
+    expect(prompt.value).toBe(
+      "Check the build page at high detail. Answer unchanged when nothing moved.",
+    );
+
+    // Typing in the prompt by hand detaches the fields until asked to fill again.
+    fireEvent.change(prompt, { target: { value: "Check the build page now." } });
+    expect((slots.getByLabelText("What to check") as HTMLInputElement).disabled).toBe(true);
+    fireEvent.click(slots.getByRole("button", { name: "Fill from fields again" }));
+    expect(prompt.value).toBe(
+      "Check the build page at high detail. Answer unchanged when nothing moved.",
+    );
+
+    fireEvent.click(dialog.getByRole("button", { name: "Create" }));
+    await waitFor(() => expect(mock.callsTo("POST", "/api/cron/jobs")).toHaveLength(1));
+    expect(mock.callsTo("POST", "/api/cron/jobs")[0]?.body).toMatchObject({
+      name: "Regular check-in",
+      prompt: "Check the build page at high detail. Answer unchanged when nothing moved.",
+      schedule: "every 60m",
+    });
   });
 });

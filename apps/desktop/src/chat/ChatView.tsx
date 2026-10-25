@@ -10,6 +10,7 @@ import { useConnectionState, useMaybeConnectionStore } from "../gateway/react.ts
 import { useT } from "../i18n/index.tsx";
 import { useDisplayPrefs } from "../settings/displayPrefs.ts";
 import { Wordmark } from "../ui/components.tsx";
+import { ComposerDock } from "./ComposerDock.tsx";
 import type { FailureAction } from "./failure.ts";
 import type { ErrorItem } from "./messageStream.ts";
 import { Transcript } from "./Transcript.tsx";
@@ -22,6 +23,8 @@ export interface ChatViewProps {
   /** The error card's Retry (slice C sends the failed turn's message again). */
   onRetry?: (item: ErrorItem) => void;
   onFailureAction?: (action: FailureAction, item: ErrorItem) => void;
+  /** The main window's chat: the Floating composer setting applies (W56-G1); the HUD's never. */
+  floatableComposer?: boolean;
 }
 
 /** A note while the watchdog finds the running turn silent (never "finished"). */
@@ -103,7 +106,11 @@ export function ChatView(props: ChatViewProps) {
       {connection !== null && sessionId !== null && (
         <StalledNote connection={connection} sessionId={sessionId} />
       )}
-      {props.composer !== undefined && <div className="chat-composer">{props.composer}</div>}
+      {props.composer !== undefined && (
+        <ComposerDock floatable={props.floatableComposer === true && display.floatingComposer}>
+          {props.composer}
+        </ComposerDock>
+      )}
     </section>
   );
 }

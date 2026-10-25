@@ -37,6 +37,7 @@ import {
 } from "react";
 import type { ChatConnection } from "../gateway/connectionStore.ts";
 import { type MessageKey, useT } from "../i18n/index.tsx";
+import { useDisplayPrefs } from "../settings/displayPrefs.ts";
 import { LayoutEditor } from "./LayoutEditor.tsx";
 import { type LayoutStore, withoutUnknown } from "./layoutStore.ts";
 import {
@@ -278,6 +279,8 @@ interface ShellContext {
   bandEdge: string | null;
   /** Zones whose top edge is the window's top (their header is part of the title band). */
   topZones: ReadonlySet<string>;
+  /** With the app actions on the left (W56-G1): the top-left zone, whose tabs start after them. */
+  bandStart: string | null;
 }
 
 /** Panes that draw their own titled header (W52-m): alone in a zone they show no tab strip. */
@@ -300,6 +303,14 @@ export function bandEndZone(layout: PaneLayout, node: LayoutNode | null): string
   const shown = node.children.filter((child) => !nodeCollapsed(layout, child));
   const pick = node.orientation === "row" ? shown[shown.length - 1] : shown[0];
   return pick === undefined ? null : bandEndZone(layout, pick);
+}
+
+/** The top-left zone: the first shown child of a row or a column, down to a zone (W56-G1). */
+export function bandStartZone(layout: PaneLayout, node: LayoutNode | null): string | null {
+  if (node === null) return null;
+  if (node.kind === "zone") return node.id;
+  const pick = node.children.find((child) => !nodeCollapsed(layout, child));
+  return pick === undefined ? null : bandStartZone(layout, pick);
 }
 
 /** A top zone's box along the band, for placing the tool cluster. */
@@ -542,6 +553,7 @@ function ZoneView(props: { ctx: ShellContext; zone: ZoneNode }) {
       data-zone-id={z.id}
       data-band-end={ctx.bandEnd === z.id ? (ctx.bandInner ? "inner" : "true") : undefined}
       data-band-edge={ctx.bandEdge === z.id && ctx.bandEnd !== z.id ? "true" : undefined}
+      data-band-start={ctx.bandStart === z.id ? "true" : undefined}
       data-focused={focused ? "true" : "false"}
       data-chrome={chrome}
       data-self-labelled={selfLabelled ? "true" : undefined}
@@ -922,9 +934,20 @@ export function PaneShell(props: PaneShellProps) {
     bandInner: false,
     bandEdge: null,
     topZones: topZoneIds(layout.root),
+    bandStart: null,
   };
   const [band, setBand] = useState<BandPlacement | null>(null);
-  if (props.toolbar !== false) {
+  // App actions (W56-G1): the band's tool cluster at the pane area's left end instead of at the
+  // window controls; the top-left zone's tabs start after it, the top-right one keeps clear of
+  // the window controls only, and the W55-F1-3 shift does not apply
+  const display = useDisplayPrefs();
+  const actionsLeft = props.toolbar !== false && display.appActionsSide === "left";
+  const actionsLeftRef = useRef(actionsLeft);
+  actionsLeftRef.current = actionsLeft;
+  if (actionsLeft) {
+    ctx.bandStart = bandStartZone(layout, layout.root);
+    ctx.bandEdge = bandEndZone(layout, layout.root);
+  } else if (props.toolbar !== false) {
     // the measured placement while its zones are still on the band; the tree's guess before
     const measured =
       band !== null &&
@@ -944,6 +967,11 @@ export function PaneShell(props: PaneShellProps) {
     const host = shellRef.current;
     const tools = host?.querySelector<HTMLElement>(":scope > .pane-toolbar") ?? null;
     if (host === null || tools === null) return;
+    if (actionsLeftRef.current) {
+      host.style.removeProperty("--band-shift");
+      setBand(null);
+      return;
+    }
     // the cluster's box less the shift applied now: its usual place, at the window controls
     const applied = Number.parseFloat(host.style.getPropertyValue("--band-shift")) || 0;
     const usual = tools.getBoundingClientRect();
@@ -969,11 +997,35 @@ export function PaneShell(props: PaneShellProps) {
     }
     setBand((before) => (samePlacement(before, next) ? before : next));
   }, []);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: placed again when the side changes
   useLayoutEffect(() => {
     if (props.toolbar === false || layout.root === null || typeof ResizeObserver === "undefined")
       return;
     placeBand();
-  }, [layout, placeBand, props.toolbar]);
+  }, [layout, placeBand, props.toolbar, actionsLeft]);
+  // File browser (W56-G1): each workspace folder the window gets shows the Files pane once;
+  // closing it lasts until the folder changes (or the setting is turned off and on again)
+  const workspace = props.workspace ?? null;
+  const hasFiles = registry.ids().includes("files");
+  const shownFor = useRef<string | null>(null);
+  const store = props.store;
+  useEffect(() => {
+    if (props.toolbar === false) return;
+    if (!display.fileBrowser || workspace === null) {
+      shownFor.current = null;
+      return;
+    }
+    if (!hasFiles || shownFor.current === workspace) return;
+    shownFor.current = workspace;
+    const current = store.layout();
+    const host = zones(current.root).find((z) => z.tabs.includes("files"));
+    const showing =
+      host !== undefined &&
+      host.active === "files" &&
+      !host.minimized &&
+      !isHidden(current, "files");
+    if (!showing) store.open("files");
+  }, [display.fileBrowser, workspace, hasFiles, store, props.toolbar]);
   useEffect(() => {
     const host = shellRef.current;
     const tools = host?.querySelector<HTMLElement>(":scope > .pane-toolbar") ?? null;
@@ -998,6 +1050,7 @@ export function PaneShell(props: PaneShellProps) {
     <div
       className="pane-shell"
       data-mode={snapshot.mode}
+      data-app-actions={actionsLeft ? "left" : undefined}
       data-layout-editing={editing ? "true" : undefined}
       ref={shellRef}
     >

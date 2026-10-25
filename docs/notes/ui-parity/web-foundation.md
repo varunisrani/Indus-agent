@@ -55,6 +55,8 @@ Edge cases / failure modes:
   font files reach the build from `node_modules`. The assets test comment records the change.
 - W51-a-3: preset names are ours: Deep Teal (dark, default), Deep Teal Large (18 px root), Clear
   Blue (light) and Graphite (grey dark). The reference's font override section is not built.
+  Wave 56 (W56-G2-1, `w56-g2-web-themes-profiles-cron.md`) adds Monsoon (dark), Sandstone, Neem
+  and Indigo Paper (light), with a WCAG AA contrast test per preset.
 - W51-a-4: Sessions gets an Overview (recent cards) / History (rows with actions, search, paging)
   switch; data calls are unchanged. Unit tests, `e2e/dashboard.spec.ts` and the auth e2e specs were
   updated where they pinned the old single list, the "Prune…" label, the "Search" box on first load

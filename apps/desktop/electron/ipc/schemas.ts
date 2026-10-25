@@ -435,6 +435,8 @@ const tabStrip = z.enum(["auto", "always", "never"]);
 const textDirection = z.enum(["auto", "rtl", "ltr"]);
 /** "product" hides raw tool payloads; "technical" shows the arguments and the output. */
 const toolCallDisplay = z.enum(["product", "technical"]);
+/** Which end of the window band holds the app's own tool cluster (W56-G1). */
+const appActionsSide = z.enum(["right", "left"]);
 
 /** Settings main holds for this device (P20-32); P20-35/36 read them in main. */
 export const prefsSnapshot = z.object({
@@ -470,6 +472,12 @@ export const prefsSnapshot = z.object({
   toolCallDisplay: toolCallDisplay,
   /** Streamed reasoning stays closed until opened. */
   collapseThinking: z.boolean(),
+  // Window & layout rows made real in W56-G1.
+  appActionsSide: appActionsSide,
+  /** Show the Files pane whenever the window gets a workspace folder. */
+  fileBrowser: z.boolean(),
+  /** The composer can be dragged out of its dock into a floating card. */
+  floatingComposer: z.boolean(),
 });
 
 export const prefsPatch = z.strictObject({
@@ -497,6 +505,9 @@ export const prefsPatch = z.strictObject({
   hideTimeline: z.boolean().optional(),
   toolCallDisplay: toolCallDisplay.optional(),
   collapseThinking: z.boolean().optional(),
+  appActionsSide: appActionsSide.optional(),
+  fileBrowser: z.boolean().optional(),
+  floatingComposer: z.boolean().optional(),
 });
 
 // -- the table -----------------------------------------------------------------------------------
@@ -618,6 +629,15 @@ export const SCHEMAS = {
       sessionId: id,
     }),
     response: z.object({ savedTo: z.string() }),
+  },
+
+  // only the session id: main fetches the export and asks for the target file itself
+  "indus:sessions:export": {
+    request: z.strictObject({ sessionId: id }),
+    response: z.union([
+      z.strictObject({ saved: z.literal(false) }),
+      z.strictObject({ saved: z.literal(true), fileName: z.string() }),
+    ]),
   },
 
   "indus:api": { request: apiRequest, response: apiResult },
