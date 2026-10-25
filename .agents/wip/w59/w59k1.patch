@@ -1,0 +1,2055 @@
+diff --git a/apps/desktop/electron/ambient/prefsBridge.test.ts b/apps/desktop/electron/ambient/prefsBridge.test.ts
+new file mode 100644
+index 0000000..1cec129
+--- /dev/null
++++ b/apps/desktop/electron/ambient/prefsBridge.test.ts
+@@ -0,0 +1,34 @@
++import { describe, expect, it } from "vitest";
++import { DEFAULT_PREFS } from "../prefs.ts";
++import {
++  ambientFromPrefs,
++  anyNoticeOn,
++  NOTICE_KINDS,
++  prefsPatchFromAmbient,
++} from "./prefsBridge.ts";
++
++describe("ambient view of the notification switches (W59-K1-1)", () => {
++  it("the master switch is on while any one kind is on", () => {
++    const off = Object.fromEntries(NOTICE_KINDS.map((kind) => [kind, false]));
++    const none = { ...DEFAULT_PREFS.notifications, ...off };
++    expect(anyNoticeOn(none)).toBe(false);
++    expect(anyNoticeOn({ ...none, plugins: true })).toBe(true);
++    expect(ambientFromPrefs({ ...DEFAULT_PREFS, notifications: none }, false).notifications).toBe(
++      false,
++    );
++    expect(ambientFromPrefs(DEFAULT_PREFS, false).notifications).toBe(true);
++  });
++
++  it("the ambient on/off writes every kind and leaves the sound alone", () => {
++    expect(prefsPatchFromAmbient({ notifications: false })).toEqual({
++      notifications: {
++        approvals: false,
++        input: false,
++        turnComplete: false,
++        turnFailed: false,
++        plugins: false,
++      },
++    });
++    expect(prefsPatchFromAmbient({ sounds: false })).toEqual({ notifications: { sounds: false } });
++  });
++});
+diff --git a/apps/desktop/electron/ambient/prefsBridge.ts b/apps/desktop/electron/ambient/prefsBridge.ts
+index 88ca593..bab92ec 100644
+--- a/apps/desktop/electron/ambient/prefsBridge.ts
++++ b/apps/desktop/electron/ambient/prefsBridge.ts
+@@ -29,14 +29,28 @@ const PREF_KEY: Readonly<
+   "quick-entry": "quickEntryShortcut",
+ };
+ 
++/** The kinds of OS notification, each with its own switch (W59-K1-1); `sounds` is not one. */
++export const NOTICE_KINDS = [
++  "approvals",
++  "input",
++  "turnComplete",
++  "turnFailed",
++  "plugins",
++] as const;
++
++/** Whether any kind of notification is on (the master switch's view). */
++export function anyNoticeOn(notifications: DesktopPrefsValue["notifications"]): boolean {
++  return NOTICE_KINDS.some((kind) => notifications[kind]);
++}
++
+ /** The ambient settings the preferences describe (`offered` comes from the ambient file). */
+ export function ambientFromPrefs(prefs: DesktopPrefsValue, offered: boolean): AmbientSettings {
+   return {
+     minimizeToTray: prefs.minimizeToTray,
+     keepAwake: prefs.keepAwake,
+     keepAwakeOffered: offered,
+-    // the master switch: off only when both kinds of notice are off (the renderer gates each kind)
+-    notifications: prefs.notifications.turnComplete || prefs.notifications.approvals,
++    // the master switch: off only when every kind of notice is off (the renderer gates each kind)
++    notifications: anyNoticeOn(prefs.notifications),
+     sounds: prefs.notifications.sounds,
+   };
+ }
+@@ -53,8 +67,7 @@ export function prefsPatchFromAmbient(patch: {
+   if (patch.keepAwake !== undefined) out.keepAwake = patch.keepAwake;
+   const notifications: NonNullable<DesktopPrefsPatch["notifications"]> = {};
+   if (patch.notifications !== undefined) {
+-    notifications.turnComplete = patch.notifications;
+-    notifications.approvals = patch.notifications;
++    for (const kind of NOTICE_KINDS) notifications[kind] = patch.notifications;
+   }
+   if (patch.sounds !== undefined) notifications.sounds = patch.sounds;
+   if (Object.keys(notifications).length > 0) out.notifications = notifications;
+diff --git a/apps/desktop/electron/ipc/schemas.ts b/apps/desktop/electron/ipc/schemas.ts
+index 2484e0c..2fe151c 100644
+--- a/apps/desktop/electron/ipc/schemas.ts
++++ b/apps/desktop/electron/ipc/schemas.ts
+@@ -447,10 +447,19 @@ export const prefsSnapshot = z.object({
+   quickEntryShortcut: accelerator,
+   hudSnapShortcut: accelerator,
+   hudToggleShortcut: accelerator,
++  /** Which OS notifications this device shows (W59-K1-1: one switch per kind we can raise). */
+   notifications: z.object({
++    /** A reply finished while the window was in the background. */
+     turnComplete: z.boolean(),
++    /** An approval card is waiting. */
+     approvals: z.boolean(),
+     sounds: z.boolean(),
++    /** A clarify question, a sudo password or a secret is waiting. */
++    input: z.boolean(),
++    /** A turn ended in a failure while the window was in the background. */
++    turnFailed: z.boolean(),
++    /** A desktop plugin's message (`ctx.toast`) while the window was in the background. */
++    plugins: z.boolean(),
+   }),
+   /** In-app shortcut overrides: action id → accelerator ("" = unbound). */
+   keybindings: z.record(z.string().max(64), accelerator),
+@@ -491,6 +500,9 @@ export const prefsPatch = z.strictObject({
+       turnComplete: z.boolean().optional(),
+       approvals: z.boolean().optional(),
+       sounds: z.boolean().optional(),
++      input: z.boolean().optional(),
++      turnFailed: z.boolean().optional(),
++      plugins: z.boolean().optional(),
+     })
+     .optional(),
+   keybindings: z.record(z.string().max(64), accelerator).optional(),
+diff --git a/apps/desktop/electron/prefs.test.ts b/apps/desktop/electron/prefs.test.ts
+index e096707..e330b2c 100644
+--- a/apps/desktop/electron/prefs.test.ts
++++ b/apps/desktop/electron/prefs.test.ts
+@@ -25,7 +25,14 @@ describe("desktop preferences", () => {
+     expect(prefs.minimizeToTray).toBe(true);
+     expect(prefs.keepAwake).toBe("while-working");
+     expect(prefs.chatTextScale).toBe(110);
+-    expect(prefs.notifications).toEqual({ turnComplete: true, approvals: true, sounds: false });
++    expect(prefs.notifications).toEqual({
++      turnComplete: true,
++      approvals: true,
++      sounds: false,
++      input: true,
++      turnFailed: true,
++      plugins: true,
++    });
+     expect(prefs.keybindings).toEqual({ "chat.new": "CommandOrControl+N" });
+     expect(readPrefs([1, 2])).toEqual(DEFAULT_PREFS);
+   });
+@@ -71,10 +78,37 @@ describe("desktop preferences", () => {
+     ).toThrow();
+   });
+ 
++  it("alert kinds split out later (W59-K1-1) follow the switch that covered them", () => {
++    // an older file: questions were under "approvals", failed turns under "turnComplete"
++    const old = readPrefs({ notifications: { approvals: false, turnComplete: false } });
++    expect(old.notifications).toMatchObject({
++      approvals: false,
++      input: false,
++      turnComplete: false,
++      turnFailed: false,
++      plugins: true,
++    });
++    // a file that names the new kinds keeps them
++    const now = readPrefs({ notifications: { approvals: false, input: true, turnFailed: true } });
++    expect(now.notifications).toMatchObject({ approvals: false, input: true, turnFailed: true });
++    expect(DEFAULT_PREFS.notifications).toMatchObject({
++      input: true,
++      turnFailed: true,
++      plugins: true,
++    });
++  });
++
+   it("a patch merges notifications and replaces the binding overrides", () => {
+     const start = applyPatch(DEFAULT_PREFS, { keybindings: { a: "X" } });
+     const next = applyPatch(start, { notifications: { sounds: false }, keybindings: { b: "Y" } });
+-    expect(next.notifications).toEqual({ turnComplete: true, approvals: true, sounds: false });
++    expect(next.notifications).toEqual({
++      turnComplete: true,
++      approvals: true,
++      sounds: false,
++      input: true,
++      turnFailed: true,
++      plugins: true,
++    });
+     expect(next.keybindings).toEqual({ b: "Y" });
+     expect(DEFAULT_PREFS.notifications.sounds).toBe(true); // defaults never mutated
+   });
+diff --git a/apps/desktop/electron/prefs.ts b/apps/desktop/electron/prefs.ts
+index 26411dd..f25c48a 100644
+--- a/apps/desktop/electron/prefs.ts
++++ b/apps/desktop/electron/prefs.ts
+@@ -23,7 +23,14 @@ export const DEFAULT_PREFS: DesktopPrefsValue = {
+   quickEntryShortcut: "CommandOrControl+Shift+Space",
+   hudSnapShortcut: "CommandOrControl+Shift+G",
+   hudToggleShortcut: "CommandOrControl+Shift+H",
+-  notifications: { turnComplete: true, approvals: true, sounds: true },
++  notifications: {
++    turnComplete: true,
++    approvals: true,
++    sounds: true,
++    input: true,
++    turnFailed: true,
++    plugins: true,
++  },
+   keybindings: {},
+   chatTextScale: 110,
+   introSplash: true,
+@@ -63,6 +70,13 @@ export function readPrefs(raw: unknown): DesktopPrefsValue {
+         for (const [name, value] of Object.entries(parsed.data)) {
+           if (typeof value === "boolean") out.notifications[name as "sounds"] = value;
+         }
++        // W59-K1-1: the kinds split out of an older file follow the switch that covered them
++        // (questions were "approvals", failed turns were "turnComplete").
++        const stored = parsed.data;
++        if (stored.input === undefined && stored.approvals !== undefined)
++          out.notifications.input = stored.approvals;
++        if (stored.turnFailed === undefined && stored.turnComplete !== undefined)
++          out.notifications.turnFailed = stored.turnComplete;
+       }
+       continue;
+     }
+diff --git a/apps/desktop/src/ambient/AmbientHost.tsx b/apps/desktop/src/ambient/AmbientHost.tsx
+index 6143d3b..a781ad6 100644
+--- a/apps/desktop/src/ambient/AmbientHost.tsx
++++ b/apps/desktop/src/ambient/AmbientHost.tsx
+@@ -4,8 +4,9 @@
+ // - reports the session the route shows (and re-reports on focus) so main knows the last-active
+ //   conversation for quick entry and the HUD toggle;
+ // - reports running turns (`work.report`: the quit guard and keep awake);
+-// - notifies a finished turn or a waiting question while the window is not focused, with our own
+-//   chime when sounds are on; a click opens that session;
++// - notifies a finished or failed turn, a waiting approval or question, or a plugin's message
++//   while the window is not focused (each kind behind its own switch), with our own chime when
++//   sounds are on; a click opens that session;
+ // - receives quick-entry text and submits it through the composer's send path, then answers main;
+ // - shows the one-time keep-awake offer, update availability and skew notices.
+ 
+@@ -17,6 +18,7 @@ import { backgroundOf, classifyPath, sessionPath } from "../app/routes.ts";
+ import { ChatActions, type Request, sharedActions } from "../chat/busyActions.ts";
+ import { InflightJournal } from "../chat/inflightJournal.ts";
+ import type { TranscriptStore } from "../chat/transcriptStore.ts";
++import { PLUGIN_TOAST_EVENT } from "../contrib/host.ts";
+ import type { GatewayConnection } from "../gateway/connectionStore.ts";
+ import type {
+   IndusAmbientState,
+@@ -31,8 +33,12 @@ import { UpdateNotice } from "../updates/UpdateNotice.tsx";
+ import { playChime } from "./sound.ts";
+ import {
+   type NoticeRequest,
++  noticeAllowed,
++  pluginNotice,
++  requestKind,
+   requestNotice,
+   tagSession,
++  turnKind,
+   turnNotice,
+   WorkTracker,
+ } from "./turnNotices.ts";
+@@ -127,8 +133,11 @@ export function AmbientHost(props: AmbientHostProps) {
+     const offEvents = connection.onEvent((event) => {
+       const record = event as { type: string; session_id?: string; turn_id?: string };
+       if (work.onEvent(record)) bridge.work.report({ items: work.items() });
+-      if (record.type === "turn.done" && noticeKinds.current?.turnComplete !== false) {
+-        notify(turnNotice(event as Parameters<typeof turnNotice>[0], focusedNow(), t));
++      if (record.type === "turn.done") {
++        const done = event as Parameters<typeof turnNotice>[0];
++        // W59-K1-1: a reply and a failure each have their own switch
++        if (noticeAllowed(noticeKinds.current, turnKind(done)))
++          notify(turnNotice(done, focusedNow(), t));
+       }
+     });
+     const seen = new Set<string>();
+@@ -137,10 +146,17 @@ export function AmbientHost(props: AmbientHostProps) {
+       for (const request of store.list()) {
+         if (seen.has(request.id)) continue;
+         seen.add(request.id);
+-        if (!request.replayed && noticeKinds.current?.approvals !== false)
++        if (!request.replayed && noticeAllowed(noticeKinds.current, requestKind(request.kind)))
+           notify(requestNotice(request.kind, request.sessionId, focusedNow(), t));
+       }
+     });
++    // a desktop plugin's toast also reaches the OS while the window is in the background
++    const onPluginToast = (event: Event) => {
++      const text = (event as CustomEvent<{ text?: unknown }>).detail?.text;
++      if (typeof text !== "string" || !noticeAllowed(noticeKinds.current, "plugins")) return;
++      notify(pluginNotice(text, focusedNow(), t));
++    };
++    window.addEventListener(PLUGIN_TOAST_EVENT, onPluginToast);
+     const offAction = bridge.notifications.onAction(({ tag }) => {
+       const target = tagSession(tag);
+       if (target !== null) navigate(sessionPath(target));
+@@ -148,6 +164,7 @@ export function AmbientHost(props: AmbientHostProps) {
+     return () => {
+       offEvents();
+       offRequests();
++      window.removeEventListener(PLUGIN_TOAST_EVENT, onPluginToast);
+       offAction();
+       if (work.clear()) bridge.work.report({ items: [] });
+     };
+diff --git a/apps/desktop/src/ambient/strings.en.ts b/apps/desktop/src/ambient/strings.en.ts
+index 7d6a36b..baea6ff 100644
+--- a/apps/desktop/src/ambient/strings.en.ts
++++ b/apps/desktop/src/ambient/strings.en.ts
+@@ -32,6 +32,7 @@ export const AMBIENT_STRINGS = {
+   "notify.ask.approval": "A command is waiting for your approval.",
+   "notify.ask.other": "A question is waiting for you.",
+   "notify.open": "Open",
++  "notify.plugin.title": "Message from a plugin",
+ 
+   "keepAwake.offer":
+     "Your computer went to sleep while Indus was working. Keep it awake while a reply is running?",
+diff --git a/apps/desktop/src/ambient/turnNotices.test.ts b/apps/desktop/src/ambient/turnNotices.test.ts
+index e79aba2..d822a83 100644
+--- a/apps/desktop/src/ambient/turnNotices.test.ts
++++ b/apps/desktop/src/ambient/turnNotices.test.ts
+@@ -1,7 +1,16 @@
+ import { describe, expect, it } from "vitest";
+ import { translate } from "../i18n/index.tsx";
+ import { CHIME_NOTES, playChime } from "./sound.ts";
+-import { requestNotice, tagSession, turnNotice, WorkTracker } from "./turnNotices.ts";
++import {
++  noticeAllowed,
++  pluginNotice,
++  requestKind,
++  requestNotice,
++  tagSession,
++  turnKind,
++  turnNotice,
++  WorkTracker,
++} from "./turnNotices.ts";
+ 
+ describe("work tracker", () => {
+   it("one item per running session; ends only with its own turn", () => {
+@@ -81,3 +90,35 @@ describe("completion chime", () => {
+     expect(playChime(null)).toBe(false);
+   });
+ });
++
++describe("notice kinds (W59-K1-1)", () => {
++  it("a reply and a failure each have their own switch; questions split from approvals", () => {
++    expect(turnKind({ type: "turn.done", reason: "completed" })).toBe("turnComplete");
++    expect(turnKind({ type: "turn.done", reason: "provider_failed" })).toBe("turnFailed");
++    expect(turnKind({ type: "turn.done", reason: "completed", failure: { reason: "quota" } })).toBe(
++      "turnFailed",
++    );
++    expect(requestKind("approval")).toBe("approvals");
++    for (const kind of ["clarify", "sudo", "secret"]) expect(requestKind(kind)).toBe("input");
++  });
++
++  it("a kind is on until the person turns it off", () => {
++    expect(noticeAllowed(null, "turnFailed")).toBe(true);
++    expect(noticeAllowed({ turnComplete: false }, "turnFailed")).toBe(true);
++    expect(noticeAllowed({ turnFailed: false }, "turnFailed")).toBe(false);
++    expect(noticeAllowed({ plugins: false, input: true }, "input")).toBe(true);
++  });
++
++  it("a plugin's message reaches the OS only while the window is in the background", () => {
++    expect(pluginNotice("Build finished", true, translate)).toBeNull();
++    expect(pluginNotice("   ", false, translate)).toBeNull();
++    expect(pluginNotice("Build finished", false, translate)).toEqual({
++      title: "Message from a plugin",
++      body: "Build finished",
++      tag: "plugin",
++      actions: [],
++    });
++    expect(pluginNotice("x".repeat(900), false, translate)?.body).toHaveLength(500);
++    expect(tagSession("plugin")).toBeNull();
++  });
++});
+diff --git a/apps/desktop/src/ambient/turnNotices.ts b/apps/desktop/src/ambient/turnNotices.ts
+index ea7d0c6..9530bbb 100644
+--- a/apps/desktop/src/ambient/turnNotices.ts
++++ b/apps/desktop/src/ambient/turnNotices.ts
+@@ -87,6 +87,39 @@ export function turnNotice(event: DoneEvent, focused: boolean, t: Translate): No
+   return { title: t("notify.turnFailed.title"), body: reason, tag, actions };
+ }
+ 
++/** The notification switches (Settings › Notifications › Desktop alerts, W59-K1-1). */
++export interface NoticeKinds {
++  readonly turnComplete?: boolean;
++  readonly turnFailed?: boolean;
++  readonly approvals?: boolean;
++  readonly input?: boolean;
++  readonly plugins?: boolean;
++}
++
++/** The switch that covers a finished turn: a failure has its own (stopped turns raise none). */
++export function turnKind(event: DoneEvent): "turnComplete" | "turnFailed" {
++  return event.reason === "completed" && (event.failure ?? null) === null
++    ? "turnComplete"
++    : "turnFailed";
++}
++
++/** The switch that covers a question: approvals have their own, the rest are "input needed". */
++export function requestKind(kind: string): "approvals" | "input" {
++  return kind === "approval" ? "approvals" : "input";
++}
++
++/** A kind is on unless the person turned it off (before the prefs arrive, everything is on). */
++export function noticeAllowed(kinds: NoticeKinds | null, kind: keyof NoticeKinds): boolean {
++  return kinds?.[kind] !== false;
++}
++
++/** The notification for a desktop plugin's message (`ctx.toast`), only while not focused. */
++export function pluginNotice(text: string, focused: boolean, t: Translate): NoticeRequest | null {
++  const body = text.trim();
++  if (focused || body === "") return null;
++  return { title: t("notify.plugin.title"), body: body.slice(0, 500), tag: "plugin", actions: [] };
++}
++
+ /** The notification for a question the backend asks (approval, clarify, sudo, secret). */
+ export function requestNotice(
+   kind: string,
+diff --git a/apps/desktop/src/app/Shell.tsx b/apps/desktop/src/app/Shell.tsx
+index 885a63f..2606053 100644
+--- a/apps/desktop/src/app/Shell.tsx
++++ b/apps/desktop/src/app/Shell.tsx
+@@ -60,6 +60,7 @@ import type { PreviewTarget } from "../panes/preview/target.ts";
+ import { type PaneAction, usePaneShortcuts } from "../panes/shortcuts.ts";
+ import { ProfileRail, type ProfilesApi, useProfileNames } from "../profiles/ProfileRail.tsx";
+ import { useSwitcher, useSwitcherState } from "../profiles/switcherReact.tsx";
++import { useKeyAction } from "../settings/keyActions.ts";
+ import { freshDraftFolder } from "../sidebar/projects.ts";
+ import { beginNewChat, rowTitle, Sidebar, SidebarModel } from "../sidebar/Sidebar.tsx";
+ import { IconButton, KeyHint, Menu, type MenuItem } from "../ui/components.tsx";
+@@ -516,6 +517,24 @@ function useChatState(
+ 
+ // -- the shell -----------------------------------------------------------------------------------
+ 
++/** The profile a profile key switches to, or null (no other profile to go to). */
++export function profileTarget(
++  id: string,
++  profiles: readonly string[],
++  current: string,
++  defaultProfile: string | null,
++): string | null {
++  if (id === "profile.default") {
++    const target = defaultProfile ?? "default";
++    return target !== current && profiles.includes(target) ? target : null;
++  }
++  if (profiles.length < 2) return null;
++  const at = profiles.indexOf(current);
++  const step = id === "profile.next" ? 1 : -1;
++  const next = profiles[(Math.max(at, 0) + step + profiles.length) % profiles.length] ?? null;
++  return next === current ? null : next;
++}
++
+ export function Shell(props: {
+   statusBar?: ReactNode;
+   /** The route's conversation (null: a new chat or a page). */
+@@ -762,6 +781,26 @@ export function Shell(props: {
+     });
+   };
+ 
++  // the rebindable window keys (W59-K1-2): new chat, settings, and profile switching
++  useKeyAction(
++    ["chat.new", "settings.open", "profile.default", "profile.next", "profile.previous"],
++    (id) => {
++      if (id === "chat.new") {
++        beginNewChat(chrome.sidebar, profile, null);
++        navigate(NEW_CHAT_PATH);
++        return true;
++      }
++      if (id === "settings.open") {
++        openOverlay("settings");
++        return true;
++      }
++      const next = profileTarget(id, profiles, profile, defaultProfile);
++      if (next === null || switcher === null) return false;
++      selectProfile(next);
++      return true;
++    },
++  );
++
+   return (
+     <div
+       className="shell"
+diff --git a/apps/desktop/src/chat/EffortChip.tsx b/apps/desktop/src/chat/EffortChip.tsx
+index 5b89d01..99d2888 100644
+--- a/apps/desktop/src/chat/EffortChip.tsx
++++ b/apps/desktop/src/chat/EffortChip.tsx
+@@ -25,6 +25,19 @@ const LISTED = LEVELS.filter((level) => level.value !== "none");
+ 
+ export const DEFAULT_THINKING_EFFORT = "medium";
+ 
++/** The levels a key steps through, lowest first (W59-K1-2); Auto counts as the default level. */
++const LADDER = LEVELS.map((level) => level.value).filter(
++  (value): value is string => value !== null,
++);
++
++/** One level up or down from `effort` (Auto steps from the default level); clamped at the ends. */
++export function stepEffort(effort: string | null, step: 1 | -1): string {
++  const at = LADDER.indexOf(effort ?? DEFAULT_THINKING_EFFORT);
++  const from = at === -1 ? LADDER.indexOf(DEFAULT_THINKING_EFFORT) : at;
++  const next = Math.min(LADDER.length - 1, Math.max(0, from + step));
++  return LADDER[next] ?? DEFAULT_THINKING_EFFORT;
++}
++
+ export function effortShort(value: string | null): MessageKey {
+   return LEVELS.find((level) => level.value === value)?.short ?? "effort.auto";
+ }
+diff --git a/apps/desktop/src/chat/ModelPicker.test.tsx b/apps/desktop/src/chat/ModelPicker.test.tsx
+index b3f5649..5610db0 100644
+--- a/apps/desktop/src/chat/ModelPicker.test.tsx
++++ b/apps/desktop/src/chat/ModelPicker.test.tsx
+@@ -2,6 +2,8 @@
+ import type { ModelOptionsResult } from "@indus/protocol";
+ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+ import { afterEach, describe, expect, it } from "vitest";
++import { KEY_ACTION_EVENT } from "../settings/keyActions.ts";
++import { stepEffort } from "./EffortChip.tsx";
+ import {
+   applyModelPick,
+   entriesFrom,
+@@ -324,3 +326,47 @@ describe("the composer chips (W51-b)", () => {
+     expect(screen.getByRole("button", { name: "Reasoning effort: High" })).toBeTruthy();
+   });
+ });
++
++describe("the composer keys (W59-K1-2)", () => {
++  const press = (id: string) =>
++    act(async () => {
++      window.dispatchEvent(new CustomEvent(KEY_ACTION_EVENT, { detail: { id, handled: false } }));
++    });
++
++  it("effort steps one level at a time, from the default when on Auto, clamped", () => {
++    expect(stepEffort(null, 1)).toBe("high");
++    expect(stepEffort(null, -1)).toBe("low");
++    expect(stepEffort("high", 1)).toBe("xhigh");
++    expect(stepEffort("ultra", 1)).toBe("ultra");
++    expect(stepEffort("none", -1)).toBe("none");
++    expect(stepEffort("minimal", -1)).toBe("none");
++  });
++
++  it("the picker key opens the picker; the effort keys set the effort and tell the session", async () => {
++    const connection = new FakeConnection()
++      .on("model.options", () => OPTIONS)
++      .on("config.set", (params) => ({
++        key: "reasoning",
++        value: params.value,
++        applied: "applied",
++        saved: false,
++      }));
++    const prefs = new ModelPrefs(new MemoryStorage());
++    render(<ModelPicker sessionId="s1" profile={null} connection={connection} prefs={prefs} />);
++    await screen.findByRole("button", { name: "Reasoning effort: Auto" });
++    await press("effort.up");
++    expect(prefs.preset("openai:gpt-4o").effort).toBe("high");
++    expect(screen.getByRole("button", { name: "Reasoning effort: High" })).toBeTruthy();
++    await press("effort.down");
++    await press("effort.down");
++    expect(prefs.preset("openai:gpt-4o").effort).toBe("low");
++    expect(connection.called("config.set").map((call) => call.params.value)).toEqual([
++      "high",
++      "medium",
++      "low",
++    ]);
++    expect(screen.queryByRole("dialog", { name: "Choose a model" })).toBeNull();
++    await press("model.picker");
++    expect(screen.getByRole("dialog")).toBeTruthy();
++  });
++});
+diff --git a/apps/desktop/src/chat/ModelPicker.tsx b/apps/desktop/src/chat/ModelPicker.tsx
+index 12f3519..d134292 100644
+--- a/apps/desktop/src/chat/ModelPicker.tsx
++++ b/apps/desktop/src/chat/ModelPicker.tsx
+@@ -29,8 +29,9 @@ import {
+ import type { ChatConnection, RequestOptions } from "../gateway/connectionStore.ts";
+ import { useGatewayConnection } from "../gateway/react.tsx";
+ import { useT } from "../i18n/index.tsx";
++import { useKeyAction } from "../settings/keyActions.ts";
+ import { Button, Chip, MenuLabel, MenuRow, MenuSeparator } from "../ui/components.tsx";
+-import { EffortChip, EffortOptions } from "./EffortChip.tsx";
++import { EffortChip, EffortOptions, stepEffort } from "./EffortChip.tsx";
+ import type { StorageLike } from "./inflightJournal.ts";
+ import { errorMessage, errorName } from "./rpcErrors.ts";
+ 
+@@ -519,6 +520,28 @@ export function ModelPicker(props: ModelPickerProps) {
+     bumpPresets();
+   };
+ 
++  /** The composer's effort choice: this model's preset, and the running session when there is one. */
++  const pickEffort = (value: string | null) => {
++    if (current === null) return;
++    setEffort(modelKey(current), value);
++    if (connection !== null && props.sessionId !== null && value !== null) {
++      void connection
++        .request("config.set", { key: "reasoning", value, session_id: props.sessionId })
++        .catch(() => {});
++    }
++  };
++
++  // the rebindable keys (W59-K1-2): open this picker, step the effort up or down
++  useKeyAction(["model.picker", "effort.up", "effort.down"], (id) => {
++    if (id === "model.picker") {
++      setOpen(true);
++      return true;
++    }
++    if (current === null) return false;
++    pickEffort(stepEffort(effort ?? null, id === "effort.up" ? 1 : -1));
++    return true;
++  });
++
+   const onMenuKey = (event: React.KeyboardEvent) => {
+     if (event.key === "Escape") {
+       event.stopPropagation();
+@@ -553,23 +576,7 @@ export function ModelPicker(props: ModelPickerProps) {
+       >
+         {current ? current.model : <LoaderCircle aria-hidden="true" size={12} className="spin" />}
+       </Chip>
+-      {current !== null && (
+-        <EffortChip
+-          effort={effort ?? null}
+-          onPick={(value) => {
+-            setEffort(modelKey(current), value);
+-            if (connection !== null && props.sessionId !== null && value !== null) {
+-              void connection
+-                .request("config.set", {
+-                  key: "reasoning",
+-                  value,
+-                  session_id: props.sessionId,
+-                })
+-                .catch(() => {});
+-            }
+-          }}
+-        />
+-      )}
++      {current !== null && <EffortChip effort={effort ?? null} onPick={pickEffort} />}
+       {note !== null ? <span className="model-picker-note">{note}</span> : null}
+       {open ? (
+         <div
+diff --git a/apps/desktop/src/chat/Transcript.test.tsx b/apps/desktop/src/chat/Transcript.test.tsx
+index 8bb95cf..d50c7c4 100644
+--- a/apps/desktop/src/chat/Transcript.test.tsx
++++ b/apps/desktop/src/chat/Transcript.test.tsx
+@@ -266,3 +266,43 @@ describe("TranscriptStore history before the connection is ready", () => {
+     store.dispose();
+   });
+ });
++
++describe("reply actions (W59-K1-5)", () => {
++  it("a settled reply shows its stored time and copies its text", async () => {
++    const at = new Date(2026, 9, 25, 9, 41).getTime();
++    const rows = [
++      { role: "user", text: "question", row_id: 1, at: at - 60_000 },
++      { role: "assistant", text: "the answer", row_id: 2, at },
++    ] as unknown as HistoryMessage[];
++    const writes: string[] = [];
++    Object.defineProperty(navigator, "clipboard", {
++      configurable: true,
++      value: { writeText: async (text: string) => void writes.push(text) },
++    });
++    const { view } = await show(rows);
++    const reply = view.container.querySelector(".msg-assistant") as HTMLElement;
++    const time = reply.querySelector(".msg-actions time") as HTMLTimeElement;
++    expect(time.dateTime).toBe(new Date(at).toISOString());
++    const prompt = view.container.querySelector(".msg-user time") as HTMLTimeElement;
++    expect(prompt.dateTime).toBe(new Date(at - 60_000).toISOString());
++    await act(async () => {
++      fireEvent.click(screen.getByRole("button", { name: "Copy reply" }));
++    });
++    expect(writes).toEqual(["the answer"]);
++    expect(screen.getByRole("button", { name: "Copied" })).toBeTruthy();
++  });
++
++  it("a reply without a stored time still offers copy; a streaming one shows nothing", async () => {
++    const { view, source } = await show([
++      { role: "user", text: "q", row_id: 1 },
++      { role: "assistant", text: "a", row_id: 2 },
++    ]);
++    expect(view.container.querySelector(".msg-actions time")).toBeNull();
++    expect(screen.getByRole("button", { name: "Copy reply" })).toBeTruthy();
++    await act(async () => {
++      source.emit({ type: "turn.started", turn_id: "t9" });
++      source.emit({ type: "message.delta", turn_id: "t9", text: "partial" });
++    });
++    expect(screen.getAllByRole("button", { name: "Copy reply" })).toHaveLength(1);
++  });
++});
+diff --git a/apps/desktop/src/chat/Transcript.tsx b/apps/desktop/src/chat/Transcript.tsx
+index a054328..f24e480 100644
+--- a/apps/desktop/src/chat/Transcript.tsx
++++ b/apps/desktop/src/chat/Transcript.tsx
+@@ -3,7 +3,7 @@
+ // is at the bottom the view follows the stream; scrolling up stops following and shows "Scroll
+ // to bottom". Each session's reading position is kept for when it is shown again.
+ 
+-import { ArrowDown } from "lucide-react";
++import { ArrowDown, Check, Copy } from "lucide-react";
+ import {
+   type ReactNode,
+   type UIEvent,
+@@ -13,18 +13,20 @@ import {
+   useRef,
+   useState,
+ } from "react";
++import { copyText } from "../app/clipboard.ts";
+ import { useT } from "../i18n/index.tsx";
+ import { useDisplayPrefs } from "../settings/displayPrefs.ts";
+ import { ErrorCard } from "./ErrorCard.tsx";
+ import { type FailureAction, failureEcho } from "./failure.ts";
+ import { Markdown } from "./Markdown.tsx";
+-import type {
+-  AssistantItem,
+-  AsyncItem,
+-  ErrorItem,
+-  NoticeItem,
+-  TranscriptItem,
+-  UserItem,
++import {
++  type AssistantItem,
++  type AsyncItem,
++  assistantText,
++  type ErrorItem,
++  type NoticeItem,
++  type TranscriptItem,
++  type UserItem,
+ } from "./messageStream.ts";
+ import { Timeline } from "./Timeline.tsx";
+ import { ToolRow } from "./ToolRow.tsx";
+@@ -62,12 +64,14 @@ export interface TranscriptProps {
+ }
+ 
+ /**
+- * When this window sent a prompt (W52-g). Only prompts typed here have a time: the stored history
+- * carries none, so a reloaded row shows no time rather than a guessed one.
++ * When this window sent a prompt (W52-g). A stored row carries its own time when the history came
++ * from the REST route (W59-K1-5); otherwise only prompts typed here have one, and a reloaded row
++ * shows no time rather than a guessed one.
+  */
+ const sentTimes = new Map<string, number>();
+ 
+ function sentAt(sessionId: string, item: UserItem): number | null {
++  if (typeof item.at === "number") return item.at;
+   const key = `${sessionId}\u0000${item.text}`;
+   if (!item.persisted && item.localId !== null && !sentTimes.has(key)) {
+     sentTimes.set(key, Date.now());
+@@ -108,6 +112,49 @@ function UserRow(props: { item: UserItem; sessionId: string }) {
+   );
+ }
+ 
++function clockTime(at: number): string {
++  return new Date(at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
++}
++
++/**
++ * Under a settled reply (W59-K1-5): when it was stored, if known, and a copy button for its text.
++ * Shown on hover or focus, like a prompt's time.
++ */
++function ReplyActions(props: { item: AssistantItem }) {
++  const t = useT();
++  const [copied, setCopied] = useState(false);
++  const text = assistantText(props.item).trim();
++  useEffect(() => {
++    if (!copied) return;
++    const timer = setTimeout(() => setCopied(false), 1500);
++    return () => clearTimeout(timer);
++  }, [copied]);
++  const at = typeof props.item.at === "number" ? props.item.at : null;
++  if (text === "" && at === null) return null;
++  return (
++    <div className="msg-actions">
++      {at !== null && (
++        <time dateTime={new Date(at).toISOString()} title={clockTime(at)}>
++          {clockTime(at)}
++        </time>
++      )}
++      {text !== "" && (
++        <button
++          type="button"
++          className="msg-action"
++          aria-label={t(copied ? "transcript.copied" : "transcript.copyReply")}
++          title={t(copied ? "transcript.copied" : "transcript.copyReply")}
++          onClick={() => {
++            void copyText(text).then((ok) => setCopied(ok));
++          }}
++        >
++          {copied ? <Check aria-hidden="true" size={13} /> : <Copy aria-hidden="true" size={13} />}
++        </button>
++      )}
++    </div>
++  );
++}
++
+ function AssistantRow(props: { item: AssistantItem; showReasoning: boolean; hideEcho: boolean }) {
+   const { item, showReasoning } = props;
+   const t = useT();
+@@ -147,6 +194,7 @@ function AssistantRow(props: { item: AssistantItem; showReasoning: boolean; hide
+       })}
+       {item.streaming && <TurnActivity turnKey={item.key} />}
+       {item.interrupted && <p className="msg-note">{t("transcript.interrupted")}</p>}
++      {!item.streaming && <ReplyActions item={item} />}
+     </div>
+   );
+ }
+diff --git a/apps/desktop/src/chat/composer/Composer.tsx b/apps/desktop/src/chat/composer/Composer.tsx
+index f39f300..a149db0 100644
+--- a/apps/desktop/src/chat/composer/Composer.tsx
++++ b/apps/desktop/src/chat/composer/Composer.tsx
+@@ -69,6 +69,7 @@ import {
+   PromptHistory,
+ } from "./completion.ts";
+ import "./composerMenus.css";
++import { useKeyAction } from "../../settings/keyActions.ts";
+ import {
+   adoptGoneDraft,
+   type DraftStore,
+@@ -215,6 +216,12 @@ export function Composer(props: ComposerProps) {
+     props.sessionId === null ? null : (props.inflight?.imageDraft(props.sessionId) ?? null),
+   );
+   const textarea = useRef<HTMLTextAreaElement>(null);
++  // the rebindable "go to the message box" key (W59-K1-2)
++  useKeyAction(["composer.focus"], () => {
++    if (textarea.current === null) return false;
++    textarea.current.focus();
++    return true;
++  });
+   const listId = useId();
+   const composing = useRef(false);
+   /** The fresh draft's create key: kept until the daemon answers definitely. */
+diff --git a/apps/desktop/src/chat/messageStream.ts b/apps/desktop/src/chat/messageStream.ts
+index cce1e61..b94e0f1 100644
+--- a/apps/desktop/src/chat/messageStream.ts
++++ b/apps/desktop/src/chat/messageStream.ts
+@@ -49,6 +49,8 @@ export interface UserItem {
+   readonly localId: string | null;
+   readonly persisted: boolean;
+   readonly rowId: number | null;
++  /** When the row was stored (epoch ms), from the REST history (W59-K1-5); absent when unknown. */
++  readonly at?: number | null;
+ }
+ 
+ export interface AssistantItem {
+@@ -61,6 +63,16 @@ export interface AssistantItem {
+   readonly interrupted: boolean;
+   /** This window saw the turn start (it holds the whole turn, not a tail of it). */
+   readonly sawStart: boolean;
++  /** When the reply's last row was stored (epoch ms), from the REST history (W59-K1-5). */
++  readonly at?: number | null;
++}
++
++/** A history row with the time it was stored, when the source knows it (the REST route does). */
++export type TimedHistoryRow = HistoryMessage & { readonly at?: number };
++
++function storedAt(row: HistoryMessage): number | null {
++  const at = (row as TimedHistoryRow).at;
++  return typeof at === "number" && Number.isFinite(at) ? at : null;
+ }
+ 
+ export interface ErrorItem {
+@@ -500,6 +512,7 @@ export function historyItems(rows: readonly HistoryMessage[]): TranscriptItem[]
+         localId: null,
+         persisted: true,
+         rowId: row.row_id ?? null,
++        at: storedAt(row),
+       });
+       return;
+     }
+@@ -531,7 +544,7 @@ export function historyItems(rows: readonly HistoryMessage[]): TranscriptItem[]
+         result: row.text,
+       });
+     }
+-    items[items.length - 1] = { ...last, parts };
++    items[items.length - 1] = { ...last, parts, at: storedAt(row) ?? last.at ?? null };
+   });
+   return items;
+ }
+diff --git a/apps/desktop/src/chat/restHistory.test.ts b/apps/desktop/src/chat/restHistory.test.ts
+index ab44162..35b0f36 100644
+--- a/apps/desktop/src/chat/restHistory.test.ts
++++ b/apps/desktop/src/chat/restHistory.test.ts
+@@ -25,6 +25,15 @@ describe("REST history", () => {
+     ]);
+   });
+ 
++  it("keeps each row's stored time, in milliseconds (W59-K1-5)", () => {
++    const rows = displayRows([
++      { id: 2, role: "user", content: "hi", timestamp: 1_700_000_000.5 },
++      { id: 3, role: "assistant", content: "hello", timestamp: "soon" },
++    ]);
++    expect(rows[0]).toEqual({ role: "user", text: "hi", row_id: 2, at: 1_700_000_000_500 });
++    expect(rows[1]).toEqual({ role: "assistant", text: "hello", row_id: 3 });
++  });
++
+   it("gives tool rows their call's arguments, as the live rows have them (W47-a)", () => {
+     const rows = [
+       {
+diff --git a/apps/desktop/src/chat/restHistory.ts b/apps/desktop/src/chat/restHistory.ts
+index 6c60fb1..94993c4 100644
+--- a/apps/desktop/src/chat/restHistory.ts
++++ b/apps/desktop/src/chat/restHistory.ts
+@@ -9,6 +9,7 @@
+ 
+ import type { HistoryMessage } from "@indus/protocol";
+ import type { IndusApiRequest, IndusApiResult } from "../global.d.ts";
++import type { TimedHistoryRow } from "./messageStream.ts";
+ 
+ export type ApiCall = (request: IndusApiRequest) => Promise<IndusApiResult>;
+ 
+@@ -22,6 +23,8 @@ interface StoredRow {
+   tool_calls?: unknown;
+   tool_call_id?: unknown;
+   tool_name?: unknown;
++  /** Stored time, epoch seconds. */
++  timestamp?: unknown;
+ }
+ 
+ const SHOWN = new Set(["user", "assistant", "tool"]);
+@@ -44,10 +47,10 @@ function parseArguments(raw: unknown): Arguments | null {
+ }
+ 
+ /** Stored rows (oldest first) → what the transcript shows. */
+-export function displayRows(rows: readonly StoredRow[]): HistoryMessage[] {
++export function displayRows(rows: readonly StoredRow[]): TimedHistoryRow[] {
+   const names = new Map<string, string>();
+   const calls = new Map<string, unknown>();
+-  const out: HistoryMessage[] = [];
++  const out: TimedHistoryRow[] = [];
+   for (const row of rows) {
+     const role = typeof row.role === "string" ? row.role : "";
+     if (!SHOWN.has(role)) continue;
+@@ -63,6 +66,11 @@ export function displayRows(rows: readonly StoredRow[]): HistoryMessage[] {
+     }
+     const text = typeof row.content === "string" ? row.content : "";
+     const rowId = typeof row.id === "number" ? row.id : null;
++    // the stored time (W59-K1-5): the transcript shows it under each prompt and reply
++    const stamp =
++      typeof row.timestamp === "number" && Number.isFinite(row.timestamp)
++        ? { at: row.timestamp * 1000 }
++        : {};
+     if (role === "tool") {
+       const callId = typeof row.tool_call_id === "string" ? row.tool_call_id : "";
+       const name =
+@@ -76,11 +84,12 @@ export function displayRows(rows: readonly StoredRow[]): HistoryMessage[] {
+         name,
+         ...(args === null ? {} : { arguments: args }),
+         row_id: rowId,
++        ...stamp,
+       });
+       continue;
+     }
+     if (text.trim() === "") continue; // an assistant row with only tool calls
+-    out.push({ role: role as "user" | "assistant", text, row_id: rowId });
++    out.push({ role: role as "user" | "assistant", text, row_id: rowId, ...stamp });
+   }
+   return out;
+ }
+@@ -89,7 +98,7 @@ export function displayRows(rows: readonly StoredRow[]): HistoryMessage[] {
+ export function restHistory(
+   api: ApiCall,
+   profile: string | null,
+-): (sessionId: string) => Promise<HistoryMessage[]> {
++): (sessionId: string) => Promise<TimedHistoryRow[]> {
+   return async (sessionId) => {
+     const answer = await api({
+       method: "GET",
+diff --git a/apps/desktop/src/chat/transcript.css b/apps/desktop/src/chat/transcript.css
+index d7ff955..dc989c7 100644
+--- a/apps/desktop/src/chat/transcript.css
++++ b/apps/desktop/src/chat/transcript.css
+@@ -59,6 +59,49 @@
+   opacity: 1;
+ }
+ 
++/* under a settled reply: its stored time and a copy button, on hover or focus (W59-K1-5) */
++.msg-actions {
++  display: flex;
++  align-items: center;
++  gap: 6px;
++  min-height: 20px;
++  margin-top: 2px;
++  color: var(--desk-fg-4);
++  font-size: var(--desk-text-micro);
++  font-variant-numeric: tabular-nums;
++  opacity: 0;
++  transition: opacity var(--indus-duration-fast, 120ms);
++}
++
++.msg-assistant:hover .msg-actions,
++.msg-assistant:focus-within .msg-actions {
++  opacity: 1;
++}
++
++.msg-action {
++  display: inline-flex;
++  align-items: center;
++  justify-content: center;
++  width: 20px;
++  height: 20px;
++  padding: 0;
++  border: 0;
++  border-radius: 3px;
++  background: transparent;
++  color: inherit;
++  cursor: pointer;
++}
++
++.msg-action:hover {
++  background: var(--desk-row-hover);
++  color: var(--desk-fg-2);
++}
++
++.msg-action:focus-visible {
++  outline: 1px solid var(--desk-accent);
++  outline-offset: 1px;
++}
++
+ .msg-text > .md > :first-child {
+   margin-top: 0;
+ }
+diff --git a/apps/desktop/src/chat/transcriptStrings.en.ts b/apps/desktop/src/chat/transcriptStrings.en.ts
+index 2753512..4744252 100644
+--- a/apps/desktop/src/chat/transcriptStrings.en.ts
++++ b/apps/desktop/src/chat/transcriptStrings.en.ts
+@@ -47,6 +47,8 @@ export const TRANSCRIPT_STRINGS = {
+   "transcript.elapsed": "{seconds}s",
+   "transcript.activity": "Working on the reply",
+   "transcript.sentAt": "Sent {time}",
++  "transcript.copyReply": "Copy reply",
++  "transcript.copied": "Copied",
+   "markdown.copyCode": "Copy code",
+ 
+   "toast.close": "Close",
+diff --git a/apps/desktop/src/chat/voice/VoiceButtons.tsx b/apps/desktop/src/chat/voice/VoiceButtons.tsx
+index 0df7c4d..8a46e9f 100644
+--- a/apps/desktop/src/chat/voice/VoiceButtons.tsx
++++ b/apps/desktop/src/chat/voice/VoiceButtons.tsx
+@@ -7,6 +7,7 @@ import { AudioLines, Mic, MicOff } from "lucide-react";
+ import { useEffect, useSyncExternalStore } from "react";
+ import type { ChatConnection } from "../../gateway/connectionStore.ts";
+ import { type MessageKey, useT } from "../../i18n/index.tsx";
++import { useKeyAction } from "../../settings/keyActions.ts";
+ import { type DictateRequest, dictationDone, WAKE_DICTATE_EVENT } from "../../wake/appWake.ts";
+ import { type DraftStore, draftOf, FRESH, setDraft } from "../composer/goneSession.ts";
+ import { Conversation, type LevelSource, type Player } from "./conversation.ts";
+@@ -182,6 +183,12 @@ export function VoiceButtons(props: {
+   const recording = snap.state === "recording" || snap.state === "starting";
+   const recipient: Recipient = { sessionId: props.sessionId, profile: props.profile };
+ 
++  // the rebindable dictation key (W59-K1-2) does what the microphone button does
++  useKeyAction(["voice.dictation"], () => {
++    void (recording ? dictation.stop() : dictation.start(recipient));
++    return true;
++  });
++
+   useEffect(() => {
+     const onKey = (event: KeyboardEvent) => {
+       if (event.key === "Escape" && dictation.active) dictation.cancel();
+@@ -283,6 +290,12 @@ function ConversationButton(props: {
+     () => live.phase,
+   );
+   const on = phase !== "off";
++  // the rebindable voice-conversation key (W59-K1-2) does what this button does
++  useKeyAction(["voice.conversation"], () => {
++    if (on) live.stop();
++    else void live.start(props.recipient).catch(() => undefined);
++    return true;
++  });
+   return (
+     <button
+       type="button"
+diff --git a/apps/desktop/src/global.d.ts b/apps/desktop/src/global.d.ts
+index ff2f9a0..40312df 100644
+--- a/apps/desktop/src/global.d.ts
++++ b/apps/desktop/src/global.d.ts
+@@ -145,7 +145,14 @@ export type IndusPrefsPatch = {
+   quickEntryShortcut?: string;
+   hudSnapShortcut?: string;
+   hudToggleShortcut?: string;
+-  notifications?: { turnComplete?: boolean; approvals?: boolean; sounds?: boolean };
++  notifications?: {
++    turnComplete?: boolean;
++    approvals?: boolean;
++    sounds?: boolean;
++    input?: boolean;
++    turnFailed?: boolean;
++    plugins?: boolean;
++  };
+   keybindings?: Record<string, string>;
+   chatTextScale?: number;
+   introSplash?: boolean;
+@@ -169,7 +176,14 @@ export type IndusPrefsSnapshot = {
+   quickEntryShortcut: string;
+   hudSnapShortcut: string;
+   hudToggleShortcut: string;
+-  notifications: { turnComplete: boolean; approvals: boolean; sounds: boolean };
++  notifications: {
++    turnComplete: boolean;
++    approvals: boolean;
++    sounds: boolean;
++    input: boolean;
++    turnFailed: boolean;
++    plugins: boolean;
++  };
+   keybindings: Record<string, string>;
+   chatTextScale: number;
+   introSplash: boolean;
+diff --git a/apps/desktop/src/settings/PrefsEffects.tsx b/apps/desktop/src/settings/PrefsEffects.tsx
+index 8aaa7c4..67d7538 100644
+--- a/apps/desktop/src/settings/PrefsEffects.tsx
++++ b/apps/desktop/src/settings/PrefsEffects.tsx
+@@ -1,12 +1,13 @@
+ // Applies the desktop preferences that change how this window looks (P20-32): the chat text
+-// size, and the display choices of Settings › Appearance (W55-F3) — published to the display
++// size, the rebindable key actions (W59-K1-2), and the display choices of Settings › Appearance (W55-F3) — published to the display
+ // store for the transcript, sidebar and shell, and mirrored on the root element for the rules in
+ // `displayPrefs.css`. Renders nothing but the cold-start "reopen last chat" step.
+ 
+ import { useEffect } from "react";
+-import { desktopBridge } from "../app/bridge.ts";
++import { desktopBridge, launchFacts } from "../app/bridge.ts";
+ import { type SettingsBridge, usePrefs } from "./context.tsx";
+ import { publishDisplayPrefs } from "./displayPrefs.ts";
++import { useKeyActionDispatch } from "./keyActions.ts";
+ import { ReopenLastChat } from "./ReopenLastChat.tsx";
+ import "./displayPrefs.css";
+ 
+@@ -17,6 +18,8 @@ export const BUBBLE_FILL_VAR = "--indus-bubble-fill";
+ export function PrefsEffects(props: { bridge?: SettingsBridge | null }) {
+   const bridge = props.bridge === undefined ? (desktopBridge() ?? null) : props.bridge;
+   const { prefs } = usePrefs(bridge);
++  // the rebindable composer, voice and profile keys (W59-K1-2), under the person's own bindings
++  useKeyActionDispatch(prefs?.keybindings ?? null, launchFacts().platform);
+   const scale = prefs?.chatTextScale;
+   useEffect(() => {
+     if (scale === undefined) return;
+diff --git a/apps/desktop/src/settings/SettingsOverlay.test.tsx b/apps/desktop/src/settings/SettingsOverlay.test.tsx
+index ca274f4..c8b4df6 100644
+--- a/apps/desktop/src/settings/SettingsOverlay.test.tsx
++++ b/apps/desktop/src/settings/SettingsOverlay.test.tsx
+@@ -232,7 +232,14 @@ describe("settings overlay", () => {
+       quickEntryShortcut: "CommandOrControl+Shift+Space",
+       hudSnapShortcut: "CommandOrControl+Shift+G",
+       hudToggleShortcut: "CommandOrControl+Shift+H",
+-      notifications: { turnComplete: true, approvals: true, sounds: true },
++      notifications: {
++        turnComplete: true,
++        approvals: true,
++        sounds: true,
++        input: true,
++        turnFailed: true,
++        plugins: true,
++      },
+       keybindings: {},
+       chatTextScale: 110,
+       ...DISPLAY_DEFAULTS,
+@@ -328,7 +335,14 @@ describe("settings-b pages (W52-j)", () => {
+       quickEntryShortcut: "CommandOrControl+Shift+Space",
+       hudSnapShortcut: "CommandOrControl+Shift+G",
+       hudToggleShortcut: "CommandOrControl+Shift+H",
+-      notifications: { turnComplete: true, approvals: true, sounds: true },
++      notifications: {
++        turnComplete: true,
++        approvals: true,
++        sounds: true,
++        input: true,
++        turnFailed: true,
++        plugins: true,
++      },
+       keybindings: {},
+       chatTextScale: 110,
+       ...DISPLAY_DEFAULTS,
+@@ -345,7 +359,7 @@ describe("settings-b pages (W52-j)", () => {
+     return { set, prefs: { get: async () => state, set, onChanged: () => () => undefined } };
+   }
+ 
+-  it("the notifications master switch writes both kinds; off dims the two rows", async () => {
++  it("the notifications master switch writes every kind; off dims the five rows", async () => {
+     const fake = prefsBridge();
+     const bridge = { prefs: fake.prefs } as unknown as SettingsBridge;
+     render(<Harness initial="view=notifications" api={backend(["default"])} bridge={bridge} />);
+@@ -354,12 +368,43 @@ describe("settings-b pages (W52-j)", () => {
+       fireEvent.click(screen.getByRole("switch", { name: "Enable notifications" }));
+     });
+     expect(fake.set).toHaveBeenLastCalledWith({
+-      notifications: { turnComplete: false, approvals: false },
++      notifications: {
++        approvals: false,
++        input: false,
++        turnComplete: false,
++        turnFailed: false,
++        plugins: false,
++      },
+     });
+     await settle();
++    for (const name of [
++      "Approval needed",
++      "Input needed",
++      "Response ready",
++      "Turn failed",
++      "Plugin notifications",
++    ]) {
++      expect((screen.getByRole("switch", { name }) as HTMLInputElement).disabled).toBe(true);
++    }
++  });
++
++  it("each alert kind has its own switch (W59-K1-1)", async () => {
++    const fake = prefsBridge();
++    const bridge = { prefs: fake.prefs } as unknown as SettingsBridge;
++    render(<Harness initial="view=notifications" api={backend(["default"])} bridge={bridge} />);
++    await settle();
++    await act(async () => {
++      fireEvent.click(screen.getByRole("switch", { name: "Turn failed" }));
++    });
++    expect(fake.set).toHaveBeenLastCalledWith({ notifications: { turnFailed: false } });
++    await settle();
++    // one kind off leaves the master switch on and the others live
+     expect(
+-      (screen.getByRole("switch", { name: "Approval needed" }) as HTMLInputElement).disabled,
++      (screen.getByRole("switch", { name: "Enable notifications" }) as HTMLInputElement).checked,
+     ).toBe(true);
++    expect(
++      (screen.getByRole("switch", { name: "Input needed" }) as HTMLInputElement).disabled,
++    ).toBe(false);
+   });
+ 
+   it("the completion sound select maps to the sounds preference", async () => {
+diff --git a/apps/desktop/src/settings/displayPrefs.test.tsx b/apps/desktop/src/settings/displayPrefs.test.tsx
+index 17657dc..540d607 100644
+--- a/apps/desktop/src/settings/displayPrefs.test.tsx
++++ b/apps/desktop/src/settings/displayPrefs.test.tsx
+@@ -43,7 +43,14 @@ function prefsBridge(overrides: Partial<DisplayPrefs> = {}) {
+     quickEntryShortcut: "",
+     hudSnapShortcut: "",
+     hudToggleShortcut: "",
+-    notifications: { turnComplete: true, approvals: true, sounds: true },
++    notifications: {
++      turnComplete: true,
++      approvals: true,
++      sounds: true,
++      input: true,
++      turnFailed: true,
++      plugins: true,
++    },
+     keybindings: {},
+     chatTextScale: 110,
+     ...DISPLAY_DEFAULTS,
+diff --git a/apps/desktop/src/settings/fieldCopy.ts b/apps/desktop/src/settings/fieldCopy.ts
+index 80ff9ff..f824498 100644
+--- a/apps/desktop/src/settings/fieldCopy.ts
++++ b/apps/desktop/src/settings/fieldCopy.ts
+@@ -144,6 +144,14 @@ export const FIELD_COPY: Readonly<Record<string, FieldCopy>> = {
+     description: "settingsB.field.voiceRecordKeyBody",
+   },
+   "voice.max_seconds": { label: "settingsB.field.voiceMaxSeconds", description: "" },
++  "voice.silence_seconds": {
++    label: "settingsB.field.voiceSilenceSeconds",
++    description: "settingsB.field.voiceSilenceSecondsBody",
++  },
++  "voice.wait_seconds": {
++    label: "settingsB.field.voiceWaitSeconds",
++    description: "settingsB.field.voiceWaitSecondsBody",
++  },
+   "stt.provider": {
+     label: "settingsB.field.sttProvider",
+     placeholder: "settingsB.field.sttProviderPlaceholder",
+@@ -154,6 +162,11 @@ export const FIELD_COPY: Readonly<Record<string, FieldCopy>> = {
+     description: "settingsB.field.sttLocalModelBody",
+     options: opts("tiny", "base", "small", "medium", "large-v3"),
+   },
++  "stt.local_device": {
++    label: "settingsB.field.sttLocalDevice",
++    description: "settingsB.field.sttLocalDeviceBody",
++    options: opts("auto", "cpu", "cuda"),
++  },
+   "stt.language": { label: "settingsB.field.sttLanguage", description: "" },
+   "stt.model": { label: "settingsB.field.sttModel", description: "" },
+   "tts.provider": {
+diff --git a/apps/desktop/src/settings/keyActions.test.tsx b/apps/desktop/src/settings/keyActions.test.tsx
+new file mode 100644
+index 0000000..defc97a
+--- /dev/null
++++ b/apps/desktop/src/settings/keyActions.test.tsx
+@@ -0,0 +1,111 @@
++// @vitest-environment jsdom
++import { cleanup, render } from "@testing-library/react";
++import { afterEach, describe, expect, it, vi } from "vitest";
++import { profileTarget } from "../app/Shell.tsx";
++import {
++  type DispatchedAction,
++  keyActionFor,
++  useKeyAction,
++  useKeyActionDispatch,
++} from "./keyActions.ts";
++import { KEY_ACTIONS, keyGroupOf } from "./keybindings.ts";
++
++afterEach(cleanup);
++
++const key = (
++  k: string,
++  mods: Partial<Record<"ctrl" | "meta" | "alt" | "shift", boolean>> = {},
++) => ({
++  key: k,
++  ctrlKey: mods.ctrl === true,
++  metaKey: mods.meta === true,
++  altKey: mods.alt === true,
++  shiftKey: mods.shift === true,
++});
++
++describe("rebindable key actions (W59-K1-2)", () => {
++  it("default bindings run their action; an unset one runs nothing until bound", () => {
++    expect(keyActionFor(key("m", { ctrl: true, shift: true }), {}, "linux")).toBe("model.picker");
++    expect(keyActionFor(key("v", { ctrl: true, alt: true }), {}, "linux")).toBe(
++      "voice.conversation",
++    );
++    expect(keyActionFor(key("n", { ctrl: true }), {}, "linux")).toBe("chat.new");
++    expect(keyActionFor(key(",", { ctrl: true }), {}, "linux")).toBe("settings.open");
++    expect(keyActionFor(key("l", { meta: true }), {}, "darwin")).toBe("composer.focus");
++    expect(keyActionFor(key("ArrowUp", { ctrl: true, shift: true }), {}, "linux")).toBeNull();
++    const bound = { "effort.up": "CommandOrControl+Shift+Up", "model.picker": "" };
++    expect(keyActionFor(key("ArrowUp", { ctrl: true, shift: true }), bound, "linux")).toBe(
++      "effort.up",
++    );
++    // an override that unbinds the default frees the key
++    expect(keyActionFor(key("m", { ctrl: true, shift: true }), bound, "linux")).toBeNull();
++  });
++
++  it("pane keys, repeats and handled keydowns never run an action", () => {
++    const onPaneKey = { "chat.new": "CommandOrControl+T" };
++    expect(keyActionFor(key("t", { ctrl: true }), onPaneKey, "linux")).toBeNull();
++    expect(keyActionFor({ ...key("n", { ctrl: true }), repeat: true }, {}, "linux")).toBeNull();
++    expect(
++      keyActionFor({ ...key("n", { ctrl: true }), defaultPrevented: true }, {}, "linux"),
++    ).toBeNull();
++    expect(keyActionFor(key("Control", { ctrl: true }), {}, "linux")).toBeNull();
++  });
++
++  it("a keydown reaches the action's owner and is marked handled", () => {
++    const seen: DispatchedAction[] = [];
++    function Owner() {
++      useKeyActionDispatch({ "profile.next": "CommandOrControl+Alt+Down" }, "linux");
++      useKeyAction(["profile.next", "model.picker"], (id) => {
++        seen.push(id);
++        return id === "profile.next";
++      });
++      return null;
++    }
++    render(<Owner />);
++    const down = new KeyboardEvent("keydown", {
++      key: "ArrowDown",
++      ctrlKey: true,
++      altKey: true,
++      cancelable: true,
++    });
++    window.dispatchEvent(down);
++    expect(seen).toEqual(["profile.next"]);
++    expect(down.defaultPrevented).toBe(true);
++    // an owner that could not act leaves the key to the page
++    const picker = new KeyboardEvent("keydown", {
++      key: "M",
++      ctrlKey: true,
++      shiftKey: true,
++      cancelable: true,
++    });
++    window.dispatchEvent(picker);
++    expect(seen).toEqual(["profile.next", "model.picker"]);
++    expect(picker.defaultPrevented).toBe(false);
++    const other = vi.fn();
++    window.addEventListener("keydown", other);
++    window.dispatchEvent(new KeyboardEvent("keydown", { key: "q", ctrlKey: true }));
++    window.removeEventListener("keydown", other);
++    expect(seen).toHaveLength(2);
++  });
++
++  it("every new action is listed in its group", () => {
++    const ids = KEY_ACTIONS.map((action) => action.id);
++    for (const id of ["model.picker", "effort.up", "effort.down", "voice.dictation"]) {
++      expect(ids).toContain(id);
++      expect(keyGroupOf(id)).toBe("composer");
++    }
++    for (const id of ["profile.default", "profile.next", "profile.previous"]) {
++      expect(keyGroupOf(id)).toBe("profiles");
++    }
++  });
++
++  it("profile keys step through the rail and find the default", () => {
++    const names = ["default", "research", "work"];
++    expect(profileTarget("profile.next", names, "default", null)).toBe("research");
++    expect(profileTarget("profile.next", names, "work", null)).toBe("default");
++    expect(profileTarget("profile.previous", names, "default", null)).toBe("work");
++    expect(profileTarget("profile.default", names, "work", "research")).toBe("research");
++    expect(profileTarget("profile.default", names, "default", null)).toBeNull();
++    expect(profileTarget("profile.next", ["default"], "default", null)).toBeNull();
++  });
++});
+diff --git a/apps/desktop/src/settings/keyActions.ts b/apps/desktop/src/settings/keyActions.ts
+new file mode 100644
+index 0000000..68eca7f
+--- /dev/null
++++ b/apps/desktop/src/settings/keyActions.ts
+@@ -0,0 +1,105 @@
++// The in-app key actions the person can rebind and that this module runs (W59-K1-2). One window
++// listener (installed by `PrefsEffects`) turns a keydown into an action id through the person's
++// effective bindings and announces it as a window event; the part of the app that owns the action
++// (composer, model picker, voice buttons, shell) listens with `useKeyAction`. A key the pane
++// shortcuts own, a repeat, or a keydown already handled (a key being recorded, the composer's own
++// Enter) never runs an action.
++
++import { useEffect, useRef } from "react";
++import { actionForKey } from "../panes/shortcuts.ts";
++import { acceleratorFromEvent, effectiveBindings, normalizeAccelerator } from "./keybindings.ts";
++
++export const KEY_ACTION_EVENT = "indus-key-action";
++
++/** The rebindable actions this dispatcher runs (the other rows are handled where they live). */
++export const DISPATCHED_ACTIONS = [
++  "chat.new",
++  "settings.open",
++  "composer.focus",
++  "model.picker",
++  "effort.up",
++  "effort.down",
++  "voice.dictation",
++  "voice.conversation",
++  "profile.next",
++  "profile.previous",
++  "profile.default",
++] as const;
++
++export type DispatchedAction = (typeof DISPATCHED_ACTIONS)[number];
++
++export interface KeyEventLike {
++  key: string;
++  code?: string;
++  ctrlKey: boolean;
++  metaKey: boolean;
++  altKey: boolean;
++  shiftKey: boolean;
++  repeat?: boolean;
++  defaultPrevented?: boolean;
++}
++
++const fold = (accelerator: string) =>
++  accelerator.replace(/\b(Command|Control)\b/g, "CommandOrControl");
++
++/** The action `event` runs under `overrides`, or null. */
++export function keyActionFor(
++  event: KeyEventLike,
++  overrides: Readonly<Record<string, string>>,
++  platform: string,
++): DispatchedAction | null {
++  if (event.defaultPrevented === true || event.repeat === true) return null;
++  const pressed = acceleratorFromEvent(event);
++  if (pressed === "") return null;
++  if (actionForKey(event, platform) !== null) return null;
++  const wanted = fold(pressed);
++  const bindings = effectiveBindings(overrides);
++  for (const id of DISPATCHED_ACTIONS) {
++    const bound = normalizeAccelerator(bindings[id] ?? "");
++    if (bound !== null && fold(bound) === wanted) return id;
++  }
++  return null;
++}
++
++/** Listen on this window and announce each bound action (`PrefsEffects`). */
++export function useKeyActionDispatch(
++  overrides: Readonly<Record<string, string>> | null,
++  platform: string,
++): void {
++  const latest = useRef(overrides);
++  latest.current = overrides;
++  useEffect(() => {
++    const onKeyDown = (event: KeyboardEvent) => {
++      const id = keyActionFor(event, latest.current ?? {}, platform);
++      if (id === null) return;
++      const announced = new CustomEvent<{ id: DispatchedAction; handled: boolean }>(
++        KEY_ACTION_EVENT,
++        { detail: { id, handled: false } },
++      );
++      window.dispatchEvent(announced);
++      if (announced.detail.handled) event.preventDefault();
++    };
++    window.addEventListener("keydown", onKeyDown);
++    return () => window.removeEventListener("keydown", onKeyDown);
++  }, [platform]);
++}
++
++/** Run `handler` when one of `ids` is pressed; it returns false when it could not act. */
++export function useKeyAction(
++  ids: readonly DispatchedAction[],
++  handler: (id: DispatchedAction) => boolean | undefined,
++): void {
++  const latest = useRef(handler);
++  latest.current = handler;
++  const key = ids.join(" ");
++  useEffect(() => {
++    const wanted = new Set(key.split(" "));
++    const onAction = (event: Event) => {
++      const detail = (event as CustomEvent<{ id: DispatchedAction; handled: boolean }>).detail;
++      if (detail === undefined || !wanted.has(detail.id)) return;
++      if (latest.current(detail.id) !== false) detail.handled = true;
++    };
++    window.addEventListener(KEY_ACTION_EVENT, onAction);
++    return () => window.removeEventListener(KEY_ACTION_EVENT, onAction);
++  }, [key]);
++}
+diff --git a/apps/desktop/src/settings/keybindings.ts b/apps/desktop/src/settings/keybindings.ts
+index c79df3e..e5db6ab 100644
+--- a/apps/desktop/src/settings/keybindings.ts
++++ b/apps/desktop/src/settings/keybindings.ts
+@@ -25,6 +25,19 @@ export const KEY_ACTIONS: readonly KeyAction[] = [
+   { id: "tab.cycle", label: "settings.key.nextTab", defaultKey: "Control+PageDown" },
+   { id: "palette.open", label: "settings.key.palette", defaultKey: "CommandOrControl+K" },
+   { id: "find", label: "settings.key.find", defaultKey: "CommandOrControl+F" },
++  // W59-K1-2: composer, voice and profile actions (run by keyActions.ts); "" = not set yet
++  { id: "model.picker", label: "settings.key.modelPicker", defaultKey: "CommandOrControl+Shift+M" },
++  { id: "effort.up", label: "settings.key.effortUp", defaultKey: "" },
++  { id: "effort.down", label: "settings.key.effortDown", defaultKey: "" },
++  { id: "voice.dictation", label: "settings.key.dictation", defaultKey: "" },
++  {
++    id: "voice.conversation",
++    label: "settings.key.voiceConversation",
++    defaultKey: "CommandOrControl+Alt+V",
++  },
++  { id: "profile.default", label: "settings.key.profileDefault", defaultKey: "" },
++  { id: "profile.next", label: "settings.key.profileNext", defaultKey: "" },
++  { id: "profile.previous", label: "settings.key.profilePrevious", defaultKey: "" },
+ ];
+ 
+ /** The global shortcuts held as their own preferences (P20-35). */
+@@ -162,7 +175,7 @@ export function conflictsFor(
+ 
+ // -- settings-b (W52-j): groups and key chips for the Key bindings page --------------------------
+ 
+-export type KeyGroup = "general" | "composer" | "tabs" | "conversation";
++export type KeyGroup = "general" | "composer" | "tabs" | "conversation" | "profiles";
+ 
+ /** The section each in-app action is listed under (unknown ids fall into "general"). */
+ const KEY_GROUP_OF: Readonly<Record<string, KeyGroup>> = {
+@@ -174,9 +187,23 @@ const KEY_GROUP_OF: Readonly<Record<string, KeyGroup>> = {
+   "tab.reopen": "tabs",
+   "tab.next": "tabs",
+   find: "conversation",
++  "model.picker": "composer",
++  "effort.up": "composer",
++  "effort.down": "composer",
++  "voice.dictation": "composer",
++  "voice.conversation": "composer",
++  "profile.default": "profiles",
++  "profile.next": "profiles",
++  "profile.previous": "profiles",
+ };
+ 
+-export const KEY_GROUPS: readonly KeyGroup[] = ["general", "composer", "tabs", "conversation"];
++export const KEY_GROUPS: readonly KeyGroup[] = [
++  "general",
++  "composer",
++  "tabs",
++  "conversation",
++  "profiles",
++];
+ 
+ export function keyGroupOf(id: string): KeyGroup {
+   return KEY_GROUP_OF[id] ?? "general";
+diff --git a/apps/desktop/src/settings/pages.ts b/apps/desktop/src/settings/pages.ts
+index 5450294..bb1d3b4 100644
+--- a/apps/desktop/src/settings/pages.ts
++++ b/apps/desktop/src/settings/pages.ts
+@@ -331,14 +331,26 @@ export const VIEWS: readonly ViewDef[] = [
+           "voice.silence_seconds",
+           "voice.wait_seconds",
+         ],
+-        curated: ["voice.record_key", "voice.max_seconds"],
++        // W59-K1-4: the recording rules show up front (they were behind "More settings")
++        curated: [
++          "voice.record_key",
++          "voice.max_seconds",
++          "voice.silence_seconds",
++          "voice.wait_seconds",
++        ],
+         after: "voice-wake",
+       },
+       {
+         id: "transcription",
+         label: "settings.page.voice.transcription",
+         prefixes: ["stt."],
+-        curated: ["stt.provider", "stt.local_model", "stt.language", "stt.model"],
++        curated: [
++          "stt.provider",
++          "stt.local_model",
++          "stt.local_device",
++          "stt.language",
++          "stt.model",
++        ],
+       },
+       {
+         id: "speech",
+@@ -400,7 +412,8 @@ export const VIEWS: readonly ViewDef[] = [
+         id: "output",
+         label: "settings.page.advanced.output",
+         fields: ["tool_output.max_chars"],
+-        also: ["checkpoints.max_snapshots"],
++        // W59-K1-3: the per-read file limit also shows here (it stays owned by Files & execution)
++        also: ["checkpoints.max_snapshots", "file_read_max_chars"],
+       },
+       { id: "profiles", label: "settings.page.advanced.profiles", custom: "profiles" },
+     ],
+@@ -981,6 +994,27 @@ export const MANIFEST: readonly ManifestRow[] = [
+     label: "settings.notify.approvalNeeded",
+     keywords: ["notification", "approval", "permission", "waiting"],
+   },
++  {
++    id: "notify-input",
++    view: "notifications",
++    page: "alerts",
++    label: "settings.notify.inputNeeded",
++    keywords: ["notification", "question", "clarify", "password", "secret", "waiting"],
++  },
++  {
++    id: "notify-failed",
++    view: "notifications",
++    page: "alerts",
++    label: "settings.notify.turnFailed",
++    keywords: ["notification", "error", "failed", "failure"],
++  },
++  {
++    id: "notify-plugins",
++    view: "notifications",
++    page: "alerts",
++    label: "settings.notify.plugins",
++    keywords: ["notification", "plugin", "extension"],
++  },
+   {
+     id: "notify-test",
+     view: "notifications",
+diff --git a/apps/desktop/src/settings/pagesB/keyboard.tsx b/apps/desktop/src/settings/pagesB/keyboard.tsx
+index 7b0f8ba..bb020ef 100644
+--- a/apps/desktop/src/settings/pagesB/keyboard.tsx
++++ b/apps/desktop/src/settings/pagesB/keyboard.tsx
+@@ -1,5 +1,6 @@
+ // Settings › Keyboard Shortcuts (W52-j): Key bindings (grouped in-app actions as key chips, search,
+-// reset all, per-row reset) and Global shortcuts (quick entry and the HUD, with their live state).
++// reset all, per-row reset; the built-in keys as plain chips; composer, voice and profile actions
++// since W59-K1-2) and Global shortcuts (quick entry and the HUD, with their live state).
+ 
+ import { AlertTriangle, RotateCcw, Search } from "lucide-react";
+ import { useState } from "react";
+@@ -24,20 +25,42 @@ const GROUP_LABELS: Readonly<Record<KeyGroup, MessageKey>> = {
+   composer: "settings.keys2.groupComposer",
+   tabs: "settings.keys2.groupTabs",
+   conversation: "settings.keys2.groupConversation",
++  profiles: "settings.keys2.groupProfiles",
+ };
+ 
+-/** The composer's built-in keys (the ones its `?` help card lists): real, but not rebindable, so
+- * they show as plain chips under the Composer group (W54-D2-9). */
+-const FIXED_COMPOSER_KEYS: ReadonlyArray<{ keys: (mac: boolean) => string[]; label: MessageKey }> =
+-  [
++type FixedKey = { keys: (mac: boolean) => string[]; label: MessageKey };
++
++const mod = (mac: boolean) => (mac ? "⌘" : "Ctrl");
++const shift = (mac: boolean) => (mac ? "⇧" : "Shift");
++
++/** Built-in keys that work but are not rebindable, shown as plain chips in their group: the
++ * composer's (the ones its `?` help card lists, W54-D2-9) and the pane shell's and window's
++ * (panes/shortcuts.ts, the layout editor, the app menu; W59-K1-2). */
++const FIXED_KEYS: Readonly<Partial<Record<KeyGroup, readonly FixedKey[]>>> = {
++  general: [
++    { keys: (mac) => [mod(mac), shift(mac), "N"], label: "settings.keys2.fixedNewWindow" },
++    { keys: (mac) => [mod(mac), "J"], label: "settings.keys2.fixedRightSidebar" },
++    { keys: (mac) => [mod(mac), shift(mac), "\\"], label: "settings.keys2.fixedLayout" },
++  ],
++  composer: [
+     { keys: () => ["Enter"], label: "settings.keys2.fixedSend" },
+-    { keys: (mac) => [mac ? "⇧" : "Shift", "Enter"], label: "settings.keys2.fixedNewline" },
++    { keys: (mac) => [shift(mac), "Enter"], label: "settings.keys2.fixedNewline" },
+     { keys: () => ["@"], label: "settings.keys2.fixedMention" },
+     { keys: () => ["/"], label: "settings.keys2.fixedSlash" },
+     { keys: () => ["?"], label: "settings.keys2.fixedHelp" },
+     { keys: () => ["↑", "↓"], label: "settings.keys2.fixedHistory" },
+     { keys: () => ["Esc"], label: "settings.keys2.fixedEscape" },
+-  ];
++  ],
++  tabs: [
++    { keys: (mac) => [mod(mac), "T"], label: "settings.keys2.fixedNewTab" },
++    { keys: (mac) => [mod(mac), "1–9"], label: "settings.keys2.fixedJumpTab" },
++    { keys: (mac) => [mac ? "⌃" : "Ctrl", "PageUp"], label: "settings.keys2.fixedPrevTab" },
++    {
++      keys: (mac) => [mac ? "⌃" : "Ctrl", shift(mac), "Tab"],
++      label: "settings.keys2.fixedPrevChat",
++    },
++  ],
++};
+ 
+ const GLOBAL_TO_ACTION: Readonly<Record<string, IndusShortcutAction>> = {
+   quickEntryShortcut: "quick-entry",
+@@ -135,12 +158,9 @@ export function KeyBindingsPage() {
+       </label>
+       {KEY_GROUPS.map((group) => {
+         const rows = shown.filter((action) => keyGroupOf(action.id) === group);
+-        const fixed =
+-          group === "composer"
+-            ? FIXED_COMPOSER_KEYS.filter(
+-                (row) => q === "" || t(row.label).toLowerCase().includes(q),
+-              )
+-            : [];
++        const fixed = (FIXED_KEYS[group] ?? []).filter(
++          (row) => q === "" || t(row.label).toLowerCase().includes(q),
++        );
+         if (rows.length === 0 && fixed.length === 0) return null;
+         return (
+           <section key={group} className="sb-key-group" aria-label={t(GROUP_LABELS[group])}>
+diff --git a/apps/desktop/src/settings/pagesB/notifications.tsx b/apps/desktop/src/settings/pagesB/notifications.tsx
+index 11f8acc..a3e32a9 100644
+--- a/apps/desktop/src/settings/pagesB/notifications.tsx
++++ b/apps/desktop/src/settings/pagesB/notifications.tsx
+@@ -1,5 +1,6 @@
+-// Settings › Notifications (W52-j): Desktop alerts (a master switch over the two kinds we can
+-// detect, a test notification) and Sounds (our one completion chime, with a preview).
++// Settings › Notifications (W52-j): Desktop alerts (a master switch over the kinds of OS
++// notification the app raises — approvals, questions, replies, failed turns and plugin messages
++// since W59-K1-1 — and a test notification) and Sounds (our one completion chime, with a preview).
+ 
+ import { Bell, Play } from "lucide-react";
+ import { useState } from "react";
+@@ -9,28 +10,53 @@ import { attempt, usePrefs, useSettings } from "../context.tsx";
+ import { CompactSelect, OutlineButton, PageBody, SettingRow, Switch } from "../primitives.tsx";
+ import { Note, notAvailable } from "./kit.tsx";
+ 
++/** One switch per kind of OS notification the app raises (W59-K1-1), in the order they matter. */
++const ALERT_ROWS = [
++  {
++    id: "approvals",
++    row: "notify-approvals",
++    label: "settings.notify.approvalNeeded",
++    body: "settings.notify.approvalNeededBody",
++  },
++  {
++    id: "input",
++    row: "notify-input",
++    label: "settings.notify.inputNeeded",
++    body: "settings.notify.inputNeededBody",
++  },
++  {
++    id: "turnComplete",
++    row: "notify-turn",
++    label: "settings.notify.replyReady",
++    body: "settings.notify.replyReadyBody",
++  },
++  {
++    id: "turnFailed",
++    row: "notify-failed",
++    label: "settings.notify.turnFailed",
++    body: "settings.notify.turnFailedBody",
++  },
++  {
++    id: "plugins",
++    row: "notify-plugins",
++    label: "settings.notify.plugins",
++    body: "settings.notify.pluginsBody",
++  },
++] as const;
++
++type AlertKind = (typeof ALERT_ROWS)[number]["id"];
++
+ export function AlertsPage() {
+   const t = useT();
+   const { bridge, focusRow } = useSettings();
+   const { prefs, error, update } = usePrefs(bridge);
+   const [tested, setTested] = useState<{ text: string; error: boolean } | null>(null);
+   const kinds = prefs?.notifications;
+-  // the master switch is a view over both kinds (W52-B-10): on when both are on
+-  const allOn = kinds === undefined ? true : kinds.turnComplete || kinds.approvals;
+-  const rows = [
+-    {
+-      id: "approvals",
+-      row: "notify-approvals",
+-      label: "settings.notify.approvalNeeded",
+-      body: "settings.notify.approvalNeededBody",
+-    },
+-    {
+-      id: "turnComplete",
+-      row: "notify-turn",
+-      label: "settings.notify.replyReady",
+-      body: "settings.notify.replyReadyBody",
+-    },
+-  ] as const;
++  // the master switch is a view over every kind (W52-B-10): on while any one is on
++  const allOn = kinds === undefined ? true : ALERT_ROWS.some((row) => kinds[row.id]);
++  const everyKind = (on: boolean) =>
++    Object.fromEntries(ALERT_ROWS.map((row) => [row.id, on])) as Record<AlertKind, boolean>;
++  const rows = ALERT_ROWS;
+   const notifications = bridge?.notifications;
+   return (
+     <PageBody intro={t("settings.notify.intro")}>
+@@ -43,7 +69,7 @@ export function AlertsPage() {
+             label={t("settings.notify.all")}
+             checked={allOn}
+             disabled={prefs === null}
+-            onChange={(on) => void update({ notifications: { turnComplete: on, approvals: on } })}
++            onChange={(on) => void update({ notifications: everyKind(on) })}
+           />
+         }
+       />
+diff --git a/apps/desktop/src/settings/search.test.ts b/apps/desktop/src/settings/search.test.ts
+index d5d8be9..eecf5b5 100644
+--- a/apps/desktop/src/settings/search.test.ts
++++ b/apps/desktop/src/settings/search.test.ts
+@@ -81,6 +81,23 @@ describe("settings pages", () => {
+       output && fieldsOnPage(output, ["checkpoints.max_snapshots", "tool_output.max_chars"]),
+     ).toEqual(["checkpoints.max_snapshots", "tool_output.max_chars"]);
+     expect(pageForField("checkpoints.max_snapshots")?.page.id).toBe("checkpoints");
++    // W59-K1-3: and the per-read file limit, still owned by Files & execution
++    expect(
++      output &&
++        fieldsOnPage(output, ["file_read_max_chars", "tool_output.max_chars", "agent.max_turns"]),
++    ).toEqual(["file_read_max_chars", "tool_output.max_chars"]);
++    expect(pageForField("file_read_max_chars")?.page.id).toBe("files");
++    // W59-K1-4: the voice recording rules and the transcription device are up-front rows
++    const voice = VIEWS.find((v) => v.id === "voice");
++    expect(voice?.pages.find((p) => p.id === "conversation")?.curated).toEqual([
++      "voice.record_key",
++      "voice.max_seconds",
++      "voice.silence_seconds",
++      "voice.wait_seconds",
++    ]);
++    expect(voice?.pages.find((p) => p.id === "transcription")?.curated).toContain(
++      "stt.local_device",
++    );
+     // voice.read_aloud lands on Text to speech, the other voice.* rows on Voice conversation
+     expect(pageForField("voice.read_aloud")?.page.id).toBe("speech");
+     expect(pageForField("voice.record_key")?.page.id).toBe("conversation");
+diff --git a/apps/desktop/src/settings/settingsStates.test.tsx b/apps/desktop/src/settings/settingsStates.test.tsx
+index b932933..fe88a71 100644
+--- a/apps/desktop/src/settings/settingsStates.test.tsx
++++ b/apps/desktop/src/settings/settingsStates.test.tsx
+@@ -214,7 +214,14 @@ describe("key bindings (W54-D2-9)", () => {
+       quickEntryShortcut: "",
+       hudSnapShortcut: "",
+       hudToggleShortcut: "",
+-      notifications: { turnComplete: true, approvals: true, sounds: true },
++      notifications: {
++        turnComplete: true,
++        approvals: true,
++        sounds: true,
++        input: true,
++        turnFailed: true,
++        plugins: true,
++      },
+       keybindings: {},
+       chatTextScale: 100,
+       ...DISPLAY_DEFAULTS,
+@@ -237,5 +244,17 @@ describe("key bindings (W54-D2-9)", () => {
+     ]);
+     for (const row of fixed) expect(row.querySelector("button")).toBeNull();
+     expect(fixed[1]?.textContent).toContain("ShiftEnter");
++    // W59-K1-2: the composer and voice actions are rebindable rows; an unset one reads "set"
++    expect(screen.getByRole("button", { name: "Open the model picker" }).textContent).toBe(
++      "CtrlShiftM",
++    );
++    expect(screen.getByRole("button", { name: "Reasoning effort up" }).textContent).toBe("set");
++    expect(screen.getByRole("button", { name: "Start or stop dictation" })).toBeTruthy();
++    const profiles = screen.getByRole("region", { name: "Profiles" });
++    expect(
++      Array.from(profiles.querySelectorAll(".sb-bind-label")).map((label) => label.textContent),
++    ).toEqual(["Switch to the default profile", "Next profile", "Previous profile"]);
++    const tabs = screen.getByRole("region", { name: "Tabs" });
++    expect(tabs.textContent).toContain("Go to tab 1–9");
+   });
+ });
+diff --git a/apps/desktop/src/settings/strings.en.ts b/apps/desktop/src/settings/strings.en.ts
+index 07cce67..34994de 100644
+--- a/apps/desktop/src/settings/strings.en.ts
++++ b/apps/desktop/src/settings/strings.en.ts
+@@ -210,6 +210,14 @@ export const SETTINGS_STRINGS = {
+   "settings.key.nextChat": "Next chat (hold to choose)",
+   "settings.key.palette": "Command palette",
+   "settings.key.find": "Find in the conversation",
++  "settings.key.modelPicker": "Open the model picker",
++  "settings.key.effortUp": "Reasoning effort up",
++  "settings.key.effortDown": "Reasoning effort down",
++  "settings.key.dictation": "Start or stop dictation",
++  "settings.key.voiceConversation": "Start or end a voice conversation",
++  "settings.key.profileDefault": "Switch to the default profile",
++  "settings.key.profileNext": "Next profile",
++  "settings.key.profilePrevious": "Previous profile",
+   "settings.key.quickEntry": "Quick entry",
+   "settings.key.hudSnap": "Bring the HUD to the pointer",
+   "settings.key.hudToggle": "Show or hide the HUD",
+diff --git a/apps/desktop/src/settings/stringsB.en.ts b/apps/desktop/src/settings/stringsB.en.ts
+index 20f5014..89f656f 100644
+--- a/apps/desktop/src/settings/stringsB.en.ts
++++ b/apps/desktop/src/settings/stringsB.en.ts
+@@ -50,6 +50,13 @@ export const SETTINGS_B_STRINGS = {
+   "settings.notify.approvalNeededBody": "A command is waiting for your answer.",
+   "settings.notify.replyReady": "Response ready",
+   "settings.notify.replyReadyBody": "A reply finished while the window was in the background.",
++  "settings.notify.inputNeeded": "Input needed",
++  "settings.notify.inputNeededBody": "Indus asked you a question, or needs a password or a secret.",
++  "settings.notify.turnFailed": "Turn failed",
++  "settings.notify.turnFailedBody": "A turn stopped with an error while you were away.",
++  "settings.notify.plugins": "Plugin notifications",
++  "settings.notify.pluginsBody":
++    "A desktop plugin sent a message while Indus was in the background.",
+   "settings.notify.test": "Send test notification",
+   "settings.notify.testBody": "Notifications are working.",
+   "settings.notify.sent": "Sent.",
+@@ -90,6 +97,14 @@ export const SETTINGS_B_STRINGS = {
+   "settings.keys2.fixedEscape": "Close a menu",
+   "settings.keys2.groupTabs": "Tabs",
+   "settings.keys2.groupConversation": "Conversation",
++  "settings.keys2.groupProfiles": "Profiles",
++  "settings.keys2.fixedNewWindow": "New window",
++  "settings.keys2.fixedRightSidebar": "Show or hide the right sidebar",
++  "settings.keys2.fixedLayout": "Edit the layout",
++  "settings.keys2.fixedNewTab": "New chat tab",
++  "settings.keys2.fixedJumpTab": "Go to tab 1–9",
++  "settings.keys2.fixedPrevTab": "Previous tab",
++  "settings.keys2.fixedPrevChat": "Previous chat",
+   "settings.endpoints2.active": "Active",
+   "settings.endpoints2.inline": "Main model endpoint",
+   "settings.endpoints2.inlineWhere": "set on Model › Main model",
+@@ -204,6 +219,15 @@ export const SETTINGS_B_STRINGS = {
+   "settingsB.field.voiceRecordKeyBody":
+     "Used by the terminal UI; the desktop composer uses the Keyboard Shortcuts page.",
+   "settingsB.field.voiceMaxSeconds": "Max recording length",
++  "settingsB.field.voiceSilenceSeconds": "Pause that ends a recording",
++  "settingsB.field.voiceSilenceSecondsBody":
++    "Seconds of quiet after you speak before a voice-mode take stops (terminal and wake word).",
++  "settingsB.field.voiceWaitSeconds": "Give up without speech after",
++  "settingsB.field.voiceWaitSecondsBody":
++    "Seconds a voice-mode take waits for you to start talking before it is dropped.",
++  "settingsB.field.sttLocalDevice": "Local transcription device",
++  "settingsB.field.sttLocalDeviceBody":
++    "Where on-device transcription runs; auto picks a GPU when there is one.",
+   "settingsB.field.sttProvider": "Transcription provider",
+   "settingsB.field.sttProviderPlaceholder": "Automatic",
+   "settingsB.field.sttLocalModel": "Local transcription model",
+diff --git a/docs/notes/ui-parity/w59-k1-desktop-alerts-keys-limits.md b/docs/notes/ui-parity/w59-k1-desktop-alerts-keys-limits.md
+new file mode 100644
+index 0000000..8ff1b7d
+--- /dev/null
++++ b/docs/notes/ui-parity/w59-k1-desktop-alerts-keys-limits.md
+@@ -0,0 +1,65 @@
++# Task: Desktop alerts, key bindings, output limits, voice rows, reply time and copy (W59-K1) Phase: ui-parity Owner: builder w59k1
++
++Status: Done (2026-10-25) for all five items, each only as far as our app has the data or the
++action. Uncommitted in the w59k1 worktree for the lead.
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): no reference source opened; the
++second compare's gap list and screenshots were the input.
++Evidence: reference screenshots of the second compare (never in the repo), desktop
++`settings-notifications-desktop-alerts`, `settings-shortcuts`, `settings-advanced-output-limits`,
++`settings-voice-speech-to-text`, `settings-voice-voice-conversation`, `chat-conversation`, light.
++
++What it does (own words):
++- Desktop alerts (W59-K1-1): the page had a master switch over two kinds. Our app raises OS
++  notifications from three sources it already receives: `turn.done`, server requests (approval,
++  clarify, sudo, secret) and a desktop plugin's `ctx.toast`. Each kind now has its own switch:
++  Approval needed, Input needed (clarify / sudo / secret, split from approvals), Response ready,
++  Turn failed (a `turn.done` that is not a clean completion, split from replies) and Plugin
++  notifications (a plugin's message while the window is in the background; the in-app toast is
++  unchanged). The master switch is on while any kind is on and writes every kind. The prefs file
++  gains `input`, `turnFailed` and `plugins`; an older file without them takes the value of the
++  switch that covered them before, so nobody gets alerts they had turned off.
++- Not added (no event reaches the desktop): background task finished (the backend delivers a
++  background job's completion only to a registered session sink, and no surface registers one),
++  cron job finished (the desktop reads cron over REST, no run event), credit alerts (no credits).
++- Key bindings (W59-K1-2): the stored overrides were never applied to anything; the rows for new
++  chat (Ctrl+N), open settings (Ctrl+,) and go to the message box (Ctrl+L) had no handler. A new
++  dispatcher (`settings/keyActions.ts`, installed by `PrefsEffects`) turns a keydown into an
++  action through the person's effective bindings and announces it as a window event; the owner of
++  the action runs it. It runs those three and eight new rebindable actions: open the model picker
++  (Ctrl+Shift+M), reasoning effort up / down (unset by default; steps through the effort ladder,
++  Auto counts as the default level, and tells the running session like the chip), start or stop
++  dictation (unset), start or end a voice conversation (Ctrl+Alt+V), and a new Profiles group
++  (switch to the default profile, next / previous profile; unset). A key the pane shell owns, a
++  repeat or an already-handled keydown runs nothing. Built-in keys that work but are not
++  rebindable are listed as plain chips: new window, right sidebar, layout editor, new chat tab,
++  tab 1–9, previous tab, previous chat. Not added: a queue binding (Enter already queues while a
++  turn runs; there is no "send next queued" action).
++- Output limits (W59-K1-3): the schema has one more output limit, `file_read_max_chars`; it now
++  also shows on Advanced › Output limits (owned by Workspace › Files & execution). The reference's
++  file page and line length limits are constants in `read_file`, not settings.
++- Voice (W59-K1-4): Voice conversation shows the recording rules up front (pause that ends a
++  take, give up without speech); Speech to text shows the transcription device (auto / cpu /
++  cuda). The push-to-talk key showed as a stored secret because the backend masked any setting
++  ending in `key`; `record_key` (and `secret_store`, a choice of store, not a secret) are no longer
++  masked (W59-K1-6, `config_view.is_secret_setting`). No STT on/off, echo or live-transcription
++  setting exists, so none is shown.
++- Reply time and copy (W59-K1-5): the REST history route already sends each stored row's time.
++  The transcript keeps it; a prompt shows its stored time (or the time this window sent it), and
++  a settled reply shows, on hover or focus, its stored time and a Copy button for its text. A
++  reply loaded without a time (the WebSocket history fallback) shows only Copy. No branch button:
++  `session.branch` copies the whole conversation, not from a message.
++
++Compare checklist:
++- [x] desktop alerts: five kinds + master + test button (reference: eight; three not backed)
++- [x] key bindings: 18 rebindable + 14 built-in chips in five groups, 32 rows (reference: about 30)
++- [x] output limits: three rows (reference: four; two are constants here)
++- [x] voice conversation / speech to text: rows for every relevant setting that exists
++- [x] reply row: time + copy (reference: time, copy, branch)
++
++Tests: `turnNotices.test.ts` (kinds, plugin notice), `prefsBridge.test.ts` (master switch, ambient
++patch), `prefs.test.ts` (migration of older files), `SettingsOverlay.test.tsx` (master writes every
++kind, one kind alone), `keyActions.test.tsx` (dispatch, overrides, pane keys, profile targets),
++`ModelPicker.test.tsx` (picker and effort keys), `settingsStates.test.tsx` (new rows and groups),
++`search.test.ts` (output and voice pages), `restHistory.test.ts` and `Transcript.test.tsx` (stored
++time, copy), `test_config_env_routes.py` (record_key and secret_store not masked).
+diff --git a/src/indus/web/routes/config_view.py b/src/indus/web/routes/config_view.py
+index facd797..a5c457d 100644
+--- a/src/indus/web/routes/config_view.py
++++ b/src/indus/web/routes/config_view.py
+@@ -60,6 +60,9 @@ _SECRET_WORDS: Final = frozenset(
+ _NOT_A_SECRET_TAIL: Final = frozenset(
+     {"env", "name", "names", "url", "id", "file", "path", "type", "mode", "tokens"}
+ )
++# named exactly, so a new credential-like name stays masked: a keyboard key (``record_key``, the
++# push-to-talk key; ``hot_key``) and the choice of secret store (W59-K1-6, narrowed by the lead)
++_NOT_SECRET_LEAVES: Final = frozenset({"record_key", "hot_key", "secret_store"})
+ _WORDS: Final = re.compile(r"[_\-.\s]+")
+ _CREDENTIAL_SUFFIXES: Final = ("_API_KEY", "_TOKEN", "_SECRET", "_PASSWORD")
+ 
+@@ -131,8 +134,11 @@ def schema_form() -> dict[str, Any]:
+ 
+ def is_secret_setting(path: str) -> bool:
+     """The last segment of a dotted setting names a credential (``api_key``, ``bot_token``,
+-    ``password_hash``); ``max_tokens`` or ``key_env`` do not."""
+-    words = [w for w in _WORDS.split(path.rsplit(".", 1)[-1].lower()) if w]
++    ``password_hash``); ``max_tokens``, ``key_env``, ``secret_store`` or ``record_key`` do not."""
++    leaf = path.rsplit(".", 1)[-1].lower()
++    if leaf in _NOT_SECRET_LEAVES:
++        return False
++    words = [w for w in _WORDS.split(leaf) if w]
+     if not words or words[-1] in _NOT_A_SECRET_TAIL:
+         return False
+     return any(w in _SECRET_WORDS for w in words)
+diff --git a/tests/contract/web/test_config_env_routes.py b/tests/contract/web/test_config_env_routes.py
+index e21d1c0..4ddaef9 100644
+--- a/tests/contract/web/test_config_env_routes.py
++++ b/tests/contract/web/test_config_env_routes.py
+@@ -14,7 +14,7 @@ from indus.foundation.envfile import read_env_file
+ from indus.foundation.envload import env_file_path
+ from indus.foundation.scope import Scope
+ from indus.foundation.secrets import SecretStore
+-from indus.web.routes import config_env
++from indus.web.routes import config_env, config_view
+ from indus.web.routes.config_view import PLACEHOLDER
+ from tests.contract.web.rest_app import RestApp, build_rest_app, route_table, unscoped_writes
+ 
+@@ -113,6 +113,23 @@ def test_references_stay_references_and_credentials_stay_hidden(
+     }
+ 
+ 
++def test_keyboard_keys_and_store_choices_are_not_credentials(rest: RestApp, scope: Scope) -> None:
++    # W59-K1-6: a push-to-talk key and the secret-store choice are plain settings, shown as set
++    _config_path(scope).write_text(
++        "voice:\n  record_key: ctrl+r\nsecurity:\n  secret_store: file\n", encoding="utf-8"
++    )
++    form = rest.client.get("/api/config").json()
++    assert form["voice"]["record_key"] == "ctrl+r"
++    assert form["security"]["secret_store"] == "file"
++    assert config_view.is_secret_setting("providers.mine.api_key")
++    assert config_view.is_secret_setting("platforms.telegram.bot_token")
++    assert not config_view.is_secret_setting("voice.record_key")
++    assert not config_view.is_secret_setting("security.secret_store")
++    # only those exact names are let through: a look-alike credential name stays masked
++    assert config_view.is_secret_setting("platforms.ntfy.push_key")
++    assert config_view.is_secret_setting("auth.token_store")
++
++
+ def test_unreadable_config_is_500_and_nothing_is_written(rest: RestApp, scope: Scope) -> None:
+     path = _config_path(scope)
+     path.write_text("agent: [unclosed\n", encoding="utf-8")
