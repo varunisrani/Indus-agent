@@ -87,3 +87,4 @@ Only Agent 2 writes this file: one row per check, appended, never edited. Agent 
 | 2026-10-25 01:22 UTC | Agent 2 | Account 2 | 65% (reading 01:07) | 35% | 02:30 UTC | w54 D1 landed 6862338 (all of w54 landed); started w55 F1 + F2 (last agents before 75%) |
 | 2026-10-25 01:35 UTC | Agent 2 | Account 2 | 70% (reading 01:30) | 30% | 02:30 UTC | w55 F1 + F2 running; no new agents |
 | 2026-10-25 01:40 UTC | Agent 2 | Account 2 | ~70% | | 02:30 UTC | OWNER RULE: no 75/85/90% guard; work to 100%, resume right after each reset |
+| 2026-10-25 01:46 UTC | Agent 2 | Account 2 | 72% (reading 01:44) | 28% | 02:30 UTC | w55 F1 F2 F3 running (owner rule: run to 100%) |
