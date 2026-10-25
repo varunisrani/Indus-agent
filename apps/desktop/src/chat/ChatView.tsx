@@ -8,6 +8,7 @@ import { NEW_CHAT_PATH, overlayPath, overlayStateFrom } from "../app/routes.ts";
 import type { GatewayConnection } from "../gateway/connectionStore.ts";
 import { useConnectionState, useMaybeConnectionStore } from "../gateway/react.tsx";
 import { useT } from "../i18n/index.tsx";
+import { useDisplayPrefs } from "../settings/displayPrefs.ts";
 import { Wordmark } from "../ui/components.tsx";
 import type { FailureAction } from "./failure.ts";
 import type { ErrorItem } from "./messageStream.ts";
@@ -42,6 +43,7 @@ export function ChatView(props: ChatViewProps) {
   const connection = useMaybeConnectionStore()?.primary() ?? null;
   const navigate = useNavigate();
   const location = useLocation();
+  const display = useDisplayPrefs();
   // The actions this pane can take itself; "retry" goes to the chat slice's `onRetry`.
   const defaultAction = (action: FailureAction, item: ErrorItem): void => {
     switch (action) {
@@ -77,16 +79,26 @@ export function ChatView(props: ChatViewProps) {
     <section className="chat" aria-label={t("chat.label")}>
       {sessionId === null ? (
         <div className="chat-empty">
-          <Wordmark text={t("chat.empty.title")} caption={t("chat.empty.body")} />
+          {display.introSplash && (
+            <Wordmark text={t("chat.empty.title")} caption={t("chat.empty.body")} />
+          )}
           {props.cards}
         </div>
       ) : (
-        <Transcript
-          key={sessionId}
-          sessionId={sessionId}
-          footer={props.cards}
-          onFailureAction={props.onFailureAction ?? defaultAction}
-        />
+        <>
+          {display.chatBackdrop && (
+            // W55-F3 chat backdrop: our wordmark, faint, behind the conversation
+            <div className="chat-backdrop" aria-hidden="true">
+              {t("chat.empty.title")}
+            </div>
+          )}
+          <Transcript
+            key={sessionId}
+            sessionId={sessionId}
+            footer={props.cards}
+            onFailureAction={props.onFailureAction ?? defaultAction}
+          />
+        </>
       )}
       {connection !== null && sessionId !== null && (
         <StalledNote connection={connection} sessionId={sessionId} />

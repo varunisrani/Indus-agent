@@ -30,6 +30,27 @@ describe("desktop preferences", () => {
     expect(readPrefs([1, 2])).toEqual(DEFAULT_PREFS);
   });
 
+  it("display choices (W55-F3): today's look by default; a bad value falls back alone", () => {
+    expect(DEFAULT_PREFS).toMatchObject({
+      introSplash: true,
+      reopenLastChat: false,
+      sessionDensity: "compact",
+      tabStrip: "always",
+      chatBackdrop: false,
+      bubbleTransparency: 0,
+      textDirection: "auto",
+      hideTimeline: false,
+      toolCallDisplay: "technical",
+      collapseThinking: false,
+    });
+    const prefs = readPrefs({ sessionDensity: "detailed", bubbleTransparency: 140, tabStrip: "x" });
+    expect(prefs.sessionDensity).toBe("detailed");
+    expect(prefs.bubbleTransparency).toBe(0);
+    expect(prefs.tabStrip).toBe("always");
+    expect(applyPatch(DEFAULT_PREFS, { textDirection: "rtl" }).textDirection).toBe("rtl");
+    expect(() => applyPatch(DEFAULT_PREFS, { bubbleTransparency: 101 })).toThrow();
+  });
+
   it("a patch merges notifications and replaces the binding overrides", () => {
     const start = applyPatch(DEFAULT_PREFS, { keybindings: { a: "X" } });
     const next = applyPatch(start, { notifications: { sounds: false }, keybindings: { b: "Y" } });

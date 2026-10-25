@@ -1,0 +1,104 @@
+/* The rules behind the display preferences (W55-F3). PrefsEffects sets the root's
+   `--indus-bubble-fill` and `data-tab-strip`; the components set `dir`, `data-density` and the
+   backdrop element. Desk tokens only. */
+
+/* -- message bubble: how much of the bubble colour a prompt keeps ------------------------------ */
+
+.transcript-scroll .msg-user .msg-bubble {
+  background: color-mix(
+    in srgb,
+    var(--desk-bg-bubble) var(--indus-bubble-fill, 100%),
+    var(--desk-bg-canvas)
+  );
+}
+
+.transcript-scroll .msg-user-meta {
+  background: color-mix(
+    in srgb,
+    var(--desk-bg-bubble) var(--indus-bubble-fill, 100%),
+    var(--desk-bg-canvas)
+  );
+}
+
+/* -- text direction: code always reads left to right ------------------------------------------- */
+
+/* "auto": each paragraph takes the direction of its own first strong letter */
+.msg-text[dir="auto"] :is(p, li, h1, h2, h3, h4, h5, h6, blockquote, td, th),
+.transcript-scroll .msg-user .msg-bubble[dir="auto"],
+.composer-input[dir="auto"] {
+  unicode-bidi: plaintext;
+}
+
+.msg-text[dir] pre,
+.msg-text[dir] code {
+  direction: ltr;
+  unicode-bidi: isolate;
+  text-align: left;
+}
+
+/* -- tab strip: "auto" hides a lone tab, "never" hides every strip (the zone's actions stay) ---- */
+
+:root[data-tab-strip="never"] .pane-zone .pane-tabs,
+:root[data-tab-strip="auto"] .pane-zone[data-tabs="one"] .pane-tabs {
+  visibility: hidden;
+}
+
+/* -- chat backdrop: our wordmark, faint, behind the conversation --------------------------------- */
+
+.chat {
+  position: relative;
+}
+
+.chat-backdrop {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: var(--desk-wordmark);
+  font-family: var(--desk-font-display);
+  font-size: clamp(56px, 11.1vw, 180px);
+  line-height: 0.9;
+  white-space: nowrap;
+  opacity: 0.06;
+  pointer-events: none;
+  user-select: none;
+  transform: scaleX(0.85);
+}
+
+/* -- session list density ------------------------------------------------------------------------ */
+
+.session-row[data-density] .session-open {
+  height: auto;
+  min-height: 27px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  align-items: flex-start;
+}
+
+.session-row[data-density] .session-dots,
+.session-row[data-density] .session-time {
+  margin-top: 3px;
+}
+
+.session-lines {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.session-lines .session-title {
+  flex: none;
+}
+
+.session-detail {
+  overflow: hidden;
+  color: var(--desk-fg-3);
+  font-size: var(--desk-text-micro);
+  line-height: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -429,6 +429,12 @@ const journalEntry = z.object({
 });
 
 const accelerator = z.string().max(128);
+const sessionDensity = z.enum(["compact", "comfortable", "detailed"]);
+/** Zone tab strips: always, only where a zone holds more than one tab, or never. */
+const tabStrip = z.enum(["auto", "always", "never"]);
+const textDirection = z.enum(["auto", "rtl", "ltr"]);
+/** "product" hides raw tool payloads; "technical" shows the arguments and the output. */
+const toolCallDisplay = z.enum(["product", "technical"]);
 
 /** Settings main holds for this device (P20-32); P20-35/36 read them in main. */
 export const prefsSnapshot = z.object({
@@ -448,6 +454,22 @@ export const prefsSnapshot = z.object({
   keybindings: z.record(z.string().max(64), accelerator),
   /** Chat text size in percent of the UI size. */
   chatTextScale: z.number().int().min(80).max(175),
+  // Renderer-only display choices (W55-F3): how this device's windows draw the chat and chrome.
+  /** The wordmark and caption on an empty chat. */
+  introSplash: z.boolean(),
+  /** Cold start opens the profile's most recent chat instead of a fresh one. */
+  reopenLastChat: z.boolean(),
+  sessionDensity: sessionDensity,
+  tabStrip: tabStrip,
+  /** A faint wordmark behind the conversation. */
+  chatBackdrop: z.boolean(),
+  /** How see-through the person's own message bubbles are (0 solid … 100 outline only). */
+  bubbleTransparency: z.number().int().min(0).max(100),
+  textDirection: textDirection,
+  hideTimeline: z.boolean(),
+  toolCallDisplay: toolCallDisplay,
+  /** Streamed reasoning stays closed until opened. */
+  collapseThinking: z.boolean(),
 });
 
 export const prefsPatch = z.strictObject({
@@ -465,6 +487,16 @@ export const prefsPatch = z.strictObject({
     .optional(),
   keybindings: z.record(z.string().max(64), accelerator).optional(),
   chatTextScale: z.number().int().min(80).max(175).optional(),
+  introSplash: z.boolean().optional(),
+  reopenLastChat: z.boolean().optional(),
+  sessionDensity: sessionDensity.optional(),
+  tabStrip: tabStrip.optional(),
+  chatBackdrop: z.boolean().optional(),
+  bubbleTransparency: z.number().int().min(0).max(100).optional(),
+  textDirection: textDirection.optional(),
+  hideTimeline: z.boolean().optional(),
+  toolCallDisplay: toolCallDisplay.optional(),
+  collapseThinking: z.boolean().optional(),
 });
 
 // -- the table -----------------------------------------------------------------------------------

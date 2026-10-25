@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ThemeProvider } from "../app/theme.tsx";
 import type { IndusSecretsPolicyView } from "../global.d.ts";
 import type { SettingsBridge } from "./context.tsx";
+import { DISPLAY_DEFAULTS } from "./displayPrefs.ts";
 import { fakeRest } from "./fakeRest.ts";
 import { managerRowState } from "./pagesA.tsx";
 import { storageSwitchState } from "./pagesB/gateways.tsx";
@@ -216,6 +217,7 @@ describe("key bindings (W54-D2-9)", () => {
       notifications: { turnComplete: true, approvals: true, sounds: true },
       keybindings: {},
       chatTextScale: 100,
+      ...DISPLAY_DEFAULTS,
     };
     const bridge: SettingsBridge = {
       prefs: { get: async () => snapshot, set: async () => snapshot, onChanged: () => () => {} },

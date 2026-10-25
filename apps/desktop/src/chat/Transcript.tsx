@@ -14,6 +14,7 @@ import {
   useState,
 } from "react";
 import { useT } from "../i18n/index.tsx";
+import { useDisplayPrefs } from "../settings/displayPrefs.ts";
 import { ErrorCard } from "./ErrorCard.tsx";
 import { type FailureAction, failureEcho } from "./failure.ts";
 import { Markdown } from "./Markdown.tsx";
@@ -79,6 +80,7 @@ export function resetSentTimes(): void {
 
 function UserRow(props: { item: UserItem; sessionId: string }) {
   const t = useT();
+  const { textDirection } = useDisplayPrefs();
   const time = sentAt(props.sessionId, props.item);
   const label =
     time === null
@@ -87,7 +89,9 @@ function UserRow(props: { item: UserItem; sessionId: string }) {
   return (
     <div className="msg msg-user" data-key={props.item.key} data-persisted={props.item.persisted}>
       <span className="sr-only">{t("transcript.you")}</span>
-      <div className="msg-bubble">{props.item.text}</div>
+      <div className="msg-bubble" dir={textDirection}>
+        {props.item.text}
+      </div>
       {label !== null && (
         <span className="msg-user-meta">
           <time
@@ -105,6 +109,7 @@ function UserRow(props: { item: UserItem; sessionId: string }) {
 function AssistantRow(props: { item: AssistantItem; showReasoning: boolean; hideEcho: boolean }) {
   const { item, showReasoning } = props;
   const t = useT();
+  const { textDirection, collapseThinking } = useDisplayPrefs();
   const lastTool = item.parts.findLastIndex((part) => part.type === "tool");
   const lastIndex = item.parts.length - 1;
   return (
@@ -121,7 +126,7 @@ function AssistantRow(props: { item: AssistantItem; showReasoning: boolean; hide
             <details
               key={key}
               className="reasoning"
-              open={item.streaming && index === item.parts.length - 1}
+              open={!collapseThinking && item.streaming && index === item.parts.length - 1}
             >
               <summary>{t("transcript.reasoning")}</summary>
               <p>{part.text}</p>
@@ -129,7 +134,11 @@ function AssistantRow(props: { item: AssistantItem; showReasoning: boolean; hide
           );
         }
         return (
-          <div key={key} className={index < lastTool ? "msg-text msg-interim" : "msg-text"}>
+          <div
+            key={key}
+            className={index < lastTool ? "msg-text msg-interim" : "msg-text"}
+            dir={textDirection}
+          >
             <Markdown text={part.text} />
           </div>
         );
@@ -226,6 +235,7 @@ export function Transcript(props: TranscriptProps) {
   const t = useT();
   const transcript = useTranscript(sessionId);
   const showReasoning = useShowReasoning();
+  const { hideTimeline } = useDisplayPrefs();
   const saved = positions.get(sessionId);
   const [windowSize, setWindowSize] = useState(saved?.windowSize ?? TRANSCRIPT_PAGE);
   const [following, setFollowing] = useState(saved?.following ?? true);
@@ -340,7 +350,7 @@ export function Transcript(props: TranscriptProps) {
         })}
         {props.footer}
       </div>
-      <Timeline prompts={prompts} onJump={jump} />
+      {!hideTimeline && <Timeline prompts={prompts} onJump={jump} />}
       {!following && (
         <button
           type="button"

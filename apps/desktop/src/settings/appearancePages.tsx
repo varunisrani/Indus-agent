@@ -1,7 +1,8 @@
 // Settings › Appearance (W52-i): General, Theme (the preset gallery), Typography, Window & layout,
 // Chat display and Pet. The choices live where they lived before: the theme store, desktop prefs,
-// the zoom bridge, the layout store and the gateway's pet methods. Reference rows with no feature
-// behind them show disabled with the "not available" caption (W52-dsa-9 / -11).
+// the zoom bridge, the layout store and the gateway's pet methods. The renderer-only display rows
+// are desktop prefs too (W55-F3); reference rows with no feature behind them show disabled with
+// the "not available" caption (W52-dsa-9 / -11).
 
 import { presets, presetTheme } from "@indus/ui";
 import { Monitor, Moon, PawPrint, Search, Sun, Trash2 } from "lucide-react";
@@ -11,14 +12,15 @@ import { Segmented } from "../app/overlay/OverlayFrame.tsx";
 import { useProvidedShellChrome } from "../app/Shell.tsx";
 import { useTheme } from "../app/theme.tsx";
 import { useGatewayConnection } from "../gateway/react.tsx";
-import type { IndusMarketplaceItem } from "../global.d.ts";
+import type { IndusMarketplaceItem, IndusPrefsSnapshot } from "../global.d.ts";
 import { type MessageKey, useT } from "../i18n/index.tsx";
 import type { InterfaceMode } from "../panes/presets.ts";
 import { useSwitcher } from "../profiles/switcherReact.tsx";
 import { installMarketplaceTheme, useAppearance } from "../theme/AppearancePage.tsx";
 import { appearance, syncTui } from "../theme/themeStore.ts";
-import { attempt, usePrefs, useSettings } from "./context.tsx";
+import { attempt, type PrefsHandle, usePrefs, useSettings } from "./context.tsx";
 import { PlaceholderSegmentedRow, PlaceholderSwitchRow, Slider, StatusNote } from "./controlsA.tsx";
+import { DISPLAY_DEFAULTS } from "./displayPrefs.ts";
 import {
   CompactSelect,
   OutlineButton,
@@ -29,11 +31,87 @@ import {
   TextButton,
 } from "./primitives.tsx";
 
+// -- display preference rows (W55-F3) -------------------------------------------------------------------
+
+type SwitchField =
+  | "introSplash"
+  | "reopenLastChat"
+  | "chatBackdrop"
+  | "hideTimeline"
+  | "collapseThinking";
+type ChoiceField = "sessionDensity" | "tabStrip" | "textDirection" | "toolCallDisplay";
+
+/** A desktop-pref switch: live once main answered, the "not available" caption when it cannot. */
+function PrefSwitchRow(props: {
+  handle: PrefsHandle;
+  rowId: string;
+  field: SwitchField;
+  title: string;
+  description: string;
+}) {
+  const t = useT();
+  const { focusRow } = useSettings();
+  const { prefs, error, update } = props.handle;
+  return (
+    <SettingRow
+      rowId={props.rowId}
+      highlighted={focusRow === props.rowId}
+      title={props.title}
+      description={
+        prefs === null && error !== null ? t("settings.notAvailable") : props.description
+      }
+      control={
+        <Switch
+          label={props.title}
+          checked={prefs?.[props.field] ?? DISPLAY_DEFAULTS[props.field]}
+          disabled={prefs === null}
+          onChange={(checked) => void update({ [props.field]: checked })}
+        />
+      }
+    />
+  );
+}
+
+/** A desktop-pref choice as a segmented control. */
+function PrefChoiceRow<F extends ChoiceField>(props: {
+  handle: PrefsHandle;
+  rowId: string;
+  field: F;
+  title: string;
+  description: string;
+  options: ReadonlyArray<{ value: IndusPrefsSnapshot[F]; label: string }>;
+}) {
+  const t = useT();
+  const { focusRow } = useSettings();
+  const { prefs, error, update } = props.handle;
+  return (
+    <SettingRow
+      rowId={props.rowId}
+      highlighted={focusRow === props.rowId}
+      title={props.title}
+      description={
+        prefs === null && error !== null ? t("settings.notAvailable") : props.description
+      }
+      control={
+        <fieldset className="settingsA-fieldset" disabled={prefs === null}>
+          <Segmented<string>
+            label={props.title}
+            value={prefs?.[props.field] ?? DISPLAY_DEFAULTS[props.field]}
+            options={props.options}
+            onChange={(next) => void update({ [props.field]: next })}
+          />
+        </fieldset>
+      }
+    />
+  );
+}
+
 // -- General -----------------------------------------------------------------------------------------
 
 export function AppearanceGeneralPage() {
   const t = useT();
-  const { focusRow } = useSettings();
+  const { focusRow, bridge } = useSettings();
+  const handle = usePrefs(bridge);
   return (
     <PageBody>
       <SettingRow
@@ -52,9 +130,23 @@ export function AppearanceGeneralPage() {
           />
         }
       />
-      <PlaceholderSwitchRow title={t("settingsA.general.splash")} />
+      <PrefSwitchRow
+        handle={handle}
+        rowId="intro-splash"
+        field="introSplash"
+        title={t("settingsA.general.splash")}
+        description={t("settingsA.general.splashBody")}
+      />
+      {/* no price data reaches the model picker (needs pricing from the backend) */}
       <PlaceholderSwitchRow title={t("settingsA.general.pricing")} />
-      <PlaceholderSwitchRow title={t("settingsA.general.reopen")} />
+      <PrefSwitchRow
+        handle={handle}
+        rowId="reopen-last-chat"
+        field="reopenLastChat"
+        title={t("settingsA.general.reopen")}
+        description={t("settingsA.general.reopenBody")}
+      />
+      {/* no tips and no tours exist in this build */}
       <PlaceholderSwitchRow title={t("settingsA.general.tips")} />
       <PlaceholderSwitchRow title={t("settingsA.general.tours")} />
     </PageBody>
@@ -561,7 +653,8 @@ function useTray() {
 export function AppearanceWindowPage() {
   const t = useT();
   const { bridge, focusRow } = useSettings();
-  const { prefs, error, update } = usePrefs(bridge);
+  const handle = usePrefs(bridge);
+  const { prefs, error, update } = handle;
   const tray = useTray();
   const layout = useProvidedShellChrome()?.layout ?? null;
   const mode = useSyncExternalStore(
@@ -590,18 +683,24 @@ export function AppearanceWindowPage() {
           </fieldset>
         }
       />
-      <PlaceholderSegmentedRow
+      <PrefChoiceRow
+        handle={handle}
+        rowId="session-density"
+        field="sessionDensity"
         title={t("settingsA.window.density")}
-        value="comfortable"
+        description={t("settingsA.window.densityBody")}
         options={[
           { value: "compact", label: t("settingsA.window.compact") },
           { value: "comfortable", label: t("settingsA.window.comfortable") },
           { value: "detailed", label: t("settingsA.window.detailed") },
         ]}
       />
-      <PlaceholderSegmentedRow
+      <PrefChoiceRow
+        handle={handle}
+        rowId="tab-strip"
+        field="tabStrip"
         title={t("settingsA.window.tabs")}
-        value="auto"
+        description={t("settingsA.window.tabsBody")}
         options={[
           { value: "auto", label: t("settingsA.window.auto") },
           { value: "always", label: t("settingsA.window.always") },
@@ -638,57 +737,113 @@ export function AppearanceWindowPage() {
           </>
         }
       />
-      <PlaceholderSwitchRow title={t("settingsA.window.backdrop")} />
+      <PrefSwitchRow
+        handle={handle}
+        rowId="chat-backdrop"
+        field="chatBackdrop"
+        title={t("settingsA.window.backdrop")}
+        description={t("settingsA.window.backdropBody")}
+      />
       <PlaceholderSwitchRow title={t("settingsA.window.files")} />
       <PlaceholderSwitchRow title={t("settingsA.window.floating")} />
     </PageBody>
   );
 }
 
-// -- Chat display (placeholders: no feature behind these yet) -----------------------------------------------
+// -- Chat display ----------------------------------------------------------------------------------------
+
+/** Saved this long after the slider stops moving (one write per gesture, not per step). */
+const BUBBLE_SAVE_MS = 250;
+
+function BubbleRow(props: { handle: PrefsHandle }) {
+  const t = useT();
+  const { focusRow } = useSettings();
+  const { prefs, error, update } = props.handle;
+  const saved = prefs?.bubbleTransparency ?? DISPLAY_DEFAULTS.bubbleTransparency;
+  const [draft, setDraft] = useState<number | null>(null);
+  useEffect(() => {
+    if (draft === null) return;
+    const timer = window.setTimeout(() => {
+      void update({ bubbleTransparency: draft }).then(() => setDraft(null));
+    }, BUBBLE_SAVE_MS);
+    return () => window.clearTimeout(timer);
+  }, [draft, update]);
+  return (
+    <SettingRow
+      rowId="message-bubble"
+      highlighted={focusRow === "message-bubble"}
+      title={t("settingsA.display.bubble")}
+      description={
+        prefs === null && error !== null
+          ? t("settings.notAvailable")
+          : t("settingsA.display.bubbleBody")
+      }
+      control={
+        <Slider
+          label={t("settingsA.display.bubble")}
+          value={draft ?? saved}
+          disabled={prefs === null}
+          format={(v) => `${v}%`}
+          onChange={setDraft}
+        />
+      }
+    />
+  );
+}
 
 export function AppearanceChatDisplayPage() {
   const t = useT();
+  const { bridge } = useSettings();
+  const handle = usePrefs(bridge);
   return (
     <PageBody>
-      <SettingRow
-        title={t("settingsA.display.bubble")}
-        description={t("settings.notAvailable")}
-        control={
-          <Slider
-            label={t("settingsA.display.bubble")}
-            value={0}
-            disabled
-            format={(v) => `${v}%`}
-            onChange={() => undefined}
-          />
-        }
-      />
-      <PlaceholderSegmentedRow
+      <BubbleRow handle={handle} />
+      <PrefChoiceRow
+        handle={handle}
+        rowId="text-direction"
+        field="textDirection"
         title={t("settingsA.display.direction")}
-        value="auto"
+        description={t("settingsA.display.directionBody")}
         options={[
           { value: "auto", label: t("settingsA.window.auto") },
           { value: "rtl", label: t("settingsA.display.rtl") },
           { value: "ltr", label: t("settingsA.display.ltr") },
         ]}
       />
-      <PlaceholderSwitchRow title={t("settingsA.display.timeline")} />
+      <PrefSwitchRow
+        handle={handle}
+        rowId="timeline-bars"
+        field="hideTimeline"
+        title={t("settingsA.display.timeline")}
+        description={t("settingsA.display.timelineBody")}
+      />
+      {/* reactions need the agent to react back; the hearts animation is not built yet */}
       <PlaceholderSwitchRow title={t("settingsA.display.reactions")} />
       <PlaceholderSwitchRow title={t("settingsA.display.hearts")} />
-      <PlaceholderSegmentedRow
+      <PrefChoiceRow
+        handle={handle}
+        rowId="tool-call-display"
+        field="toolCallDisplay"
         title={t("settingsA.display.tools")}
-        value="product"
+        description={t("settingsA.display.toolsBody")}
         options={[
           { value: "product", label: t("settingsA.display.product") },
           { value: "technical", label: t("settingsA.display.technical") },
         ]}
       />
+      {/* tool rows draw no code diff yet, so there is nothing to hide */}
       <PlaceholderSwitchRow title={t("settingsA.display.diffs")} />
-      <PlaceholderSwitchRow title={t("settingsA.display.thinking")} />
+      <PrefSwitchRow
+        handle={handle}
+        rowId="collapse-thinking"
+        field="collapseThinking"
+        title={t("settingsA.display.thinking")}
+        description={t("settingsA.display.thinkingBody")}
+      />
+      {/* the transcript renders no third-party embeds (links stay links) */}
       <PlaceholderSegmentedRow
         title={t("settingsA.display.embeds")}
-        value="ask"
+        value="off"
         options={[
           { value: "ask", label: t("settingsA.display.ask") },
           { value: "always", label: t("settingsA.window.always") },

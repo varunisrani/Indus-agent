@@ -31,6 +31,7 @@ import { Loader } from "../app/Loader.tsx";
 import { useOpenServerRequests } from "../gateway/react.tsx";
 import { type MessageKey, type Translate, useT } from "../i18n/index.tsx";
 import { browserStorage, type StorageLike } from "../profiles/storageFamilies.ts";
+import { useDisplayPrefs } from "../settings/displayPrefs.ts";
 import {
   Button,
   EmptyState,
@@ -171,6 +172,34 @@ export function rowTitle(t: Translate, row: SessionRow): string {
   return row.title ?? row.preview ?? t("sidebar.untitled");
 }
 
+/** The lines under a row's title (W55-F3): "comfortable" adds what the chat is about (its preview
+ * when the title is not already the preview, else its size); "detailed" adds both and where it
+ * ran (branch, folder). Only fields the sessions list already carries. */
+export function rowDetails(
+  t: Translate,
+  row: SessionRow,
+  density: "compact" | "comfortable" | "detailed",
+): string[] {
+  if (density === "compact") return [];
+  const preview = row.title !== null && row.preview !== null && row.preview !== row.title;
+  const size =
+    row.messageCount > 0
+      ? t(row.messageCount === 1 ? "sidebar.detail.message" : "sidebar.detail.messages", {
+          count: row.messageCount,
+        })
+      : null;
+  if (density === "comfortable") {
+    const line = preview ? row.preview : size;
+    return line === null ? [] : [line];
+  }
+  const folder = row.cwd === null ? null : (row.cwd.split(/[\\/]/).filter(Boolean).pop() ?? null);
+  const meta = [size, row.gitBranch, folder].filter((part): part is string => part !== null);
+  const lines: string[] = [];
+  if (preview && row.preview !== null) lines.push(row.preview);
+  if (meta.length > 0) lines.push(meta.join(" \u00b7 "));
+  return lines;
+}
+
 function useStore<S>(store: { subscribe(listener: () => void): () => void; getState(): S }): S {
   return useSyncExternalStore(
     (listener) => store.subscribe(listener),
@@ -224,6 +253,7 @@ function SessionItem(
   const unread = list.unread.isUnread(row, props.activeSessionId);
   const running = props.running;
   const dot = sessionDot({ attention: props.attention, running, unread, live: row.active });
+  const density = useDisplayPrefs().sessionDensity;
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [renaming, setRenaming] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
@@ -261,7 +291,11 @@ function SessionItem(
     );
   }
   return (
-    <li className="session-row" data-current={current ? "true" : undefined}>
+    <li
+      className="session-row"
+      data-current={current ? "true" : undefined}
+      data-density={density === "compact" ? undefined : density}
+    >
       <button
         ref={button}
         type="button"
@@ -298,9 +332,23 @@ function SessionItem(
           <span className="session-dot" data-kind={dot} />
         </span>
         {row.branch && <GitBranch aria-hidden="true" size={12} className="session-branch" />}
-        <span ref={titleRef} className="session-title">
-          {title}
-        </span>
+        {density === "compact" ? (
+          <span ref={titleRef} className="session-title">
+            {title}
+          </span>
+        ) : (
+          // W55-F3: Settings › Window & layout › Session list density
+          <span className="session-lines">
+            <span ref={titleRef} className="session-title">
+              {title}
+            </span>
+            {rowDetails(t, row, density).map((line) => (
+              <span key={line} className="session-detail">
+                {line}
+              </span>
+            ))}
+          </span>
+        )}
         {unread && <span className="sr-only">{t("sidebar.unread")}</span>}
         {running && <span className="sr-only">{t("sidebar.running")}</span>}
         {props.attention && <span className="sr-only">{t("sidebar.attention")}</span>}

@@ -26,6 +26,16 @@ export const DEFAULT_PREFS: DesktopPrefsValue = {
   notifications: { turnComplete: true, approvals: true, sounds: true },
   keybindings: {},
   chatTextScale: 110,
+  introSplash: true,
+  reopenLastChat: false,
+  sessionDensity: "compact",
+  tabStrip: "always",
+  chatBackdrop: false,
+  bubbleTransparency: 0,
+  textDirection: "auto",
+  hideTimeline: false,
+  toolCallDisplay: "technical",
+  collapseThinking: false,
 };
 
 function clone(value: DesktopPrefsValue): DesktopPrefsValue {

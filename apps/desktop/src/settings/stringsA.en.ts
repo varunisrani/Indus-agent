@@ -157,8 +157,11 @@ export const SETTINGS_A_STRINGS = {
   "settingsA.general.language": "Language",
   "settingsA.general.languageBody": "Indus ships in English for now.",
   "settingsA.general.splash": "Intro splash",
+  "settingsA.general.splashBody": "The wordmark and its caption on a new, empty chat.",
   "settingsA.general.pricing": "Model pricing",
   "settingsA.general.reopen": "Reopen last chat on launch",
+  "settingsA.general.reopenBody":
+    "When the app starts, open this profile's most recent chat instead of a fresh one.",
   "settingsA.general.tips": "In-app tips",
   "settingsA.general.tours": "Guided tours",
 
@@ -212,10 +215,14 @@ export const SETTINGS_A_STRINGS = {
   "settingsA.window.simple": "Simple",
   "settingsA.window.advanced": "Advanced",
   "settingsA.window.density": "Session list density",
+  "settingsA.window.densityBody":
+    "What each sidebar session shows under its title: nothing, a summary line, or the summary with its size, branch and folder.",
   "settingsA.window.compact": "Compact",
   "settingsA.window.comfortable": "Comfortable",
   "settingsA.window.detailed": "Detailed",
   "settingsA.window.tabs": "Tab strip",
+  "settingsA.window.tabsBody":
+    "The tabs above each pane zone. Auto hides the strip where a zone holds a single pane.",
   "settingsA.window.auto": "Auto",
   "settingsA.window.always": "Always",
   "settingsA.window.never": "Never",
@@ -223,22 +230,32 @@ export const SETTINGS_A_STRINGS = {
   "settingsA.window.right": "Right",
   "settingsA.window.left": "Left",
   "settingsA.window.backdrop": "Chat backdrop",
+  "settingsA.window.backdropBody": "A faint Indus wordmark behind the conversation.",
   "settingsA.window.files": "File browser",
   "settingsA.window.floating": "Floating composer",
 
   // Appearance › Chat display
   "settingsA.display.bubble": "Message bubble",
+  "settingsA.display.bubbleBody":
+    "How see-through your own messages are: solid at 0%, only the outline left at 100%.",
   "settingsA.display.direction": "Text direction",
+  "settingsA.display.directionBody":
+    "Which way chat messages and the composer run. Auto follows each paragraph's first letter; code always reads left to right.",
   "settingsA.display.rtl": "Right-to-left",
   "settingsA.display.ltr": "Left-to-right",
   "settingsA.display.timeline": "Hide thread timeline bars",
+  "settingsA.display.timelineBody":
+    "Hide the prompt markers along the right edge of a conversation.",
   "settingsA.display.reactions": "Message reactions",
   "settingsA.display.hearts": "Vibe hearts",
   "settingsA.display.tools": "Tool call display",
+  "settingsA.display.toolsBody":
+    "Product leaves the raw argument payload out of an opened tool call; Technical shows the arguments and the output.",
   "settingsA.display.product": "Product",
   "settingsA.display.technical": "Technical",
   "settingsA.display.diffs": "Hide code diffs",
   "settingsA.display.thinking": "Collapse thinking by default",
+  "settingsA.display.thinkingBody": "Streamed reasoning stays closed until you open it.",
   "settingsA.display.embeds": "Inline embeds",
   "settingsA.display.ask": "Ask",
   "settingsA.display.off": "Off",

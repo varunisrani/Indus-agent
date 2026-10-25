@@ -29,6 +29,7 @@ import { useSessionFacts } from "../../app/StatusBar.tsx";
 import type { ChatConnection } from "../../gateway/connectionStore.ts";
 import { useGatewayConnection } from "../../gateway/react.tsx";
 import { useT } from "../../i18n/index.tsx";
+import { useDisplayPrefs } from "../../settings/displayPrefs.ts";
 import {
   ChatActions,
   type PreparedJournalPort,
@@ -192,6 +193,7 @@ const IDLE_ACTIONS = new ChatActions({
 
 export function Composer(props: ComposerProps) {
   const t = useT();
+  const { textDirection } = useDisplayPrefs();
   const active = useGatewayConnection();
   const connection = props.connection === undefined ? active : props.connection;
   const store = props.drafts ?? windowDrafts;
@@ -680,6 +682,7 @@ export function Composer(props: ComposerProps) {
             placeholder={t(busy.running ? "composer.placeholderBusy" : "composer.placeholder")}
             rows={1}
             className="composer-input"
+            dir={textDirection}
             value={text}
             onChange={onChange}
             onKeyDown={onKeyDown}

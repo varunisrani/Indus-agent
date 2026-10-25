@@ -20,6 +20,7 @@ import {
 import { type ReactNode, useState } from "react";
 import { copyText } from "../app/clipboard.ts";
 import { type MessageKey, useT } from "../i18n/index.tsx";
+import { useDisplayPrefs } from "../settings/displayPrefs.ts";
 import type { ToolPart } from "./messageStream.ts";
 import { type ToolVerb, terminalResult, toolImages, toolSummary } from "./toolSummary.ts";
 
@@ -111,6 +112,9 @@ function ToolBody(props: { part: ToolPart; command: string | null }) {
   const terminal = props.command !== null ? terminalResult(part.result) : null;
   const images = toolImages(part.result);
   const failed = part.state === "failed";
+  // W55-F3 tool call display: "product" leaves the raw argument payload out (the row's summary
+  // line already says what the call did); "technical" shows it
+  const technical = useDisplayPrefs().toolCallDisplay === "technical";
   return (
     <div className="tool-body">
       {props.command !== null ? (
@@ -137,6 +141,7 @@ function ToolBody(props: { part: ToolPart; command: string | null }) {
           </button>
         </div>
       ) : (
+        technical &&
         part.args !== null &&
         Object.keys(part.args).length > 0 && (
           <Section label={t("tool.arguments")}>

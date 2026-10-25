@@ -545,6 +545,7 @@ function ZoneView(props: { ctx: ShellContext; zone: ZoneNode }) {
       data-focused={focused ? "true" : "false"}
       data-chrome={chrome}
       data-self-labelled={selfLabelled ? "true" : undefined}
+      data-tabs={z.tabs.length > 1 ? "many" : "one"}
       hidden={collapsed}
       aria-label={ctx.title(active)}
       onFocusCapture={() => ctx.store.setFocusedZone(z.id)}

@@ -18,6 +18,8 @@ export const SIDEBAR_STRINGS = {
   "sidebar.noMatch": "No sessions match \u201c{query}\u201d.",
   "sidebar.pinnedHint": "Shift-click a chat to pin",
   "sidebar.untitled": "Untitled conversation",
+  "sidebar.detail.message": "{count} message",
+  "sidebar.detail.messages": "{count} messages",
   "sidebar.unread": "(new activity)",
   "sidebar.running": "(working)",
   "sidebar.attention": "(waiting for you)",

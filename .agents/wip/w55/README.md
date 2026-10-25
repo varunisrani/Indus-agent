@@ -7,7 +7,7 @@
   the worktree's node_modules; restored from $S/land, all checks re-run after. Rebuild apps/tui/dist after any TUI change
   before using the web kit.
 
-## w55f3.patch — desktop display preferences (F3), base 1359acc — PARKED, lead gate on F1 + F3 combined running
+## w55f3.patch — desktop display preferences (F3), base 1359acc — LANDED with D-16.1274 (lead gate F1+F3: vitest 1829, Electron 43/2 skipped)
 - 10 disabled Appearance rows made real as desktop prefs (intro splash, reopen last chat, session density, tab strip,
   chat backdrop, bubble opacity, text direction, timeline bars, tool call display, collapse thinking); defaults keep
   today's look. 10 rows stay disabled (6 need backend/features, hide code diffs needs a diff view, 3 renderer-only

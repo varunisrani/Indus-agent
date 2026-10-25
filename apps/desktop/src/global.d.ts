@@ -148,6 +148,16 @@ export type IndusPrefsPatch = {
   notifications?: { turnComplete?: boolean; approvals?: boolean; sounds?: boolean };
   keybindings?: Record<string, string>;
   chatTextScale?: number;
+  introSplash?: boolean;
+  reopenLastChat?: boolean;
+  sessionDensity?: "compact" | "comfortable" | "detailed";
+  tabStrip?: "auto" | "always" | "never";
+  chatBackdrop?: boolean;
+  bubbleTransparency?: number;
+  textDirection?: "auto" | "rtl" | "ltr";
+  hideTimeline?: boolean;
+  toolCallDisplay?: "product" | "technical";
+  collapseThinking?: boolean;
 };
 
 export type IndusPrefsSnapshot = {
@@ -159,6 +169,16 @@ export type IndusPrefsSnapshot = {
   notifications: { turnComplete: boolean; approvals: boolean; sounds: boolean };
   keybindings: Record<string, string>;
   chatTextScale: number;
+  introSplash: boolean;
+  reopenLastChat: boolean;
+  sessionDensity: "compact" | "comfortable" | "detailed";
+  tabStrip: "auto" | "always" | "never";
+  chatBackdrop: boolean;
+  bubbleTransparency: number;
+  textDirection: "auto" | "rtl" | "ltr";
+  hideTimeline: boolean;
+  toolCallDisplay: "product" | "technical";
+  collapseThinking: boolean;
 };
 
 export type IndusProfileState = {

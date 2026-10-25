@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ThemeProvider } from "../app/theme.tsx";
 import type { IndusProfileState } from "../global.d.ts";
 import type { SettingsBridge } from "./context.tsx";
+import { DISPLAY_DEFAULTS } from "./displayPrefs.ts";
 import { fakeRest } from "./fakeRest.ts";
 import { SettingsOverlay } from "./SettingsOverlay.tsx";
 
@@ -234,6 +235,7 @@ describe("settings overlay", () => {
       notifications: { turnComplete: true, approvals: true, sounds: true },
       keybindings: {},
       chatTextScale: 110,
+      ...DISPLAY_DEFAULTS,
     }));
     const bridge: SettingsBridge = {
       prefs: {
@@ -329,6 +331,7 @@ describe("settings-b pages (W52-j)", () => {
       notifications: { turnComplete: true, approvals: true, sounds: true },
       keybindings: {},
       chatTextScale: 110,
+      ...DISPLAY_DEFAULTS,
       ...overrides,
     };
     const set = vi.fn(async (patch: Record<string, unknown>) => {
