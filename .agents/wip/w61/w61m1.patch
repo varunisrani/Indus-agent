@@ -1,0 +1,3962 @@
+diff --git a/apps/web/src/test/routes.generated.ts b/apps/web/src/test/routes.generated.ts
+index 7c2f065..b5b651b 100644
+--- a/apps/web/src/test/routes.generated.ts
++++ b/apps/web/src/test/routes.generated.ts
+@@ -108,6 +108,8 @@ export const GENERATED_ROUTES: readonly GeneratedRoute[] = [
+   { method: "PUT", path: "/api/profiles/{name}/model", scoped: false },
+   { method: "GET", path: "/api/profiles/{name}/persona", scoped: false },
+   { method: "PUT", path: "/api/profiles/{name}/persona", scoped: false },
++  { method: "DELETE", path: "/api/providers/login/accounts/{provider}", scoped: true },
++  { method: "GET", path: "/api/providers/login/accounts/{provider}", scoped: true },
+   { method: "POST", path: "/api/providers/login/start", scoped: true },
+   { method: "DELETE", path: "/api/providers/login/{session_id}", scoped: true },
+   { method: "GET", path: "/api/providers/login/{session_id}", scoped: true },
+diff --git a/docs/internals/traps-ledger.md b/docs/internals/traps-ledger.md
+index e556b87..9255058 100644
+--- a/docs/internals/traps-ledger.md
++++ b/docs/internals/traps-ledger.md
+@@ -95,7 +95,8 @@ Checked by `python -m tooling.checks traps`.
+   - `tests/unit/providers/test_profile.py::test_foreign_user_agent_refused`
+   - `tests/unit/providers/test_profile.py::test_foreign_product_token_in_any_header_refused`
+   - `tests/unit/providers/test_http.py::test_identity_headers_only_ours`
+-  - `tests/unit/providers/test_bundled.py::test_no_oauth_or_portal_routes`
++  - `tests/unit/providers/test_bundled.py::test_the_only_sign_in_route_is_the_owners_chatgpt_one`
++  - `tests/unit/providers/test_chatgpt_backend.py::test_request_is_streamed_unstored_and_carries_the_account_header`
+   - `tests/unit/providers/transports/test_anthropic.py::test_no_header_names_another_product`
+   - `tests/unit/providers/transports/test_chat_completions.py::test_no_identity_headers_besides_ours`
+   - `tests/unit/providers/auth/test_pkce.py::test_only_documented_flows_are_registered`
+diff --git a/docs/notes/P08/chatgpt-sign-in.md b/docs/notes/P08/chatgpt-sign-in.md
+new file mode 100644
+index 0000000..8f697ea
+--- /dev/null
++++ b/docs/notes/P08/chatgpt-sign-in.md
+@@ -0,0 +1,145 @@
++# Task: ChatGPT sign-in for OpenAI models (wave 61 M1, D-16.1282) Phase: 08 Owner: builder M1
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): `hermes_cli/auth_constants.py` (Codex
++constants), `hermes_cli/auth_codex.py` (device-code login, refresh, token store), `hermes_cli/auth_codex_browser.py`
++(loopback PKCE), `agent/codex_headers.py` (account headers), `hermes_cli/codex_models.py` and
++`agent/model_metadata.py` (catalog URL and `client_version`), `agent/transports/codex.py` (request-shape notes only),
++`agent/codex_runtime.py` and `agent/codex_responses_adapter.py` (searched for header names only).
++Evidence: none (no live sign-in; protocol facts are cited to OpenAI's open-source Codex CLI in the constants module).
++
++What it does (own words): a person with a ChatGPT subscription signs Indus in to OpenAI through the same public
++client OpenAI's own Codex CLI uses (owner decision D-16.1282), and then picks the `openai-codex` provider: model
++calls go to the ChatGPT Codex backend in the Responses shape with the signed-in access token and the account header
++the backend asks for. Two ways to sign in: a browser on this machine (authorization code + PKCE, loopback callback
++on 127.0.0.1:1455, the port the public client is registered with) and a device code for headless machines (a code
++shown here, approved on auth.openai.com). Tokens live only in the profile's secret store; `auth.json` keeps metadata.
++The access token is renewed before it runs out, under a lock so two processes never spend the same single-use
++refresh token; signing out deletes them.
++
++Inputs → outputs:
++- `indus auth add openai-codex` (browser; `--device` for a device code; `--no-browser`, `--timeout`) → a pool row
++  `auth_type: oauth`, source `pkce` or `device_code`, tokens in the secret store, `providers.openai-codex` state.
++- `indus auth status [PROVIDER]` → per-provider summary (no provider: every provider with credentials or a sign-in).
++- `indus auth logout --provider openai-codex` (or the positional form) → rows, secrets and state removed.
++- model call on route `openai-codex` → `POST https://chatgpt.com/backend-api/codex/responses` (streamed).
++- `indus doctor` → one row per stored sign-in (valid for …, renews on next use, or sign in again).
++- Dashboard REST (below).
++
++Files: `src/indus/providers/auth/chatgpt_facts.py` (protocol facts with citations), `providers/auth/chatgpt.py`
++(device flow), `providers/auth/chatgpt_wire.py` (claims, headers, body hook; stdlib only, imported at start-up), `providers/auth/device_signin.py` (one start/finish/refresh dispatch for both
++device-flow kinds), `providers/auth/renew.py` (locked refresh), `providers/auth/flows.py` (row), `providers/auth/pkce.py`
++(redirect host/path), `providers/bundled.py` (profile), `providers/profile.py` (`oauth` auth type,
++`request_headers` hook), `providers/transports/responses.py` (hook use, stream-only), `providers/streaming.py`
++(stream-only transports), `providers/pool.py` (refresh ahead of expiry), `providers/model_list.py` (catalog shape),
++`cli/commands/auth.py`, `cli/doctor/checks.py`, `web/routes/models.py` (device dispatch), new
++`web/routes/provider_accounts.py`, tests.
++
++Edge cases / failure modes:
++- port 1455 busy (a Codex CLI login running) → the browser flow falls back to the device flow, said so on screen.
++- callback with a wrong/missing `state` → 400, counted, never exchanged; one use, then closed; times out.
++- device flow: 403/404 while the person has not approved yet → keep polling at the server's interval; transport
++  blips back off; 15-minute deadline; 429 on the code request → wait (Retry-After) and retry a few times.
++- refresh: `invalid_grant` / `refresh_token_reused` / 401 → sign in again (never adopt another program's login);
++  429 → quota, not a dead grant; a peer process already rotated the token → adopt the stored pair.
++- a token-shaped value never appears in an error, a log line, argv, a URL, config.yaml or a REST answer.
++
++Our design differences / decisions:
++- Browser flow is the default for `auth add` (the brief), device with `--device`; the reference defaults to device.
++- Our own identity: `User-Agent: indus/<version>` and `originator: indus-agent`; never Codex CLI's strings.
++- No reading of `~/.codex/auth.json` or any other program's saved login (R01.12, P2); the reference adopts it.
++- No reserved-tool-name aliasing on the wire (renaming tools is out of scope by the owner decision).
++- Refresh ahead of expiry happens in the credential pool's call loop (main agent calls); side calls still renew
++  on the first 401 through the same locked path.
++
++Tests we will write: facts/claims parsing; device flow against a fake auth server (pending → approve, 429, blips,
++deadline, cancel); browser flow (state check, port busy fallback, exchange); locked refresh (peer adoption, dead
++grant, quota); transport headers and body against a fake backend; model catalog parse; CLI add/status/logout; REST
++contract (start/poll/cancel/status/sign-out, no token in any answer, write scope).
++
++## Contract for UI
++
++All routes are profile-scoped (`?profile=<name>`, family `/api/providers/login` already in
++`PROFILE_SCOPED_FAMILIES`), behind the dashboard session; writes (POST/DELETE) use the write scope (400
++`profile_required` on a multi-profile host without `?profile=`). No answer ever carries a token, refresh token, id
++token or the device code. Errors are `{"detail": {"code": str, "message": str}}`.
++
++1. `GET /api/model/options` (unchanged shape): the `openai-codex` row has `device_login: true`, `sign_in: true`,
++   `configured: true` once signed in. Label "OpenAI (ChatGPT sign-in)".
++2. `POST /api/providers/login/start` body `{"provider": "openai-codex", "label"?: str}` → 200
++   `{"session_id": str, "provider": "openai-codex", "status": "pending", "message": str, "user_code": str,
++   "verification_url": "https://auth.openai.com/codex/device", "expires_in": int (s), "interval": int (s)}`.
++   Show `user_code` large and a link to `verification_url`; the person types the code there.
++   Errors: 400 `no_device_flow` (provider without a device flow), 404 `unknown_provider`, 502
++   `sign_in_unavailable` (OpenAI did not answer / refused; message is safe to show).
++3. `GET /api/providers/login/{session_id}` → 200 `{"session_id", "provider", "status", "message"}`; `status` is
++   `pending` | `approved` | `denied` | `expired` | `failed` | `cancelled`. Poll every `interval` seconds (not
++   faster); stop on anything but `pending`. 404 `no_such_session` (unknown, other profile, or 15 min after the end).
++4. `DELETE /api/providers/login/{session_id}` → 200 same shape, `status: "cancelled"` (write scope).
++5. NEW `GET /api/providers/login/accounts/{provider}` → 200
++   `{"provider": "openai-codex", "label": "OpenAI (ChatGPT sign-in)", "signed_in": bool, "signed_in_at": str|null,
++   "flows": {"browser": bool, "device": bool}, "accounts": [{"id": str, "label": str, "source": "pkce"|"device_code",
++   "status": "ok"|"exhausted", "expires_at": str|null (ISO), "expired": bool, "plan": str|null}]}`.
++   `plan` is the ChatGPT plan name from the token's claims (e.g. "plus", "pro"), else null. 404
++   `provider_not_found`.
++6. NEW `DELETE /api/providers/login/accounts/{provider}` (sign-out, write scope) → 200
++   `{"provider": "openai-codex", "removed": int, "signed_in": false}`: every signed-in credential of that provider,
++   its stored tokens and the sign-in state are deleted (API keys and env keys stay). 404 `unknown_provider`, 409
++   `inherited_pool` (the sign-in belongs to the default profile; sign out there).
++7. `POST /api/credentials/pool` with `provider: "openai-codex"` → 400 `sign_in_only` (it takes no API key).
++
++The browser (PKCE) flow is CLI-only: OpenAI only redirects to `http://localhost:1455/auth/callback` on the machine
++that runs `indus`, so a dashboard on another machine cannot use it; the dashboard uses the device flow.
++
++## Decisions for the lead
++- (W61-M1-1) Provider id `openai-codex` (alias `chatgpt`), display "OpenAI (ChatGPT sign-in)", vendor row bound to
++  `chatgpt.com` (no base-URL override: the token only ever goes there).
++- (W61-M1-2) Sign-in REST reuses `/api/providers/login/*` (start/poll/cancel) and adds
++  `/api/providers/login/accounts/{provider}` (status, sign-out) in the same scoped family, so the web needs no new
++  scoped family.
++
++Compare checklist (filled after the rewrite; reopened `hermes_cli/auth_codex.py`, `auth_codex_browser.py`,
++`agent/codex_headers.py`, `hermes_cli/codex_models.py`):
++- [x] device code: code request retried on 429 (Retry-After, capped), interval never under 3 s, 403/404 = pending,
++  six transport/server failures in a row end it, 15-minute deadline, exchange with the device redirect URI
++  (tests: `tests/unit/providers/auth/test_chatgpt.py::test_device_sign_in_polls_at_the_server_interval_then_exchanges`,
++  `::test_usercode_429_*`, `::test_server_errors_back_off_and_six_in_a_row_end_the_flow`,
++  `::test_transport_errors_count_as_failures`, `::test_the_code_expires_after_the_deadline`)
++- [x] browser: fixed port 1455, `localhost` redirect string with a 127.0.0.1 listener, scope and
++  `id_token_add_organizations`, state checked (now constant-time), one exchange, busy port → device code
++  (`::test_browser_sign_in_checks_state_and_exchanges_once`, `::test_browser_flow_falls_back_to_the_device_code_when_the_port_is_busy`,
++  `::test_the_listener_binds_loopback_while_the_redirect_says_localhost`)
++- [x] refresh: 429 is not a dead grant (`RefreshThrottled`); `invalid_grant` / `refresh_token_reused` (OpenAI's nested
++  error shape) / 401 → sign in again; a peer that already rotated the pair is adopted; two sessions at once spend
++  the refresh token once (`tests/unit/providers/test_chatgpt_backend.py::test_two_sessions_renewing_at_once_*`,
++  `::test_a_dead_grant_*`, `::test_a_throttled_renewal_is_not_a_dead_grant`, `::test_a_pair_renewed_elsewhere_*`)
++- [x] refresh ahead of expiry before a request (`::test_a_token_about_to_expire_is_renewed_before_the_request`,
++  `::test_the_call_loop_sends_the_renewed_token`)
++- [x] account header from the `chatgpt_account_id` claim, residency header, nothing for a non-JWT token, never a
++  header with a line break (`test_chatgpt.py::test_account_headers_*`, `::test_a_claim_with_a_line_break_*`)
++- [x] request: streamed, `store: false`, no output cap / sampling fields, instructions always present; a
++  non-streaming caller still streams (`test_chatgpt_backend.py::test_request_is_streamed_*`,
++  `::test_a_non_streaming_call_still_streams_to_the_backend`)
++- [x] model catalogue: `client_version`, hidden entries dropped, priority order, account header; default list when it
++  cannot be read (`::test_catalogue_shape_*`, `::test_list_models_*`)
++- [x] gap found: the generic "looks like a placeholder" key rule (`xxx` anywhere) would drop about one real sign-in
++  token in twenty — fixed by not applying it to sign-in tokens (`pool.key_of`), pinned by
++  `::test_a_token_that_happens_to_contain_xxx_is_still_used`
++- [x] CLI add (browser default, `--device`), `status` without a provider, `logout --provider`, doctor rows
++  (`tests/unit/cli/commands/test_auth_chatgpt.py`)
++- [x] REST start/poll/cancel/status/sign-out, write scope, session required, no token/device id/verifier in any
++  answer (`tests/contract/web/test_provider_accounts_routes.py`)
++- Deliberate differences: browser is the default (the reference defaults to the device code); our own
++  `originator`/User-Agent; a 403 from the token endpoint is not read as "sign in again" (an edge block looks the
++  same); the backend gets a neutral `instructions` line when a side call has no system prompt.
++- Not taken: adopting the Codex CLI's saved login (`~/.codex/auth.json`) — forbidden (R01.12, P2); quota probe and
++  pool cooldown clearing; the 1 MiB auth-body cap; `-900k` context variants; reserved tool-name aliasing on the
++  wire; a dashboard browser (PKCE) flow (the client only redirects to localhost:1455 on the machine running indus).
++
++## Status
++
++Done (2026-10-25), uncommitted in the w61m1 worktree. Shared files outside the slice: `src/indus/web/routes/models.py`
++(two calls now go through `device_signin`, docstring), `tests/contract/web/test_profiles_models_routes.py` (route
++pin includes the new module), `apps/web/src/test/routes.generated.ts` (regenerated: two new rows),
++`docs/internals/traps-ledger.md` (R01.12 test names), `tests/contract/cli/non_tty_table.yaml` (`auth status` → 0),
++`docs/user/reference/{cli,providers}.md` (regenerated by `scripts/docs/gen_reference.py`).
++The web/desktop UI for the contract above is the UI builder's.
+diff --git a/docs/user/reference/cli.md b/docs/user/reference/cli.md
+index 37991c1..a3bc5ee 100644
+--- a/docs/user/reference/cli.md
++++ b/docs/user/reference/cli.md
+@@ -242,8 +242,8 @@ indus auth [OPTIONS] [COMMAND] [ARGS]...
+ | [`indus auth reset`](#indus-auth-reset) | Put benched credentials back in rotation (all of PROVIDER's, or one). |
+ | [`indus auth priority`](#indus-auth-priority) | Move a credential to PRIORITY (0 = tried first); the others shift. |
+ | [`indus auth refresh`](#indus-auth-refresh) | Renew a signed-in credential's tokens and put it back in rotation. |
+-| [`indus auth status`](#indus-auth-status) | Summarise PROVIDER: credentials, strategy, sign-in and what would be used next. |
+-| [`indus auth logout`](#indus-auth-logout) | Forget everything stored for PROVIDER (credentials and sign-in state). |
++| [`indus auth status`](#indus-auth-status) | Summarise PROVIDER (or every provider with credentials or a sign-in): credentials, strategy, sign-ins and what would be used next. |
++| [`indus auth logout`](#indus-auth-logout) | Forget everything stored for PROVIDER (credentials, sign-in tokens and state). |
+ 
+ ### indus auth add
+ 
+@@ -264,6 +264,7 @@ indus auth add [OPTIONS] PROVIDER
+ | `--priority` | INTEGER |  | Place it at this position (0 = tried first). |
+ | `--api-key` | TEXT |  | The key (asked for, hidden, if omitted). |
+ | `--no-browser` | flag |  | Never open a browser; print the address. |
++| `--device` | flag |  | Sign in with a code approved on another device (for machines without a browser). |
+ | `--timeout` | FLOAT | `300.0` | Seconds to wait for sign-in. |
+ | `--ca-bundle` | TEXT |  | Trust this CA bundle for sign-in. |
+ | `--insecure` | flag |  | Skip TLS certificate checks (unsafe). |
+@@ -335,27 +336,32 @@ indus auth refresh [OPTIONS] PROVIDER [TARGET]
+ 
+ ### indus auth status
+ 
+-Summarise PROVIDER: credentials, strategy, sign-in and what would be used next.
++Summarise PROVIDER (or every provider with credentials or a sign-in): credentials,
++strategy, sign-ins and what would be used next.
+ 
+ ```text
+-indus auth status [OPTIONS] PROVIDER
++indus auth status [OPTIONS] [PROVIDER]
+ ```
+ 
+ | Argument | Required | Count |
+ |---|---|---|
+-| `PROVIDER` | yes | 1 |
++| `PROVIDER` | no | 1 |
+ 
+ ### indus auth logout
+ 
+-Forget everything stored for PROVIDER (credentials and sign-in state).
++Forget everything stored for PROVIDER (credentials, sign-in tokens and state).
+ 
+ ```text
+-indus auth logout [OPTIONS] PROVIDER
++indus auth logout [OPTIONS] [PROVIDER]
+ ```
+ 
+ | Argument | Required | Count |
+ |---|---|---|
+-| `PROVIDER` | yes | 1 |
++| `PROVIDER` | no | 1 |
++
++| Option | Value | Default | What it does |
++|---|---|---|---|
++| `--provider` | TEXT |  | The provider to sign out of. |
+ 
+ ## indus status
+ 
+diff --git a/docs/user/reference/providers.md b/docs/user/reference/providers.md
+index 023337f..022009f 100644
+--- a/docs/user/reference/providers.md
++++ b/docs/user/reference/providers.md
+@@ -10,6 +10,7 @@ The providers Indus Agent knows without any setup. `indus model` picks one.
+ |---|---|---|---|---|---|
+ | `openrouter` | OpenRouter | `or` | `OPENROUTER_API_KEY` |  | `https://openrouter.ai/api/v1` |
+ | `openai` | OpenAI | `openai-api` | `OPENAI_API_KEY` |  | `https://api.openai.com/v1` |
++| `openai-codex` | OpenAI (ChatGPT sign-in) | `chatgpt` |  |  | `https://chatgpt.com/backend-api/codex` |
+ | `anthropic` | Anthropic | `claude` | `ANTHROPIC_API_KEY` |  | `https://api.anthropic.com` |
+ | `gemini` | Google Gemini | `google` | `GEMINI_API_KEY`, `GOOGLE_API_KEY` |  | `https://generativelanguage.googleapis.com/v1beta` |
+ | `deepseek` | DeepSeek |  | `DEEPSEEK_API_KEY` |  | `https://api.deepseek.com/v1` |
+diff --git a/src/indus/cli/commands/auth.py b/src/indus/cli/commands/auth.py
+index 237d02b..bd82839 100644
+--- a/src/indus/cli/commands/auth.py
++++ b/src/indus/cli/commands/auth.py
+@@ -1,8 +1,10 @@
+ """``indus auth``: credential pools and provider sign-in.
+ 
+ ``add`` stores an API key (asked for with a hidden prompt when not given) or runs the provider's
+-documented sign-in flow; ``list``, ``remove``, ``reset``, ``priority``, ``refresh``, ``status`` and
+-``logout`` read and edit the pools in ``auth.json``. Secrets go to the profile's SecretStore,
++sign-in flow (a browser on this machine, or ``--device`` for a code to approve elsewhere; a
++provider without API keys, such as ``openai-codex``, signs in by default); ``list``, ``remove``,
++``reset``, ``priority``, ``refresh``, ``status`` and ``logout`` read and edit the pools in
++``auth.json``. Secrets go to the profile's SecretStore,
+ never to ``auth.json`` or the screen. Bare ``indus auth`` opens a small menu in a terminal and
+ prints the pools otherwise. There is no ``indus login`` (D-16.80): the unknown-command answer
+ points here.
+@@ -25,11 +27,12 @@ from indus.cli.args import CliState
+ from indus.cli.lazy import LazyGroup
+ from indus.cli.prompts import Cancelled, Interactive, NonInteractive
+ from indus.foundation import config as config_mod
++from indus.foundation import fsio
+ from indus.foundation.config import keys as config_keys
+ from indus.foundation.errors import AuthError, ConfigError, IndusError, SecretStoreError
+ from indus.foundation.scope import Scope
+ from indus.foundation.secrets import open_secret_store
+-from indus.providers.auth import browser, device_code, pkce
++from indus.providers.auth import browser, chatgpt, device_code, device_signin, pkce, renew
+ from indus.providers.auth.flows import SignInFlows, flows_for
+ from indus.providers.auth.pool_model import (
+     STRATEGIES,
+@@ -307,12 +310,13 @@ class _FlowOptions:
+     timeout: float
+     ca_bundle: str | None
+     insecure: bool
++    device: bool = False
+ 
+ 
+ async def _sign_in(env: _Env, flows: SignInFlows, options: _FlowOptions) -> pkce.PkceOutcome:
+     verify = device_code.tls_verify(options.ca_bundle, options.insecure, warn=_warn)
+     async with device_code.make_client(verify) as client:
+-        if flows.pkce is not None:
++        if flows.pkce is not None and not (options.device and flows.device is not None):
+             return await pkce.run_pkce_login(
+                 flows.pkce,
+                 clock=env.scope.clock,
+@@ -328,7 +332,7 @@ async def _sign_in(env: _Env, flows: SignInFlows, options: _FlowOptions) -> pkce
+             if browser.should_open(env.scope.env, no_browser=options.no_browser)
+             else None
+         )
+-        tokens = await device_code.run_device_login(
++        tokens = await device_signin.run_login(
+             flows.device, clock=env.scope.clock, say=_say, open_url=opener, client=client
+         )
+         return pkce.PkceOutcome(tokens=tokens, via_device=True)
+@@ -340,17 +344,7 @@ def run_sign_in(env: _Env, flows: SignInFlows, options: _FlowOptions) -> pkce.Pk
+ 
+ 
+ def _refresh_spec(flows: SignInFlows) -> device_code.DeviceFlowSpec | None:
+-    if flows.device is not None:
+-        return flows.device
+-    if flows.pkce is not None and flows.pkce.exchange == "token":
+-        return device_code.DeviceFlowSpec(
+-            provider=flows.provider,
+-            device_authorization_url="",
+-            token_url=flows.pkce.exchange_url,
+-            client_id=flows.pkce.client_id,
+-            scope=flows.pkce.scope,
+-        )
+-    return None
++    return device_signin.refresh_spec_of(flows)
+ 
+ 
+ def run_refresh(
+@@ -504,6 +498,11 @@ def _add_signed_in(
+         if not doc.get("active_provider"):
+             doc["active_provider"] = profile.name
+     _say(f'Signed in. Added {profile.name} credential #{index} ("{saved.label}").')
++    if outcome.tokens is not None and profile.signs_in:
++        plan = chatgpt.plan(outcome.tokens.access_token)
++        if plan:
++            _say(f"Account plan: {plan}.")
++        _say(f"Use it with `indus model` (provider {profile.name}).")
+ 
+ 
+ @auth_group.command("add")
+@@ -521,6 +520,11 @@ def _add_signed_in(
+ )
+ @click.option("--api-key", "api_key", default=None, help="The key (asked for, hidden, if omitted).")
+ @click.option("--no-browser", is_flag=True, help="Never open a browser; print the address.")
++@click.option(
++    "--device",
++    is_flag=True,
++    help="Sign in with a code approved on another device (for machines without a browser).",
++)
+ @click.option(
+     "--timeout", type=float, default=300.0, show_default=True, help="Seconds to wait for sign-in."
+ )
+@@ -535,6 +539,7 @@ def add_command(
+     priority: int | None,
+     api_key: str | None,
+     no_browser: bool,
++    device: bool,
+     timeout: float,
+     ca_bundle: str | None,
+     insecure: bool,
+@@ -546,10 +551,17 @@ def add_command(
+         _no_edit_on_inherited(env, profile)
+         flows = flows_for(profile.name)
+         wanted = (kind or "").lower().replace("-", "_") or (
+-            "oauth" if flows.oauth_default else "api_key"
++            "oauth" if flows.oauth_default or device else "api_key"
+         )
++        if profile.signs_in and (api_key or wanted == "api_key"):
++            _fail(
++                f"{profile.name} takes no API key; it signs in.",
++                f"indus auth add {profile.name}  (or --device on a machine without a browser)",
++            )
+         if wanted == "oauth" and api_key:
+             _fail("--api-key goes with --type api-key, not oauth.")
++        if device and wanted != "oauth":
++            _fail("--device goes with signing in (--type oauth), not with an API key.")
+         if wanted == "api_key":
+             _add_api_key(env, profile, key=api_key, label=label, priority=priority)
+             return
+@@ -559,7 +571,9 @@ def add_command(
+                 "instead.",
+                 f"indus auth add {profile.name} --api-key KEY",
+             )
+-        options = _FlowOptions(no_browser, timeout, ca_bundle, insecure)
++        if device and flows.device is None:
++            _fail(f"{profile.name} has no device sign-in; drop --device to use the browser.")
++        options = _FlowOptions(no_browser, timeout, ca_bundle, insecure, device)
+         try:
+             _add_signed_in(env, profile, flows, options, label, priority)
+         except AuthError as exc:
+@@ -718,8 +732,16 @@ def refresh_command(ctx: click.Context, provider: str, target: str | None) -> No
+                 f"indus auth add {profile.name} --type oauth",
+             )
+         try:
+-            tokens = device_code.TokenSet.from_secret(stored)
+-            fresh = run_refresh(env, spec, tokens)
++            with fsio.FileLock(
++                env.scope.home / renew.LOCK_FILE, timeout=renew.LOCK_TIMEOUT_SECONDS
++            ):
++                tokens = device_code.TokenSet.from_secret(
++                    env.secrets.get(secret_name(profile.name, entry.id)) or stored
++                )
++                fresh = run_refresh(env, spec, tokens)
++                env.secrets.set(secret_name(profile.name, entry.id), fresh.to_secret())
++        except fsio.LockTimeout:
++            _fail("Another indus process is renewing this sign-in; try again in a moment.")
+         except ValueError:
+             _fail(
+                 "The stored sign-in is damaged; sign in again.",
+@@ -729,7 +751,6 @@ def refresh_command(ctx: click.Context, provider: str, target: str | None) -> No
+             _fail(f"{exc}.", f"indus auth add {profile.name} --type oauth")
+         except AuthError as exc:
+             _fail(f"Refresh failed: {exc}")
+-        env.secrets.set(secret_name(profile.name, entry.id), fresh.to_secret())
+         expires = fresh.expires_at.isoformat() if fresh.expires_at else None
+ 
+         def change(pool: Pool, _doc: dict[str, Any]) -> None:
+@@ -744,49 +765,109 @@ def refresh_command(ctx: click.Context, provider: str, target: str | None) -> No
+         )
+ 
+ 
++def _sign_in_lines(env: _Env, profile: ProviderProfile, pool: Pool, now: datetime) -> None:
++    """One line per signed-in credential: how long its token lasts and the account plan."""
++    for entry in pool.entries:
++        if entry.auth_type != "oauth":
++            continue
++        try:
++            stored = env.secrets.get(secret_name(profile.name, entry.id))
++        except SecretStoreError:
++            stored = None
++        tokens: device_code.TokenSet | None = None
++        if stored:
++            try:
++                tokens = device_code.TokenSet.from_secret(stored)
++            except ValueError:
++                tokens = None
++        if tokens is None:
++            state = "stored tokens missing or damaged; sign in again"
++        elif tokens.expires_at is None:
++            state = "token without an expiry"
++        elif tokens.expires_at <= now:
++            state = (
++                "token expired; renewed on next use"
++                if tokens.refresh_token
++                else "token expired; sign in again"
++            )
++        else:
++            state = f"token valid for {_left((tokens.expires_at - now).total_seconds())}"
++        plan = chatgpt.plan(tokens.access_token) if tokens is not None else None
++        extra = f", plan {plan}" if plan else ""
++        _say(f'  sign-in "{entry.label}" ({entry.source}): {state}{extra}')
++
++
++def _status(env: _Env, profile: ProviderProfile) -> None:
++    now = env.scope.clock.now()
++    pool, inherited = _pool(env, profile)
++    strategy = _strategy(env, profile.name)
++    state, state_inherited = env.store.provider_state(profile.name)
++    active = env.store.read().get("active_provider")
++    flows = flows_for(profile.name)
++    _say(f"{profile.label} ({profile.name})")
++    count = len(pool)
++    origin = " (from the default profile)" if inherited else ""
++    _say(f"  credentials: {count}{origin}, strategy {strategy}")
++    nxt = pool.peek(strategy, now)
++    if nxt is not None:
++        _say(f'  next to use: "{nxt.label}" ({nxt.auth_type}, {nxt.source})')
++    elif count:
++        _say("  next to use: none (every credential is benched)")
++    if state is not None:
++        since = state.get("signed_in_at")
++        where = " (default profile)" if state_inherited else ""
++        _say(f"  signed in{where}: {since or 'yes'}")
++    _sign_in_lines(env, profile, pool, now)
++    _say(f"  active sign-in provider: {'yes' if active == profile.name else 'no'}")
++    kinds = [k for k, v in (("browser (PKCE)", flows.pkce), ("device code", flows.device)) if v]
++    _say(f"  sign-in flows: {', '.join(kinds) if kinds else 'none (API keys only)'}")
++    configured = str(_config_get(env.scope, "model.provider") or "")
++    if configured:
++        _say(f"  model.provider: {configured}")
++
++
+ @auth_group.command("status")
+-@click.argument("provider")
++@click.argument("provider", required=False)
+ @click.pass_context
+-def status_command(ctx: click.Context, provider: str) -> None:
+-    """Summarise PROVIDER: credentials, strategy, sign-in and what would be used next."""
++def status_command(ctx: click.Context, provider: str | None) -> None:
++    """Summarise PROVIDER (or every provider with credentials or a sign-in): credentials,
++    strategy, sign-ins and what would be used next."""
+     env = _env_from(ctx)
+     with _guarded():
+-        profile = _provider(env, provider)
+-        now = env.scope.clock.now()
+-        pool, inherited = _pool(env, profile)
+-        strategy = _strategy(env, profile.name)
+-        state, state_inherited = env.store.provider_state(profile.name)
+-        active = env.store.read().get("active_provider")
+-        flows = flows_for(profile.name)
+-        _say(f"{profile.label} ({profile.name})")
+-        count = len(pool)
+-        origin = " (from the default profile)" if inherited else ""
+-        _say(f"  credentials: {count}{origin}, strategy {strategy}")
+-        nxt = pool.peek(strategy, now)
+-        if nxt is not None:
+-            _say(f'  next to use: "{nxt.label}" ({nxt.auth_type}, {nxt.source})')
+-        elif count:
+-            _say("  next to use: none (every credential is benched)")
+-        if state is not None:
+-            since = state.get("signed_in_at")
+-            where = " (default profile)" if state_inherited else ""
+-            _say(f"  signed in{where}: {since or 'yes'}")
+-        _say(f"  active sign-in provider: {'yes' if active == profile.name else 'no'}")
+-        kinds = [k for k, v in (("browser (PKCE)", flows.pkce), ("device code", flows.device)) if v]
+-        _say(f"  sign-in flows: {', '.join(kinds) if kinds else 'none (API keys only)'}")
+-        configured = str(_config_get(env.scope, "model.provider") or "")
+-        if configured:
+-            _say(f"  model.provider: {configured}")
++        if provider is not None:
++            _status(env, _provider(env, provider))
++            return
++        names = set(env.store.signed_in())
++        for doc in (env.store.read(), env.store.read_fallback()):
++            pools = doc.get("pool")
++            if isinstance(pools, dict):
++                names.update(str(k) for k, v in cast(dict[str, Any], pools).items() if v)
++        shown = 0
++        for profile in env.registry.list_providers():
++            if profile.name not in names and not env.env_rows(profile):
++                continue
++            if shown:
++                _say("")
++            _status(env, profile)
++            shown += 1
++        if not shown:
++            _say("No credentials or sign-ins yet. Add one with `indus auth add PROVIDER`.")
+ 
+ 
+ @auth_group.command("logout")
+-@click.argument("provider")
++@click.argument("provider", required=False)
++@click.option("--provider", "provider_option", default=None, help="The provider to sign out of.")
+ @click.pass_context
+-def logout_command(ctx: click.Context, provider: str) -> None:
+-    """Forget everything stored for PROVIDER (credentials and sign-in state)."""
++def logout_command(ctx: click.Context, provider: str | None, provider_option: str | None) -> None:
++    """Forget everything stored for PROVIDER (credentials, sign-in tokens and state)."""
++    if provider and provider_option and provider.lower() != provider_option.lower():
++        raise click.UsageError("name the provider once (PROVIDER or --provider)")
++    chosen = provider or provider_option
++    if not chosen:
++        raise click.UsageError("say which provider: indus auth logout --provider NAME")
+     env = _env_from(ctx)
+     with _guarded():
+-        profile = _provider(env, provider)
++        profile = _provider(env, chosen)
+         removed: list[PoolEntry] = []
+ 
+         def change(pool: Pool, doc: dict[str, Any]) -> None:
+diff --git a/src/indus/cli/doctor/checks.py b/src/indus/cli/doctor/checks.py
+index d635fe0..c3f8b4e 100644
+--- a/src/indus/cli/doctor/checks.py
++++ b/src/indus/cli/doctor/checks.py
+@@ -366,7 +366,65 @@ def check_auth(ctx: DoctorContext) -> list[Finding]:
+         ]
+     if not isinstance(data, dict):
+         return [Finding("auth", "error", "auth.json is not a sign-in store", fix="move it aside")]
+-    return [Finding("auth", "ok", "auth.json reads cleanly")]
++    return [Finding("auth", "ok", "auth.json reads cleanly"), *_sign_in_findings(ctx, data)]
++
++
++def _sign_in_findings(ctx: DoctorContext, doc: dict[str, Any]) -> list[Finding]:
++    """One row per signed-in credential: valid for how long, renewed on next use, or sign in
++    again. Reads the stored tokens; never shows them."""
++    from datetime import datetime
++
++    from indus.providers.auth.device_code import TokenSet
++    from indus.providers.auth.pool_model import secret_name
++
++    pools = doc.get("pool")
++    if not isinstance(pools, dict):
++        return []
++    secrets = ctx.scope.secrets
++    now: datetime = ctx.scope.clock.now()
++    found: list[Finding] = []
++    for provider, rows in cast(dict[str, Any], pools).items():
++        if not isinstance(rows, list):
++            continue
++        for row in cast(list[object], rows):
++            if not isinstance(row, dict) or cast(dict[str, Any], row).get("auth_type") != "oauth":
++                continue
++            entry = cast(dict[str, Any], row)
++            label = f'{provider} sign-in "{entry.get("label") or entry.get("id")}"'
++            relogin = f"indus auth add {provider}"
++            try:
++                stored = (
++                    secrets.get(secret_name(str(provider), str(entry.get("id"))))
++                    if secrets
++                    else None
++                )
++                tokens = TokenSet.from_secret(stored) if stored else None
++            except Exception:
++                tokens = None
++            if tokens is None:
++                found.append(
++                    Finding("auth", "warn", f"{label}: its stored tokens are missing", fix=relogin)
++                )
++            elif tokens.expires_at is not None and tokens.expires_at <= now:
++                if tokens.refresh_token:
++                    found.append(
++                        Finding("auth", "info", f"{label}: token expired; renewed on next use")
++                    )
++                else:
++                    found.append(
++                        Finding(
++                            "auth",
++                            "warn",
++                            f"{label}: token expired and cannot be renewed",
++                            fix=relogin,
++                        )
++                    )
++            elif tokens.expires_at is not None:
++                hours = (tokens.expires_at - now).total_seconds() / 3600
++                found.append(Finding("auth", "ok", f"{label}: token valid for {hours:.1f} h"))
++            else:
++                found.append(Finding("auth", "ok", f"{label}: stored"))
++    return found
+ 
+ 
+ # -- providers ------------------------------------------------------------------------------------
+diff --git a/src/indus/cli/model_picker.py b/src/indus/cli/model_picker.py
+index 267f49e..8947130 100644
+--- a/src/indus/cli/model_picker.py
++++ b/src/indus/cli/model_picker.py
+@@ -249,7 +249,7 @@ def _route_for(
+ def _model_ids(
+     scope: Scope, profile: ProviderProfile, route: RuntimeRoute | None, deps: PickerDeps
+ ) -> list[str]:
+-    curated = list(profile.model_aliases)
++    curated = list(dict.fromkeys([*profile.model_aliases, *profile.default_models]))
+     if route is None or not profile.supports_model_listing:
+         return curated
+     secret = route.api_key.reveal() if route.api_key is not None else None
+@@ -338,6 +338,11 @@ def _provider_flow(
+     except _Stop:
+         return None
+     route = _route_for(scope, profile.name, key=new_key)
++    if route is None and profile.signs_in:
++        io.say(
++            f"{profile.label} is not signed in yet; after choosing a model, sign in with "
++            f"`indus auth add {profile.name}` (add --device on a machine without a browser)."
++        )
+     models = _model_ids(scope, profile, route, deps)
+     model = _choose_model(io, models, current if saved_provider == profile.name else "")
+     return Selection(
+diff --git a/src/indus/providers/auth/chatgpt.py b/src/indus/providers/auth/chatgpt.py
+new file mode 100644
+index 0000000..ceac386
+--- /dev/null
++++ b/src/indus/providers/auth/chatgpt.py
+@@ -0,0 +1,256 @@
++"""Signing in with a ChatGPT account (D-16.1282): the device-code flow.
++
++The browser flow is the generic authorization code + PKCE flow (``auth.pkce``) with the row in
++``auth.flows``; this module holds what is particular to OpenAI's sign-in service:
++
++- **Device code.** Not RFC 8628: ``POST usercode`` with ``{client_id}`` answers ``{device_auth_id,
++  user_code, interval}``; the person enters the code on ``/codex/device``; ``POST token`` with
++  ``{device_auth_id, user_code}`` answers 403/404 until they approve, then ``{authorization_code,
++  code_verifier}``, which the ordinary token endpoint exchanges (authorization-code grant with the
++  device redirect URI). We poll at the server's interval (never under three seconds); a dropped
++  connection, a 429 or a 5xx backs off (``Retry-After`` when given, else doubling up to 60 s) and
++  six failures in a row end the flow; fifteen minutes end it too. Asking for a code is retried on
++  429 a few times (the service limits how often one address may ask).
++- **Claims, request shape, model list URL** live in ``auth.chatgpt_wire`` (no HTTP imports, the
++  catalogue loads it at start-up) and are re-exported here.
++
++No message raised here carries a token, a code, the verifier or a response body: only status codes
++and the provider's own short error codes.
++"""
++
++from __future__ import annotations
++
++import logging
++from collections.abc import Mapping
++from dataclasses import dataclass
++from typing import Any, cast
++
++import httpx
++
++from indus.foundation.clock import Clock
++from indus.providers.auth import chatgpt_facts as facts
++from indus.providers.auth.chatgpt_wire import (
++    DEFAULT_INSTRUCTIONS,
++    DROPPED_FIELDS,
++    account_headers,
++    account_id,
++    claims,
++    models_url,
++    plan,
++    prepare_body,
++)
++from indus.providers.auth.device_code import (
++    BACKOFF_CAP,
++    DeviceAuthorization,
++    DeviceCodeExpired,
++    DeviceFlowError,
++    SignInServiceDown,
++    TokenSet,
++)
++from indus.providers.retry import parse_retry_after
++
++__all__ = [
++    "DEFAULT_INSTRUCTIONS",
++    "DROPPED_FIELDS",
++    "ChatGptDeviceSpec",
++    "account_headers",
++    "account_id",
++    "claims",
++    "models_url",
++    "plan",
++    "prepare_body",
++    "request_user_code",
++    "wait_for_approval",
++]
++
++log = logging.getLogger(__name__)
++
++USERCODE_ATTEMPTS = 4
++MAX_FAILURES_IN_A_ROW = 6
++_STRUGGLING = frozenset({408, 429})
++
++
++@dataclass(frozen=True)
++class ChatGptDeviceSpec:
++    """OpenAI's device sign-in endpoints (see the module notes)."""
++
++    provider: str = facts.PROVIDER
++    usercode_url: str = facts.DEVICE_USERCODE_URL
++    poll_url: str = facts.DEVICE_TOKEN_URL
++    verify_page: str = facts.DEVICE_VERIFY_PAGE
++    token_url: str = facts.TOKEN_URL
++    redirect_uri: str = facts.DEVICE_REDIRECT_URI
++    client_id: str = facts.CLIENT_ID
++    deadline_seconds: int = facts.DEVICE_DEADLINE_SECONDS
++    min_interval: int = facts.DEVICE_MIN_INTERVAL
++    doc_url: str = "https://github.com/openai/codex (codex-rs/login/src/device_code_auth.rs)"
++
++
++def _text(value: object) -> str:
++    return value.strip() if isinstance(value, str) else ""
++
++
++# -- device code ---------------------------------------------------------------------------------
++
++
++def _json(response: httpx.Response) -> dict[str, Any] | None:
++    try:
++        data = response.json()
++    except (ValueError, UnicodeDecodeError):
++        return None
++    return cast(dict[str, Any], data) if isinstance(data, dict) else None
++
++
++def _seconds(value: object, default: int) -> int:
++    if isinstance(value, bool):
++        return default
++    if isinstance(value, int | float) and value > 0:
++        return int(value)
++    if isinstance(value, str) and value.strip().isdigit() and int(value.strip()) > 0:
++        return int(value.strip())
++    return default
++
++
++def _wait_after(response: httpx.Response | None, previous: float, clock: Clock) -> float:
++    retry_after = (
++        parse_retry_after(dict(response.headers), now=clock.now()) if response is not None else None
++    )
++    if retry_after is not None:
++        return min(max(1.0, retry_after), BACKOFF_CAP)
++    return min(max(previous * 2, 2.0), BACKOFF_CAP)
++
++
++async def request_user_code(
++    client: httpx.AsyncClient, spec: ChatGptDeviceSpec, *, clock: Clock
++) -> DeviceAuthorization:
++    """Ask for a code to show; retried a few times when the service says 429."""
++    pause = 0.0
++    response: httpx.Response | None = None
++    for attempt in range(1, USERCODE_ATTEMPTS + 1):
++        try:
++            response = await client.post(spec.usercode_url, json={"client_id": spec.client_id})
++        except httpx.HTTPError as exc:
++            raise DeviceFlowError(
++                f"could not reach OpenAI's sign-in service ({type(exc).__name__})"
++            ) from None
++        if response.status_code != 429 or attempt == USERCODE_ATTEMPTS:
++            break
++        pause = _wait_after(response, pause, clock)
++        log.info("OpenAI is limiting sign-in requests; asking again in %.0fs", pause)
++        await clock.sleep(pause)
++    assert response is not None
++    if response.status_code == 429:
++        raise SignInServiceDown(
++            "OpenAI is limiting sign-in requests from here right now (HTTP 429); wait a few "
++            "minutes and try again",
++            last_status=429,
++        )
++    payload = _json(response)
++    if response.status_code != 200 or payload is None:
++        raise DeviceFlowError(
++            f"OpenAI's sign-in service refused to start a device sign-in (HTTP "
++            f"{response.status_code})"
++        )
++    auth_id = _text(payload.get("device_auth_id"))
++    user_code = _text(payload.get("user_code") or payload.get("usercode"))
++    if not auth_id or not user_code:
++        raise DeviceFlowError("OpenAI's device sign-in answer lacks its code")
++    interval = max(
++        spec.min_interval, _seconds(payload.get("interval"), facts.DEVICE_DEFAULT_INTERVAL)
++    )
++    return DeviceAuthorization(
++        device_code=auth_id,
++        user_code=user_code,
++        verification_uri=spec.verify_page,
++        expires_in=spec.deadline_seconds,
++        interval=interval,
++    )
++
++
++async def _exchange(
++    client: httpx.AsyncClient, spec: ChatGptDeviceSpec, payload: Mapping[str, Any], clock: Clock
++) -> TokenSet:
++    code = _text(payload.get("authorization_code"))
++    verifier = _text(payload.get("code_verifier"))
++    if not code or not verifier:
++        raise DeviceFlowError("OpenAI approved the sign-in but sent no authorization code")
++    form = {
++        "grant_type": "authorization_code",
++        "code": code,
++        "redirect_uri": spec.redirect_uri,
++        "client_id": spec.client_id,
++        "code_verifier": verifier,
++    }
++    try:
++        response = await client.post(spec.token_url, data=form)
++    except httpx.HTTPError as exc:
++        raise DeviceFlowError(
++            f"could not reach OpenAI to finish the sign-in ({type(exc).__name__})"
++        ) from None
++    body = _json(response)
++    if response.status_code != 200 or body is None:
++        raise DeviceFlowError(
++            f"OpenAI did not finish the sign-in (HTTP {response.status_code}); start again"
++        )
++    return TokenSet.from_response(body, clock.now())
++
++
++async def wait_for_approval(
++    client: httpx.AsyncClient,
++    spec: ChatGptDeviceSpec,
++    grant: DeviceAuthorization,
++    *,
++    clock: Clock,
++) -> TokenSet:
++    """Poll until the person approves (then exchange the code), or the deadline passes."""
++    deadline = clock.monotonic() + max(1, grant.expires_in)
++    interval = float(max(1, grant.interval))
++    body = {"device_auth_id": grant.device_code, "user_code": grant.user_code}
++    failures = 0
++    backoff = 0.0
++    last_status: int | None = None
++    wait = interval
++    while True:
++        remaining = deadline - clock.monotonic()
++        if remaining <= 0:
++            break
++        await clock.sleep(min(wait, remaining))
++        if deadline - clock.monotonic() <= 0:
++            break
++        response: httpx.Response | None
++        try:
++            response = await client.post(spec.poll_url, json=body)
++        except httpx.TransportError as exc:
++            log.debug("device sign-in poll failed: %s", type(exc).__name__)
++            response = None
++        status = response.status_code if response is not None else 0
++        if response is not None and status == 200:
++            payload = _json(response)
++            if payload is None:
++                raise DeviceFlowError("OpenAI's approval answer was not JSON")
++            return await _exchange(client, spec, payload, clock)
++        if status in facts.DEVICE_PENDING_STATUSES:
++            failures, backoff, last_status = 0, 0.0, None
++            wait = interval
++            continue
++        if response is None or status in _STRUGGLING or status >= 500:
++            failures += 1
++            last_status = status
++            if failures >= MAX_FAILURES_IN_A_ROW:
++                shown = f"HTTP {status}" if status else "no connection"
++                raise SignInServiceDown(
++                    f"OpenAI's sign-in service kept failing ({shown}); try again later",
++                    last_status=status or None,
++                )
++            backoff = _wait_after(response, max(backoff, interval), clock)
++            wait = backoff
++            continue
++        raise DeviceFlowError(f"OpenAI refused the device sign-in (HTTP {status})")
++    if last_status is not None:
++        shown = f"HTTP {last_status}" if last_status else "no connection"
++        raise SignInServiceDown(
++            f"OpenAI's sign-in service kept failing ({shown}) until the code expired; try again "
++            "later",
++            last_status=last_status or None,
++        )
++    raise DeviceCodeExpired("the sign-in code expired before it was approved; start again")
+diff --git a/src/indus/providers/auth/chatgpt_facts.py b/src/indus/providers/auth/chatgpt_facts.py
+new file mode 100644
+index 0000000..35594a0
+--- /dev/null
++++ b/src/indus/providers/auth/chatgpt_facts.py
+@@ -0,0 +1,88 @@
++"""Protocol facts for signing in with a ChatGPT account and calling the ChatGPT Codex backend.
++
++Owner decision D-16.1282 (2026-10-25): Indus signs in through the public OAuth client that OpenAI's
++open-source Codex CLI registers, and then sends model calls to the ChatGPT Codex backend. These are
++third-party facts, not code; each one cites where it is stated. "Codex CLI" below means
++https://github.com/openai/codex (Apache-2.0), read at its ``main`` branch on 2026-10-25:
++
++- ``codex-rs/login/src/server.rs`` — issuer, client id, authorize parameters, the loopback port and
++  callback path, the token endpoint and the authorization-code exchange;
++- ``codex-rs/login/src/device_code_auth.rs`` — the device-code endpoints, the verification page and
++  the redirect URI used when that code is exchanged;
++- ``codex-rs/core/src/auth.rs`` and ``codex-rs/login/src/token_data.rs`` — the refresh grant and the
++  ``https://api.openai.com/auth`` claim set inside the access token;
++- ``codex-rs/core/src/model_provider_info.rs`` and ``codex-rs/core/src/client.rs`` — the backend
++  base URL, ``POST {base}/responses`` (streamed, ``store: false``) and the account header;
++- ``codex-rs/core/src/models_manager`` — ``GET {base}/models?client_version=…``.
++
++Nothing here is a credential: the client id is public (it ships inside every Codex CLI build).
++"""
++
++from __future__ import annotations
++
++from typing import Final
++
++PROVIDER: Final = "openai-codex"
++DISPLAY_NAME: Final = "OpenAI (ChatGPT sign-in)"
++
++# -- sign-in (server.rs) -----------------------------------------------------------------------
++
++ISSUER: Final = "https://auth.openai.com"
++CLIENT_ID: Final = "app_EMoamEEZ73f0CkXaXp7hrann"  # the Codex CLI's public client id
++AUTHORIZE_URL: Final = f"{ISSUER}/oauth/authorize"
++TOKEN_URL: Final = f"{ISSUER}/oauth/token"
++SCOPE: Final = "openid profile email offline_access"
++# The client is registered for exactly this redirect: host spelled ``localhost``, fixed port and
++# path. Our listener still binds 127.0.0.1 only; ``localhost`` is just the string in the URI.
++CALLBACK_HOST: Final = "localhost"
++CALLBACK_PORT: Final = 1455
++CALLBACK_PATH: Final = "/auth/callback"
++# Extra authorize parameters the Codex CLI sends: ask for the organisations claim in the id token.
++AUTHORIZE_EXTRA: Final = {"id_token_add_organizations": "true"}
++
++# -- device code (device_code_auth.rs) ---------------------------------------------------------
++
++DEVICE_USERCODE_URL: Final = f"{ISSUER}/api/accounts/deviceauth/usercode"
++DEVICE_TOKEN_URL: Final = f"{ISSUER}/api/accounts/deviceauth/token"
++DEVICE_VERIFY_PAGE: Final = f"{ISSUER}/codex/device"
++DEVICE_REDIRECT_URI: Final = f"{ISSUER}/deviceauth/callback"
++# Status codes the poll answers with while the person has not approved yet.
++DEVICE_PENDING_STATUSES: Final = frozenset({403, 404})
++# The Codex CLI gives up after fifteen minutes; the server sends ``interval`` (seconds, as text).
++DEVICE_DEADLINE_SECONDS: Final = 15 * 60
++DEVICE_DEFAULT_INTERVAL: Final = 5
++DEVICE_MIN_INTERVAL: Final = 3
++
++# -- tokens (auth.rs, token_data.rs) -----------------------------------------------------------
++
++# The access token is a JWT; this claim object carries the ChatGPT account and plan.
++AUTH_CLAIM: Final = "https://api.openai.com/auth"
++ACCOUNT_ID_FIELD: Final = "chatgpt_account_id"
++PLAN_FIELD: Final = "chatgpt_plan_type"
++RESIDENCY_FIELDS: Final = ("chatgpt_data_residency", "chatgpt_compute_residency")
++
++# -- the backend (model_provider_info.rs, client.rs) -------------------------------------------
++
++BACKEND_BASE_URL: Final = "https://chatgpt.com/backend-api/codex"
++ACCOUNT_HEADER: Final = "ChatGPT-Account-ID"
++RESIDENCY_HEADER: Final = "x-openai-internal-codex-residency"
++# Who is calling: the backend asks third-party clients to name themselves. This is ours, never
++# the Codex CLI's value (R01.12: requests only identify as this product).
++ORIGINATOR_HEADER: Final = "originator"
++ORIGINATOR: Final = "indus-agent"
++# ``client_version`` is required on the models endpoint; models whose minimal client version is
++# newer than it are hidden, so a high version asks for the whole catalogue of the account.
++MODELS_CLIENT_VERSION: Final = "1.0.0"
++
++# Model ids offered when the live catalogue cannot be read (offline, expired sign-in). The live
++# list (``GET {base}/models``) replaces it whenever it answers.
++DEFAULT_MODELS: Final = (
++    "gpt-5.5",
++    "gpt-5.4",
++    "gpt-5.4-mini",
++    "gpt-5.6-sol",
++    "gpt-5.6-terra",
++    "gpt-5.6-luna",
++    "gpt-6-sol",
++    "gpt-6-luna",
++)
+diff --git a/src/indus/providers/auth/chatgpt_wire.py b/src/indus/providers/auth/chatgpt_wire.py
+new file mode 100644
+index 0000000..6e1f615
+--- /dev/null
++++ b/src/indus/providers/auth/chatgpt_wire.py
+@@ -0,0 +1,96 @@
++"""What the ``openai-codex`` route reads from a ChatGPT sign-in's token, and its request shape.
++
++Kept free of HTTP and sign-in machinery (standard library only) because the bundled provider
++catalogue imports it at start-up. The sign-in flows themselves are in ``auth.chatgpt``.
++
++- **Claims.** The access token is a JWT whose ``https://api.openai.com/auth`` object names the
++  ChatGPT account (sent back as the account header) and the plan (shown in status). It is read
++  without verification, only for those two uses; the backend is the one that checks it.
++- **Requests.** The backend takes the Responses shape, streamed and unstored, without an output
++  cap or sampling fields, and always with ``instructions`` (``prepare_body``, the profile's hook).
++- **Models.** ``GET {base}/models?client_version=…`` lists the account's models (``slug``,
++  ``visibility``, ``priority``; ``model_list.parse_models`` reads that shape). Without an answer
++  the profile's documented ``default_models`` stand in.
++"""
++
++from __future__ import annotations
++
++import base64
++import binascii
++import json
++from typing import Any, cast
++
++from indus.providers.auth import chatgpt_facts as facts
++
++# -- claims --------------------------------------------------------------------------------------
++
++
++def claims(access_token: str) -> dict[str, Any]:
++    """The JWT payload of ``access_token`` (unverified); ``{}`` for anything that is not one."""
++    parts = access_token.split(".") if isinstance(access_token, str) else []  # pyright: ignore[reportUnnecessaryIsInstance]
++    if len(parts) != 3:
++        return {}
++    body = parts[1] + "=" * (-len(parts[1]) % 4)
++    try:
++        data = json.loads(base64.urlsafe_b64decode(body.encode("ascii")))
++    except (ValueError, UnicodeError, binascii.Error):
++        return {}
++    return cast(dict[str, Any], data) if isinstance(data, dict) else {}
++
++
++def _auth_claims(access_token: str) -> dict[str, Any]:
++    found = claims(access_token).get(facts.AUTH_CLAIM)
++    return cast(dict[str, Any], found) if isinstance(found, dict) else {}
++
++
++def _text(value: object) -> str:
++    return value.strip() if isinstance(value, str) else ""
++
++
++def account_id(access_token: str) -> str:
++    return _text(_auth_claims(access_token).get(facts.ACCOUNT_ID_FIELD))
++
++
++def plan(access_token: str) -> str | None:
++    return _text(_auth_claims(access_token).get(facts.PLAN_FIELD)) or None
++
++
++def account_headers(access_token: str) -> dict[str, str]:
++    """The account (and data-residency) headers the backend reads; ``{}`` for a token without
++    them (the backend then answers 401, which the pool treats as a sign-in problem)."""
++    auth = _auth_claims(access_token)
++    headers: dict[str, str] = {}
++    account = _text(auth.get(facts.ACCOUNT_ID_FIELD))
++    if account and "\n" not in account and "\r" not in account:
++        headers[facts.ACCOUNT_HEADER] = account
++    for field_name in facts.RESIDENCY_FIELDS:
++        residency = _text(auth.get(field_name))
++        if residency and "\n" not in residency and "\r" not in residency:
++            headers[facts.RESIDENCY_HEADER] = residency
++            break
++    return headers
++
++
++# -- the backend's request shape ----------------------------------------------------------------
++
++# Request fields the backend refuses (it sets the output budget and sampling itself).
++DROPPED_FIELDS = ("max_output_tokens", "temperature", "top_p")
++DEFAULT_INSTRUCTIONS = "Follow the instructions in the conversation."
++
++
++def prepare_body(body: dict[str, Any], model: str) -> dict[str, Any]:
++    """The ``openai-codex`` profile's body hook over the Responses body: always streamed and not
++    stored, never an output cap or sampling field, and always an ``instructions`` text."""
++    out = {k: v for k, v in body.items() if k not in DROPPED_FIELDS}
++    out["store"] = False
++    out["stream"] = True
++    if not isinstance(out.get("instructions"), str) or not out["instructions"].strip():
++        out["instructions"] = DEFAULT_INSTRUCTIONS
++    return out
++
++
++# -- model list ----------------------------------------------------------------------------------
++
++
++def models_url(base_url: str) -> str:
++    return f"{base_url.rstrip('/')}/models?client_version={facts.MODELS_CLIENT_VERSION}"
+diff --git a/src/indus/providers/auth/device_code.py b/src/indus/providers/auth/device_code.py
+index 866e3bf..1bbd197 100644
+--- a/src/indus/providers/auth/device_code.py
++++ b/src/indus/providers/auth/device_code.py
+@@ -90,6 +90,12 @@ class ReloginRequired(DeviceFlowError):
+     default_code = "auth.relogin_required"
+ 
+ 
++class RefreshThrottled(DeviceFlowError):
++    """The token endpoint answered 429: the sign-in is still good, renewing must wait."""
++
++    default_code = "auth.refresh_throttled"
++
++
+ # -- records -----------------------------------------------------------------------------------
+ 
+ 
+@@ -368,6 +374,18 @@ async def poll_for_token(
+     raise DeviceCodeExpired("the sign-in code expired before it was approved; start again")
+ 
+ 
++def oauth_error_of(payload: Mapping[str, Any] | None) -> tuple[str, str]:
++    """``(error code, description)`` from an RFC 6749 error (``{"error": "…"}``) or OpenAI's nested
++    shape (``{"error": {"code": "…", "message": "…"}}``); short codes only, never a body."""
++    raw = (payload or {}).get("error")
++    if isinstance(raw, dict):
++        nested = cast(dict[str, Any], raw)
++        code = nested.get("code") or nested.get("type") or ""
++        return str(code)[:80], str(nested.get("message") or "")[:200]
++    described = (payload or {}).get("error_description") or ""
++    return str(raw or "")[:80], str(described)[:200]
++
++
+ async def refresh_tokens(
+     client: httpx.AsyncClient, spec: DeviceFlowSpec, tokens: TokenSet, *, clock: Clock
+ ) -> TokenSet:
+@@ -388,9 +406,12 @@ async def refresh_tokens(
+     payload = _json_object(response)
+     if response.status_code == 200 and payload is not None:
+         return TokenSet.from_response(payload, clock.now(), keep_refresh=tokens.refresh_token)
+-    error = str((payload or {}).get("error") or "")
+-    described = str((payload or {}).get("error_description") or "")
+-    if error in DEAD_GRANT_ERRORS or "reuse" in described.lower():
++    error, described = oauth_error_of(payload)
++    if response.status_code == 429:
++        raise RefreshThrottled(
++            f"{spec.provider}'s token endpoint asked to wait (HTTP 429); the sign-in is still valid"
++        )
++    if error in DEAD_GRANT_ERRORS or "reuse" in described.lower() or response.status_code == 401:
+         raise ReloginRequired(
+             f"the {spec.provider} sign-in is no longer valid ({error or 'rejected'}); sign in again"
+         )
+diff --git a/src/indus/providers/auth/device_signin.py b/src/indus/providers/auth/device_signin.py
+new file mode 100644
+index 0000000..50c4ba9
+--- /dev/null
++++ b/src/indus/providers/auth/device_signin.py
+@@ -0,0 +1,101 @@
++"""One way to run a device sign-in and to renew its tokens, whichever kind the provider has.
++
++Two kinds exist: RFC 8628 (``device_code.DeviceFlowSpec``) and OpenAI's ChatGPT device flow
++(``chatgpt.ChatGptDeviceSpec``). ``start`` asks for the code to show, ``finish`` waits for the
++person's approval and returns the tokens, ``run_login`` does both and talks to the person.
++``refresh_spec`` is the token endpoint that renews a provider's stored sign-in, from its flows row.
++"""
++
++from __future__ import annotations
++
++from typing import TYPE_CHECKING
++
++import httpx
++
++from indus.foundation.clock import Clock
++from indus.providers.auth import chatgpt, device_code
++from indus.providers.auth.device_code import (
++    DeviceAuthorization,
++    DeviceFlowSpec,
++    OpenUrl,
++    Say,
++    TokenSet,
++)
++
++if TYPE_CHECKING:
++    from indus.providers.auth.flows import SignInFlows
++
++type DeviceSpec = DeviceFlowSpec | chatgpt.ChatGptDeviceSpec
++
++
++async def start(
++    client: httpx.AsyncClient, spec: DeviceSpec, *, clock: Clock
++) -> DeviceAuthorization:
++    if isinstance(spec, chatgpt.ChatGptDeviceSpec):
++        return await chatgpt.request_user_code(client, spec, clock=clock)
++    return await device_code.request_device_authorization(client, spec)
++
++
++async def finish(
++    client: httpx.AsyncClient, spec: DeviceSpec, grant: DeviceAuthorization, *, clock: Clock
++) -> TokenSet:
++    if isinstance(spec, chatgpt.ChatGptDeviceSpec):
++        return await chatgpt.wait_for_approval(client, spec, grant, clock=clock)
++    return await device_code.poll_for_token(client, spec, grant, clock=clock)
++
++
++async def run_login(
++    spec: DeviceSpec,
++    *,
++    clock: Clock,
++    say: Say,
++    open_url: OpenUrl | None,
++    client: httpx.AsyncClient,
++) -> TokenSet:
++    """Ask for a code, show it, open the page when ``open_url`` is given, wait for approval."""
++    if isinstance(spec, DeviceFlowSpec):
++        return await device_code.run_device_login(
++            spec, clock=clock, say=say, open_url=open_url, client=client
++        )
++    grant = await start(client, spec, clock=clock)
++    say("To sign in with your ChatGPT account:")
++    say(f"  1. Open {grant.url_to_show}")
++    say(f"  2. Enter the code {grant.user_code}")
++    say(f"The code is valid for about {max(1, round(grant.expires_in / 60))} minute(s).")
++    if open_url is not None:
++        if open_url(grant.url_to_show):
++            say("(A browser window was opened for you.)")
++        else:
++            say("(No browser could be opened; use the address above.)")
++    say("Waiting for approval… (Ctrl+C cancels)")
++    return await finish(client, spec, grant, clock=clock)
++
++
++def refresh_spec(provider: str) -> DeviceFlowSpec | None:
++    """The token endpoint that renews ``provider``'s stored sign-in; None when it has none."""
++    from indus.providers.auth.flows import flows_for
++
++    return refresh_spec_of(flows_for(provider))
++
++
++def refresh_spec_of(flows: SignInFlows) -> DeviceFlowSpec | None:
++    """``refresh_spec`` from a flows row: the device row's token endpoint, else the browser row's
++    authorization-code exchange (a key mint has nothing to renew)."""
++    if isinstance(flows.device, DeviceFlowSpec):
++        return flows.device
++    if isinstance(flows.device, chatgpt.ChatGptDeviceSpec):
++        return DeviceFlowSpec(
++            provider=flows.provider,
++            device_authorization_url="",
++            token_url=flows.device.token_url,
++            client_id=flows.device.client_id,
++        )
++    if flows.pkce is not None and flows.pkce.exchange == "token":
++        return DeviceFlowSpec(
++            provider=flows.provider,
++            device_authorization_url="",
++            token_url=flows.pkce.exchange_url,
++            client_id=flows.pkce.client_id,
++            scope=flows.pkce.scope,
++        )
++    return None
+diff --git a/src/indus/providers/auth/flows.py b/src/indus/providers/auth/flows.py
+index a8d20d1..3220494 100644
+--- a/src/indus/providers/auth/flows.py
++++ b/src/indus/providers/auth/flows.py
+@@ -1,15 +1,19 @@
+-"""Which providers have a documented sign-in flow, and which one ``indus auth add`` uses.
++"""Which providers have a sign-in flow, and which one ``indus auth add`` uses.
+ 
+-Only flows a provider publishes for third-party programs are listed; nothing here borrows
+-another product's client id, redirect or identity (R01.12, P2). Each row cites the page it was
+-checked against.
++Flows a provider publishes for third-party programs are listed with the page they were checked
++against. One row is the owner's explicit exception (D-16.1282, 2026-10-25): ``openai-codex`` signs
++in with a ChatGPT account through the public client of OpenAI's open-source Codex CLI (facts and
++citations in ``chatgpt_facts``). No other row borrows another product's client id or redirect,
++and no row ever reads another program's saved login (R01.12, P2).
+ """
+ 
+ from __future__ import annotations
+ 
+ from dataclasses import dataclass
+ 
+-from indus.providers.auth.device_code import DeviceFlowSpec
++from indus.providers.auth import chatgpt_facts
++from indus.providers.auth.chatgpt import ChatGptDeviceSpec
++from indus.providers.auth.device_signin import DeviceSpec
+ from indus.providers.auth.pkce import PkceFlowSpec
+ 
+ 
+@@ -17,8 +21,8 @@ from indus.providers.auth.pkce import PkceFlowSpec
+ class SignInFlows:
+     provider: str
+     pkce: PkceFlowSpec | None = None
+-    device: DeviceFlowSpec | None = None
+-    # True only when signing in should be the default type for ``auth add`` (no provider today).
++    device: DeviceSpec | None = None
++    # True when signing in is the default type for ``auth add`` (a provider without API keys).
+     oauth_default: bool = False
+ 
+     @property
+@@ -42,6 +46,27 @@ FLOWS: dict[str, SignInFlows] = {
+             doc_url="https://openrouter.ai/docs/guides/overview/auth/oauth",
+         ),
+     ),
++    # D-16.1282: ChatGPT sign-in. Browser (authorization code + PKCE on the client's registered
++    # loopback redirect) by default; the device code when asked for, or when port 1455 is busy.
++    chatgpt_facts.PROVIDER: SignInFlows(
++        provider=chatgpt_facts.PROVIDER,
++        pkce=PkceFlowSpec(
++            provider=chatgpt_facts.PROVIDER,
++            authorize_url=chatgpt_facts.AUTHORIZE_URL,
++            exchange_url=chatgpt_facts.TOKEN_URL,
++            exchange="token",
++            client_id=chatgpt_facts.CLIENT_ID,
++            scope=chatgpt_facts.SCOPE,
++            fixed_port=chatgpt_facts.CALLBACK_PORT,
++            extra_params=chatgpt_facts.AUTHORIZE_EXTRA,
++            fallback_device=ChatGptDeviceSpec(),
++            doc_url="https://github.com/openai/codex (codex-rs/login/src/server.rs)",
++            redirect_host=chatgpt_facts.CALLBACK_HOST,
++            callback_path=chatgpt_facts.CALLBACK_PATH,
++        ),
++        device=ChatGptDeviceSpec(),
++        oauth_default=True,
++    ),
+ }
+ # fmt: on
+ 
+diff --git a/src/indus/providers/auth/pkce.py b/src/indus/providers/auth/pkce.py
+index 46db16b..1732760 100644
+--- a/src/indus/providers/auth/pkce.py
++++ b/src/indus/providers/auth/pkce.py
+@@ -24,6 +24,7 @@ from __future__ import annotations
+ import base64
+ import errno
+ import hashlib
++import hmac
+ import logging
+ import secrets
+ import threading
+@@ -37,15 +38,14 @@ import httpx
+ 
+ from indus.foundation.clock import Clock
+ from indus.foundation.errors import AuthError
+-from indus.providers.auth import browser
++from indus.providers.auth import browser, device_signin
+ from indus.providers.auth.device_code import (
+     DeviceFlowError,
+-    DeviceFlowSpec,
+     OpenUrl,
+     Say,
+     TokenSet,
+-    run_device_login,
+ )
++from indus.providers.auth.device_signin import DeviceSpec
+ 
+ log = logging.getLogger(__name__)
+ 
+@@ -57,6 +57,8 @@ WAIT_POLL_SECONDS = 0.1
+ VERIFIER_BYTES = 48  # 64 base64url characters, inside RFC 7636's 43..128
+ 
+ Exchange = Literal["key_mint", "token"]
++# Names a redirect URI may use for this machine's loopback listener.
++_LOOPBACK_NAMES = frozenset({LOOPBACK_HOST, "localhost"})
+ 
+ 
+ class PkceError(AuthError):
+@@ -115,8 +117,12 @@ class PkceFlowSpec:
+     scope: str = ""
+     fixed_port: int | None = None
+     extra_params: Mapping[str, str] = field(default_factory=dict[str, str])
+-    fallback_device: DeviceFlowSpec | None = None
++    fallback_device: DeviceSpec | None = None
+     doc_url: str = ""
++    # How the redirect URI spells the loopback host and path. A client registered for
++    # ``http://localhost:<port>/<path>`` needs that exact string; the listener binds 127.0.0.1.
++    redirect_host: str = LOOPBACK_HOST
++    callback_path: str = CALLBACK_PATH
+ 
+ 
+ @dataclass(frozen=True)
+@@ -154,7 +160,7 @@ class _Handler(BaseHTTPRequestHandler):
+             self._reply(404, "Not found.")
+             return
+         params = {k: v[0] for k, v in parse_qs(parts.query).items() if v}
+-        if params.get("state") != owner.state:
++        if not owner.state_matches(params.get("state")):
+             if params.get("error") and "code" not in params:
+                 # Some servers drop ``state`` on a refusal; a refusal carries nothing to steal.
+                 owner.finish(error=params["error"], description=params.get("error_description"))
+@@ -200,9 +206,15 @@ class LoopbackServer:
+     """A one-shot HTTP listener on 127.0.0.1 for the authorization redirect."""
+ 
+     def __init__(
+-        self, *, port: int = 0, path: str = CALLBACK_PATH, state: str | None = None
++        self,
++        *,
++        port: int = 0,
++        path: str = CALLBACK_PATH,
++        state: str | None = None,
++        redirect_host: str = LOOPBACK_HOST,
+     ) -> None:
+         self.path = path
++        self.redirect_host = redirect_host if redirect_host in _LOOPBACK_NAMES else LOOPBACK_HOST
+         self.state = state or make_state()
+         self.result = CallbackResult()
+         self._done = threading.Event()
+@@ -229,7 +241,7 @@ class LoopbackServer:
+ 
+     @property
+     def redirect_uri(self) -> str:
+-        return f"http://{LOOPBACK_HOST}:{self.port}{self.path}"
++        return f"http://{self.redirect_host}:{self.port}{self.path}"
+ 
+     @property
+     def done(self) -> bool:
+@@ -252,6 +264,12 @@ class LoopbackServer:
+             self.result.error_description = description
+             self._done.set()
+ 
++    def state_matches(self, state: str | None) -> bool:
++        """Constant-time comparison with the ``state`` this listener waits for."""
++        return state is not None and hmac.compare_digest(
++            state.encode("utf-8"), self.state.encode("utf-8")
++        )
++
+     def reject(self) -> None:
+         with self._lock:
+             self.result.rejected += 1
+@@ -375,7 +393,9 @@ async def run_pkce_login(
+ ) -> PkceOutcome:
+     """Run the browser sign-in; ``open_url`` None never opens anything (tests, ``--no-browser``)."""
+     try:
+-        server = LoopbackServer(port=spec.fixed_port or 0)
++        server = LoopbackServer(
++            port=spec.fixed_port or 0, path=spec.callback_path, redirect_host=spec.redirect_host
++        )
+     except CallbackPortBusy:
+         if spec.fallback_device is None:
+             raise
+@@ -385,7 +405,7 @@ async def run_pkce_login(
+             if open_url is not None and browser.should_open(env, no_browser=no_browser)
+             else None
+         )
+-        tokens = await run_device_login(
++        tokens = await device_signin.run_login(
+             spec.fallback_device, clock=clock, say=say, open_url=opener, client=client
+         )
+         return PkceOutcome(tokens=tokens, via_device=True)
+diff --git a/src/indus/providers/auth/renew.py b/src/indus/providers/auth/renew.py
+new file mode 100644
+index 0000000..13714f7
+--- /dev/null
++++ b/src/indus/providers/auth/renew.py
+@@ -0,0 +1,114 @@
++"""Renewing a stored sign-in once, however many sessions and processes want it at the same moment.
++
++Some providers hand out single-use refresh tokens and revoke the whole sign-in when one is spent
++twice (OpenAI does). So a renewal holds two locks: one per credential in this process, and a file
++lock (``<home>/auth-refresh.lock``) across processes. Under them it reads the stored tokens again:
++
++- the stored access token is no longer the one the caller saw → another session or process renewed
++  it meanwhile, and that pair is used as it is (the spent refresh token is never sent again);
++- otherwise the refresh grant is sent, the new pair is stored in the SecretStore and the pool row's
++  ``expires_at`` follows.
++
++Everything runs on one worker thread (the file lock belongs to the thread that took it), the HTTP
++call on its own event loop there. Errors keep ``device_code``'s types (``ReloginRequired``,
++``RefreshThrottled``, ``DeviceFlowError``); none carries a token.
++"""
++
++from __future__ import annotations
++
++import asyncio
++import logging
++import threading
++from collections.abc import Callable
++from pathlib import Path
++from typing import Any, Protocol, cast
++
++import httpx
++
++from indus.foundation import fsio
++from indus.foundation.clock import Clock
++from indus.providers.auth import device_code
++from indus.providers.auth.device_code import DeviceFlowSpec, TokenSet
++from indus.providers.auth.pool_model import secret_name
++
++log = logging.getLogger(__name__)
++
++LOCK_FILE = "auth-refresh.lock"
++LOCK_TIMEOUT_SECONDS = device_code.HTTP_TIMEOUT_SECONDS + 15.0
++
++type ClientFactory = Callable[[], httpx.AsyncClient]
++
++_guards: dict[str, threading.Lock] = {}
++_guards_lock = threading.Lock()
++
++
++class TokenSink(Protocol):
++    def get(self, name: str, /) -> str | None: ...
++
++    def set(self, name: str, value: str, /) -> None: ...
++
++
++def _guard(key: str) -> threading.Lock:
++    with _guards_lock:
++        found = _guards.get(key)
++        if found is None:
++            found = _guards[key] = threading.Lock()
++        return found
++
++
++def _note_expiry(home: Path, provider: str, entry_id: str, tokens: TokenSet) -> None:
++    """Keep the pool row's ``expires_at`` in step (metadata only; best effort)."""
++    from indus.providers.auth.store import AuthStore
++
++    expires = tokens.expires_at.isoformat() if tokens.expires_at else None
++    try:
++        with AuthStore(home).transaction() as doc:
++            rows = cast(dict[str, Any], doc.get("pool") or {}).get(provider)
++            if isinstance(rows, list):
++                for row in cast(list[object], rows):
++                    if isinstance(row, dict) and cast(dict[str, Any], row).get("id") == entry_id:
++                        cast(dict[str, Any], row)["expires_at"] = expires
++    except Exception as exc:
++        log.debug("could not note the renewed %s sign-in's expiry: %s", provider, exc)
++
++
++def renew_stored(
++    *,
++    home: Path,
++    secrets: TokenSink,
++    provider: str,
++    entry_id: str,
++    spec: DeviceFlowSpec,
++    clock: Clock,
++    seen_access: str | None,
++    make_client: ClientFactory | None = None,
++) -> TokenSet | None:
++    """Renew the sign-in stored for ``entry_id`` (blocking; see the module notes).
++
++    ``seen_access`` is the access token the caller holds: when the store has another one, it is
++    returned without a refresh. None when nothing is stored (signed out meanwhile)."""
++    name = secret_name(provider, entry_id)
++    factory = make_client or device_code.make_client
++    with _guard(f"{home}\0{name}"), fsio.FileLock(home / LOCK_FILE, timeout=LOCK_TIMEOUT_SECONDS):
++        stored = secrets.get(name)
++        if not stored:
++            return None
++        try:
++            tokens = TokenSet.from_secret(stored)
++        except (ValueError, KeyError, TypeError):
++            raise device_code.ReloginRequired(
++                f"the stored {provider} sign-in is damaged; sign in again"
++            ) from None
++        if seen_access is not None and tokens.access_token != seen_access:
++            log.info("%s sign-in was renewed by another session; using that one", provider)
++            return tokens
++
++        async def go() -> TokenSet:
++            async with factory() as client:
++                return await device_code.refresh_tokens(client, spec, tokens, clock=clock)
++
++        fresh = asyncio.run(go())
++        secrets.set(name, fresh.to_secret())
++    _note_expiry(home, provider, entry_id, fresh)
++    log.info("%s sign-in renewed", provider)
++    return fresh
+diff --git a/src/indus/providers/bundled.py b/src/indus/providers/bundled.py
+index 646da09..21fe9c1 100644
+--- a/src/indus/providers/bundled.py
++++ b/src/indus/providers/bundled.py
+@@ -1,8 +1,9 @@
+ """The provider profiles that ship with Indus Agent, in catalogue order.
+ 
+-Catalogue order is the order ``auto`` uses to pick the first provider with a usable key. Only
+-providers reachable with an API key are bundled (D-16.42); there is no portal provider (D-16.12)
+-and no route that borrows another product's identity (D-16.11, R01.12).
++Catalogue order is the order ``auto`` uses to pick the first provider with a usable key. Providers
++are reachable with an API key (D-16.42), plus one sign-in route the owner chose: ``openai-codex``,
++a ChatGPT account through the Codex CLI's public client (D-16.1282). There is no portal provider
++(D-16.12) and no other route that signs in as another product (D-16.11, R01.12).
+ 
+ Base URLs and key names are third-party facts. Each row cites the vendor page that states them
+ (checked 2026-10-18); re-check a row against its page before changing it.
+@@ -10,6 +11,8 @@ Base URLs and key names are third-party facts. Each row cites the vendor page th
+ 
+ from __future__ import annotations
+ 
++from indus.providers.auth import chatgpt_facts
++from indus.providers.auth import chatgpt_wire as chatgpt
+ from indus.providers.profile import ProviderProfile
+ 
+ # fmt: off
+@@ -40,6 +43,20 @@ PROFILES: tuple[ProviderProfile, ...] = (
+             "gpt-4o-2024-05-13", "gpt-4o-mini", "o3", "o4-mini",
+         ),
+     ),
++    # D-16.1282 (owner, 2026-10-25): OpenAI models on a ChatGPT plan, signed in through the
++    # Codex CLI's public client; facts and their citations in providers/auth/chatgpt_facts.py.
++    # The token is only ever sent to chatgpt.com (a vendor row: exact host).
++    ProviderProfile(
++        name=chatgpt_facts.PROVIDER, aliases=("chatgpt",), display_name=chatgpt_facts.DISPLAY_NAME,
++        description="OpenAI models on your ChatGPT plan (indus auth add openai-codex)",
++        base_url=chatgpt_facts.BACKEND_BASE_URL, api_mode="responses", auth_type="oauth",
++        models_url=chatgpt.models_url(chatgpt_facts.BACKEND_BASE_URL),
++        default_headers={chatgpt_facts.ORIGINATOR_HEADER: chatgpt_facts.ORIGINATOR},
++        supports_vision=True, stream_only=True,
++        reasoning_efforts=("low", "medium", "high", "xhigh"),
++        reasoning_models=("gpt-5", "gpt-6", "codex"), default_models=chatgpt_facts.DEFAULT_MODELS,
++        prepare_body=chatgpt.prepare_body, key_headers=chatgpt.account_headers,
++    ),
+     # https://docs.anthropic.com/en/api/overview (2026-10-18)
+     ProviderProfile(
+         name="anthropic", aliases=("claude",), display_name="Anthropic",
+diff --git a/src/indus/providers/model_list.py b/src/indus/providers/model_list.py
+index 0214ee9..c201163 100644
+--- a/src/indus/providers/model_list.py
++++ b/src/indus/providers/model_list.py
+@@ -30,6 +30,8 @@ LIST_TIMEOUT_SECONDS = 10.0
+ ANTHROPIC_VERSION = "2023-06-01"
+ # Fields OpenAI-compatible servers use for a model's window (vLLM: max_model_len).
+ CONTEXT_FIELDS = ("context_length", "max_model_len", "context_window")
++# ``visibility`` values of catalogue entries a picker must not offer (the ChatGPT Codex backend).
++HIDDEN = frozenset({"hide", "hidden"})
+ 
+ 
+ @dataclass(frozen=True)
+@@ -63,6 +65,8 @@ def request_headers(route: RuntimeRoute) -> dict[str, str]:
+         headers["x-api-key"] = route.api_key.reveal()
+     else:
+         headers["Authorization"] = f"Bearer {route.api_key.reveal()}"
++    if route.profile is not None:
++        headers.update(route.profile.key_headers(route.api_key.reveal()))
+     if route.api_mode == "anthropic_messages":
+         headers["anthropic-version"] = ANTHROPIC_VERSION
+     return headers
+@@ -77,7 +81,9 @@ def _context_of(item: dict[str, Any]) -> int | None:
+ 
+ 
+ def parse_models(payload: object) -> list[ModelInfo]:
+-    """Models from ``{"data": [...]}`` or a bare list; entries without a string id are skipped."""
++    """Models from ``{"data": [...]}``, ``{"models": [...]}`` or a bare list; an entry's id is
++    ``id`` (or ``slug``); entries without one, and hidden ones, are skipped. A list whose entries
++    carry ``priority`` is ordered by it."""
+     raw: object = payload
+     if isinstance(payload, dict):
+         body = cast(dict[str, Any], payload)
+@@ -86,14 +92,20 @@ def parse_models(payload: object) -> list[ModelInfo]:
+         return []
+     models: list[ModelInfo] = []
+     seen: set[str] = set()
++    ranks: dict[str, float] = {}
+     for entry in cast(list[object], raw):
+         if not isinstance(entry, dict):
+             continue
+         item = cast(dict[str, Any], entry)
+-        model_id = item.get("id")
++        model_id = item.get("id", item.get("slug"))
+         if not isinstance(model_id, str) or not model_id.strip() or model_id in seen:
+             continue
++        if str(item.get("visibility") or "").strip().lower() in HIDDEN:
++            continue
+         seen.add(model_id)
++        priority = item.get("priority")
++        if isinstance(priority, int | float) and not isinstance(priority, bool):
++            ranks[model_id] = float(priority)
+         owner = item.get("owned_by")
+         models.append(
+             ModelInfo(
+@@ -102,6 +114,8 @@ def parse_models(payload: object) -> list[ModelInfo]:
+                 owned_by=owner if isinstance(owner, str) else None,
+             )
+         )
++    if ranks:
++        models.sort(key=lambda m: (ranks.get(m.id, 1e9), m.id))
+     return models
+ 
+ 
+@@ -167,7 +181,8 @@ async def list_models(
+     cache_ttl: float | None = None,
+     refresh: bool = False,
+ ) -> list[ModelInfo]:
+-    """The models ``route``'s endpoint offers; ``[]`` on any failure (reason logged).
++    """The models ``route``'s endpoint offers; on any failure (reason logged) the profile's
++    documented ``default_models`` (not cached), else ``[]``.
+ 
+     With a ``scope`` the list is cached in ``<home>/cache/model_lists.json`` per base URL for
+     ``cache_ttl`` seconds (default ``model_catalog.ttl_minutes``) of the scope's clock time;
+@@ -182,22 +197,25 @@ async def list_models(
+         if cached is not None:
+             return cached
+     url = models_url(route)
++    fallback = [ModelInfo(id=m) for m in (route.profile.default_models if route.profile else ())]
+     try:
+         response = await client.get(
+             url, headers=request_headers(route), timeout=LIST_TIMEOUT_SECONDS
+         )
+     except httpx.HTTPError as exc:
+         log.warning("could not list models at %s: %s", url, type(exc).__name__)
+-        return []
++        return fallback
+     if response.status_code >= 400:
+         log.warning("could not list models at %s: HTTP %s", url, response.status_code)
+-        return []
++        return fallback
+     try:
+         payload = response.json()
+     except (ValueError, UnicodeDecodeError):
+         log.warning("could not list models at %s: the answer is not JSON", url)
+-        return []
++        return fallback
+     models = parse_models(payload)
++    if not models and fallback:
++        return fallback
+     if scope is not None and ttl > 0:
+         _store(scope, base, models)
+     return models
+diff --git a/src/indus/providers/pool.py b/src/indus/providers/pool.py
+index 5f6b4cb..774ddb7 100644
+--- a/src/indus/providers/pool.py
++++ b/src/indus/providers/pool.py
+@@ -33,6 +33,7 @@ import threading
+ from collections.abc import Awaitable, Callable, Mapping
+ from dataclasses import dataclass, field, replace
+ from datetime import datetime, timedelta
++from pathlib import Path
+ from typing import Any, Literal, Protocol, cast
+ 
+ from indus.foundation.blocking import run_blocking
+@@ -348,9 +349,12 @@ class PoolRuntime:
+             from indus.providers.auth.device_code import TokenSet
+ 
+             try:
+-                stored = TokenSet.from_secret(stored).access_token
++                token = TokenSet.from_secret(stored).access_token.strip()
+             except (ValueError, KeyError, TypeError):
+                 return None
++            # A token a sign-in issued is never a typed placeholder; the "looks like a
++            # placeholder" rules (e.g. "xxx" inside) would drop real tokens by chance.
++            return token or None
+         return None if is_placeholder(stored) else stored.strip()
+ 
+     def _host_ok(self, entry: PoolEntry, route: RuntimeRoute | None) -> bool:
+@@ -560,6 +564,36 @@ class PoolRuntime:
+         )
+         return other
+ 
++    async def renewed_ahead(self, lease: Lease) -> Lease:
++        """``lease`` with a renewed access token when its sign-in expires within the refresh
++        margin (``device_code.REFRESH_SKEW_SECONDS``); unchanged otherwise or when renewing fails
++        (the request then goes out and a 401 takes the refresh path)."""
++        from indus.providers.auth.device_code import TokenSet, needs_refresh
++
++        entry = self.entry(lease.entry_id)
++        if entry is None or entry.auth_type != "oauth" or self.refresher is None:
++            return lease
++        stored = self._stored(entry)
++        if not stored:
++            return lease
++        try:
++            tokens = TokenSet.from_secret(stored)
++        except (ValueError, KeyError, TypeError):
++            return lease
++        if not needs_refresh(tokens, self.clock.now()):
++            return lease
++        try:
++            fresh = await self.refresher(self.provider, entry, stored)
++        except Exception as exc:
++            log.warning(
++                "renewing %s sign-in %r ahead of expiry failed: %s", self.provider, entry.label, exc
++            )
++            return lease
++        if not fresh:
++            return lease
++        log.info("%s sign-in %r renewed ahead of expiry", self.provider, entry.label)
++        return replace(lease, key=Secret(fresh))
++
+     async def _refresh(self, entry: PoolEntry) -> bool:
+         if entry.auth_type != "oauth" or self.refresher is None:
+             return False
+@@ -649,6 +683,8 @@ class PoolRuntime:
+         budget = 2 * max(1, len(self.pool)) + MAX_REFRESHES + 1
+         while True:
+             lease = self.lease(route, model)
++            if lease is not None:
++                lease = await self.renewed_ahead(lease)
+             target = lease.apply(route) if lease is not None else route
+             adjust = self.adjuster(lease, model, route)
+             try:
+@@ -708,7 +744,7 @@ class PoolSet:
+             clock=scope.clock,
+             config=scope.config,
+             rng=rng,
+-            refresher=sign_in_refresher(secrets, scope.clock),
++            refresher=sign_in_refresher(secrets, scope.clock, getattr(scope, "home", None)),
+         )
+ 
+     def runtime(self, profile: ProviderProfile) -> PoolRuntime:
+@@ -747,34 +783,46 @@ class PoolSet:
+ # -- sign-in refresh ------------------------------------------------------------------------------
+ 
+ 
+-def sign_in_refresher(secrets: SecretReader | None, clock: Clock) -> Refresher | None:
+-    """Renew a stored sign-in through its provider's token endpoint and store the new tokens;
+-    None when the secret store cannot be written."""
++def sign_in_refresher(
++    secrets: SecretReader | None, clock: Clock, home: Path | None = None
++) -> Refresher | None:
++    """Renew a stored sign-in through its provider's token endpoint and store the new tokens
++    (``auth.renew``: locked per credential and across processes, and a pair another session
++    already renewed is adopted instead of spending its refresh token again); None when the secret
++    store cannot be written."""
+     if secrets is None or not callable(getattr(secrets, "set", None)):
+         return None
+     sink = cast(SecretSink, secrets)
+ 
+     async def refresh(provider: str, entry: PoolEntry, stored: str) -> str | None:
+-        from indus.providers.auth import device_code
+-        from indus.providers.auth.flows import flows_for
++        from indus.providers.auth import device_code, device_signin, renew
+ 
+-        flows = flows_for(provider)
+-        spec = flows.device
+-        if spec is None and flows.pkce is not None and flows.pkce.exchange == "token":
+-            spec = device_code.DeviceFlowSpec(
+-                provider=provider,
+-                device_authorization_url="",
+-                token_url=flows.pkce.exchange_url,
+-                client_id=flows.pkce.client_id,
+-                scope=flows.pkce.scope,
+-            )
++        spec = device_signin.refresh_spec(provider)
+         if spec is None:
+             return None
+-        tokens = device_code.TokenSet.from_secret(stored)
+-        async with device_code.make_client() as client:
+-            fresh = await device_code.refresh_tokens(client, spec, tokens, clock=clock)
+-        sink.set(secret_name(provider, entry.id), fresh.to_secret())
+-        return fresh.access_token
++        seen = device_code.TokenSet.from_secret(stored).access_token
++        if home is None:
++            tokens = device_code.TokenSet.from_secret(stored)
++            async with device_code.make_client() as client:
++                fresh = await device_code.refresh_tokens(client, spec, tokens, clock=clock)
++            sink.set(secret_name(provider, entry.id), fresh.to_secret())
++            return fresh.access_token
++
++        where = home
++
++        def work() -> device_code.TokenSet | None:
++            return renew.renew_stored(
++                home=where,
++                secrets=sink,
++                provider=provider,
++                entry_id=entry.id,
++                spec=spec,
++                clock=clock,
++                seen_access=seen,
++            )
++
++        fresh = await run_blocking(work, label="sign-in renewal")
++        return fresh.access_token if fresh is not None else None
+ 
+     return refresh
+ 
+diff --git a/src/indus/providers/profile.py b/src/indus/providers/profile.py
+index a3d22c2..2ca7e40 100644
+--- a/src/indus/providers/profile.py
++++ b/src/indus/providers/profile.py
+@@ -25,7 +25,8 @@ ACTIVE_API_MODES = frozenset(
+     {"chat_completions", "anthropic_messages", "responses", "bedrock", "gemini"}
+ )
+ API_MODES = ACTIVE_API_MODES
+-AUTH_TYPES = frozenset({"api_key", "api_key_optional", "none"})
++# ``oauth``: the credential is a sign-in's access token from the credential pool (no key variable).
++AUTH_TYPES = frozenset({"api_key", "api_key_optional", "oauth", "none"})
+ MAX_TOKENS_PARAMS = frozenset({"max_tokens", "max_completion_tokens"})
+ FAMILIES = frozenset({"vendor", "custom"})
+ REASONING_LEVELS = ("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra")
+@@ -40,6 +41,7 @@ _PRODUCT_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9._-])([A-Za-z][A-Za-z0-9._-]*)/\d
+ BodyHook = Callable[[dict[str, Any], str], dict[str, Any]]
+ ErrorHook = Callable[[object], object | None]
+ ContextHook = Callable[[str], int | None]
++KeyHeadersHook = Callable[[str], Mapping[str, str]]
+ 
+ 
+ def keep_body(body: dict[str, Any], model: str) -> dict[str, Any]:
+@@ -57,6 +59,11 @@ def no_context_length(model: str) -> int | None:
+     return None
+ 
+ 
++def no_key_headers(key: str) -> Mapping[str, str]:
++    """Default ``key_headers``: nothing beyond the authorization header."""
++    return {}
++
++
+ def _frozen_map(value: Mapping[str, Any] | None) -> Mapping[str, Any]:
+     return MappingProxyType(dict(value or {}))
+ 
+@@ -92,6 +99,8 @@ class ProviderProfile:
+     fixed_temperature: float | None = None
+     context_length_hint: int | None = None
+     model_aliases: Mapping[str, str] = field(default_factory=dict, hash=False)
++    # Model ids offered when the live list cannot be read (a documented default list).
++    default_models: tuple[str, ...] = ()
+     hidden: bool = False
+     # ``vendor``: a named service with its own host. ``custom``: an endpoint the user chose
+     # (bare ``custom``, named custom providers, local servers).
+@@ -112,9 +121,14 @@ class ProviderProfile:
+     fast_body: Mapping[str, Any] = field(default_factory=dict, hash=False)
+     fast_headers: Mapping[str, str] = field(default_factory=dict, hash=False)
+     fast_models: tuple[str, ...] = ()
++    # The endpoint answers only streamed requests (the driver never falls back to one JSON reply).
++    stream_only: bool = False
+     prepare_body: BodyHook = keep_body
+     classify_error: ErrorHook = no_verdict
+     context_length: ContextHook = no_context_length
++    # Headers derived from the credential itself (an account id inside a sign-in's token), sent
++    # with every request that carries it: model calls and model lists.
++    key_headers: KeyHeadersHook = no_key_headers
+ 
+     def __post_init__(self) -> None:
+         name = self.name
+@@ -146,7 +160,7 @@ class ProviderProfile:
+         ):
+             if number is not None and (not isinstance(number, int) or number <= 0):  # pyright: ignore[reportUnnecessaryIsInstance]
+                 raise _bad(name, f"{what} must be a positive integer")
+-        if self.auth_type == "api_key" and not self.base_url:
++        if self.auth_type in ("api_key", "oauth") and not self.base_url:
+             raise _bad(name, "an api_key provider needs a base_url to send the key to")
+         host = self._checked_hosts()
+         object.__setattr__(self, "hostname", host)
+@@ -157,6 +171,7 @@ class ProviderProfile:
+         object.__setattr__(self, "fast_body", MappingProxyType(dict(self.fast_body)))
+         object.__setattr__(self, "fast_headers", self._checked_fast_headers())
+         object.__setattr__(self, "fast_models", tuple(self.fast_models))
++        object.__setattr__(self, "default_models", tuple(self.default_models))
+ 
+     def _checked_hosts(self) -> str:
+         derived = ""
+@@ -217,7 +232,12 @@ class ProviderProfile:
+ 
+     @property
+     def needs_key(self) -> bool:
+-        return self.auth_type == "api_key"
++        return self.auth_type in ("api_key", "oauth")
++
++    @property
++    def signs_in(self) -> bool:
++        """The credential comes from a sign-in (``indus auth add``), not a key variable."""
++        return self.auth_type == "oauth"
+ 
+     @property
+     def is_custom(self) -> bool:
+diff --git a/src/indus/providers/route.py b/src/indus/providers/route.py
+index 376e438..ad0b67e 100644
+--- a/src/indus/providers/route.py
++++ b/src/indus/providers/route.py
+@@ -368,6 +368,11 @@ def resolve(
+                     f"{name} was not sent to {draft.base_url}: that host belongs to another "
+                     "provider; select that provider instead"
+                 )
++        if key is None and profile.signs_in:
++            raise NoUsableProvider(
++                f"not signed in to {profile.label}",
++                hint=f"sign in with `indus auth add {profile.name}`",
++            )
+         if key is None and profile.needs_key:
+             raise NoUsableProvider(
+                 f"no usable API key for {profile.label}",
+diff --git a/src/indus/providers/streaming.py b/src/indus/providers/streaming.py
+index 8781505..898e93d 100644
+--- a/src/indus/providers/streaming.py
++++ b/src/indus/providers/streaming.py
+@@ -346,6 +346,10 @@ async def stream_call(
+         return default_classify(err, route=route, clock=clock)
+ 
+     epoch = route_epoch()
++    # A provider that only answers streamed requests never gets the one-JSON-reply path.
++    stream_only = bool(getattr(getattr(route, "profile", None), "stream_only", False))
++    if stream_only:
++        flags.streaming = True
+     thinking = bool(req.reasoning_effort) if reasoning is None else reasoning
+     call = _Call(client, transport, route, clock, on_event)
+     first = transport.build_request(route, replace(req, stream=flags.streaming))
+@@ -395,7 +399,7 @@ async def stream_call(
+             request = transport.build_request(route, replace(req, stream=True))
+             continue
+         keepalive_only = att.keepalives > 0 and att.content_events == 0
+-        if verdict.reason == "stream_unsupported" or keepalive_only:
++        if (verdict.reason == "stream_unsupported" or keepalive_only) and not stream_only:
+             log.warning(
+                 "%s did not stream (%s); switching this route to non-streaming",
+                 _host(route),
+diff --git a/src/indus/providers/transports/responses.py b/src/indus/providers/transports/responses.py
+index a4b0f01..7fa4a0c 100644
+--- a/src/indus/providers/transports/responses.py
++++ b/src/indus/providers/transports/responses.py
+@@ -23,7 +23,7 @@ import logging
+ import threading
+ from collections.abc import AsyncIterator, Iterable, Mapping
+ from dataclasses import dataclass, field
+-from typing import Any
++from typing import Any, cast
+ 
+ import httpx
+ 
+@@ -462,8 +462,9 @@ class ResponsesTransport:
+             choice = convert_tool_choice(req.tool_choice)
+             if choice is not None:
+                 body["tool_choice"] = choice
++        stream = bool(req.stream) or bool(getattr(prof, "stream_only", False))
+         body["store"] = False
+-        body["stream"] = bool(req.stream)
++        body["stream"] = stream
+         max_tokens = req.max_tokens or getattr(prof, "default_max_tokens", None)
+         if max_tokens:
+             body["max_output_tokens"] = int(max_tokens)
+@@ -486,12 +487,16 @@ class ResponsesTransport:
+ 
+         headers = {
+             "content-type": "application/json",
+-            "accept": "text/event-stream" if req.stream else "application/json",
++            "accept": "text/event-stream" if stream else "application/json",
+         }
+         headers.update(route_headers(route))
+         secret = secret_text(route.api_key)
+         if secret:
+             headers["authorization"] = f"Bearer {secret}"
++            key_headers = getattr(prof, "key_headers", None)
++            if callable(key_headers):
++                extra = cast(Mapping[str, str], key_headers(secret))
++                headers.update({str(k): str(v) for k, v in extra.items()})
+         content = json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+         return httpx.Request(
+             "POST", join_url(route.base_url, "responses"), headers=headers, content=content
+diff --git a/src/indus/service/picker_reads.py b/src/indus/service/picker_reads.py
+index 5cc14c1..2f5d08d 100644
+--- a/src/indus/service/picker_reads.py
++++ b/src/indus/service/picker_reads.py
+@@ -207,6 +207,17 @@ def _key_stored(scope: Scope, profile: ProviderProfile) -> bool:
+     return False
+ 
+ 
++def _signed_in(scope: Scope, profile: ProviderProfile) -> bool:
++    """A sign-in-only provider counts as usable once ``indus auth add`` stored a sign-in."""
++    from indus.providers.auth.store import AuthStore
++
++    try:
++        return profile.name in AuthStore(scope.home, env=scope.env).signed_in()
++    except Exception:
++        log.debug("auth store unreadable", exc_info=True)
++        return False
++
++
+ def provider_option(scope: Scope, profile: ProviderProfile, current: str) -> ProviderOption:
+     """One picker row: the provider, whether it can be used now, whether it is current."""
+     return ProviderOption(
+@@ -215,7 +226,8 @@ def provider_option(scope: Scope, profile: ProviderProfile, current: str) -> Pro
+         auth_type=profile.auth_type,
+         # A provider whose key is optional (local servers, custom endpoints) works without one.
+         authenticated=profile.auth_type in ("none", "api_key_optional")
+-        or _key_stored(scope, profile),
++        or _key_stored(scope, profile)
++        or (profile.signs_in and _signed_in(scope, profile)),
+         current=profile.name == current,
+     )
+ 
+diff --git a/src/indus/web/routes/__init__.py b/src/indus/web/routes/__init__.py
+index 8f96866..575420c 100644
+--- a/src/indus/web/routes/__init__.py
++++ b/src/indus/web/routes/__init__.py
+@@ -24,6 +24,7 @@ ROUTERS: tuple[str, ...] = (
+     "indus.web.routes.daemon:router",
+     "indus.web.routes.profiles:router",
+     "indus.web.routes.models:router",
++    "indus.web.routes.provider_accounts:router",  # W61-M1 sign-in status and sign-out
+     "indus.web.routes.files:router",
+     "indus.web.routes.system:router",
+     "indus.web.routes.session_import:router",
+diff --git a/src/indus/web/routes/models.py b/src/indus/web/routes/models.py
+index 789f1d7..c2a7598 100644
+--- a/src/indus/web/routes/models.py
++++ b/src/indus/web/routes/models.py
+@@ -23,9 +23,11 @@
+   /api/providers/login/{session_id}`` answers ``{status, message}`` with status ``pending``,
+   ``approved``, ``denied``, ``expired``, ``failed`` or ``cancelled``; ``DELETE`` cancels. Approved
+   tokens join the provider's credential pool the way ``indus auth add --type oauth`` stores them
+-  (secret store + ``auth.json`` metadata); no answer ever carries a token. A provider without a
+-  documented device flow is 400 ``no_device_flow`` (none has one today). Sessions live 15 minutes
+-  past their end and are bound to the profile that started them.
++  (secret store + ``auth.json`` metadata); no answer ever carries a token. Both device-flow kinds
++  run here (``providers.auth.device_signin``): RFC 8628 and the ChatGPT sign-in of
++  ``openai-codex`` (D-16.1282). A provider without a device flow is 400 ``no_device_flow``.
++  Sessions live 15 minutes past their end and are bound to the profile that started them. Status
++  and sign-out of a provider's sign-ins are in ``routes.provider_accounts``.
+ """
+ 
+ from __future__ import annotations
+@@ -48,7 +50,7 @@ from indus.foundation.config.schema import AuxiliarySection
+ from indus.foundation.errors import ConfigError, IndusError
+ from indus.foundation.redact import redact_text
+ from indus.foundation.scope import Scope
+-from indus.providers.auth import device_code
++from indus.providers.auth import device_code, device_signin
+ from indus.providers.auth.flows import flows_for
+ from indus.providers.auth.pool_model import PoolEntry, env_entries, load_pool, new_entry_id
+ from indus.providers.auth.store import AuthStore
+@@ -378,11 +380,11 @@ def _sessions(request: Request) -> LoginSessions:
+     return cast(LoginSessions, extras.setdefault(_SESSIONS_KEY, LoginSessions()))
+ 
+ 
+-def _device_spec(request: Request, provider: str) -> device_code.DeviceFlowSpec | None:
++def _device_spec(request: Request, provider: str) -> device_signin.DeviceSpec | None:
+     """The provider's documented device endpoints (tests add their own under extras)."""
+     extra = dashboard_state(request.app).extras.get(_FLOW_KEY)
+     if isinstance(extra, dict) and provider in extra:
+-        return cast(device_code.DeviceFlowSpec, cast(dict[str, Any], extra)[provider])
++        return cast(device_signin.DeviceSpec, cast(dict[str, Any], extra)[provider])
+     return flows_for(provider).device
+ 
+ 
+@@ -436,13 +438,13 @@ def login_start(body: LoginStart, request: Request, scope: WriteScope) -> dict[s
+     async def flow() -> None:
+         async with make_client() as client:
+             try:
+-                grant = await device_code.request_device_authorization(client, spec)
++                grant = await device_signin.start(client, spec, clock=scope.clock)
+             except device_code.DeviceFlowError as exc:
+                 started.set_exception(exc)
+                 return
+             started.set_result(grant)
+             try:
+-                tokens = await device_code.poll_for_token(client, spec, grant, clock=scope.clock)
++                tokens = await device_signin.finish(client, spec, grant, clock=scope.clock)
+             except device_code.AccessDenied:
+                 sessions.finish(session, "denied", "The sign-in was refused.")
+                 return
+diff --git a/src/indus/web/routes/provider_accounts.py b/src/indus/web/routes/provider_accounts.py
+new file mode 100644
+index 0000000..4dd17a0
+--- /dev/null
++++ b/src/indus/web/routes/provider_accounts.py
+@@ -0,0 +1,167 @@
++"""``/api/providers/login/accounts/{provider}``: a provider's sign-ins, and signing out (W61-M1-2).
++
++Starting, polling and cancelling a device sign-in are ``routes.models`` (``/api/providers/login/
++start`` and ``/{session_id}``); this module adds the two reads and writes around them, in the same
++profile-scoped family:
++
++- ``GET`` (read scope): ``{provider, label, signed_in, signed_in_at, flows: {browser, device},
++  accounts: [{id, label, source, status, expires_at, expired, plan}]}``. ``accounts`` lists the
++  signed-in credentials of the pool (API keys are the Keys page's); ``plan`` is the ChatGPT plan
++  named in an ``openai-codex`` token's claims, else null.
++- ``DELETE`` (write scope): signs out: every signed-in credential of the provider, its stored
++  tokens and the ``providers.<name>`` sign-in state are deleted; API keys and env keys stay.
++  Answers ``{provider, removed, signed_in: false}``.
++
++No answer carries a token or anything derived from one beyond the plan name. A credential pool the
++profile inherits from the default profile is read here and refused for sign-out (409
++``inherited_pool``), as the Keys page does.
++"""
++
++from __future__ import annotations
++
++import contextlib
++from datetime import datetime
++from typing import Annotated, Any, Final, NoReturn, cast
++
++from fastapi import APIRouter, Depends, HTTPException
++
++from indus.foundation import config as config_module
++from indus.foundation.errors import IndusError
++from indus.foundation.scope import Scope
++from indus.foundation.secrets import open_secret_store
++from indus.providers.auth import chatgpt
++from indus.providers.auth.device_code import TokenSet
++from indus.providers.auth.flows import flows_for
++from indus.providers.auth.pool_model import (
++    Pool,
++    PoolEntry,
++    SecretWriter,
++    edit_pool,
++    env_entries,
++    load_pool,
++    secret_name,
++)
++from indus.providers.auth.store import AuthStore
++from indus.providers.profile import ProviderProfile
++from indus.web.routes.system import provider_profile
++from indus.web.scope import read_scope, write_scope
++
++__all__ = ["ROUTE_LIST", "router"]
++
++router = APIRouter()
++
++ACCOUNTS_PATH: Final = "/api/providers/login/accounts/{provider}"
++
++ROUTE_LIST: Final[tuple[tuple[str, str, bool], ...]] = (
++    ("GET", ACCOUNTS_PATH, True),
++    ("DELETE", ACCOUNTS_PATH, True),
++)
++"""``(method, path, scoped)`` of every route here."""
++
++ReadScope = Annotated[Scope, Depends(read_scope)]
++WriteScope = Annotated[Scope, Depends(write_scope)]
++
++
++def _fail(status: int, code: str, message: str) -> NoReturn:
++    raise HTTPException(status_code=status, detail={"code": code, "message": message})
++
++
++def _env_rows(scope: Scope, profile: ProviderProfile) -> list[PoolEntry]:
++    try:
++        return env_entries(profile, scope.secrets, scope.env)
++    except IndusError:
++        return env_entries(profile, None, scope.env)
++
++
++def _writer(scope: Scope) -> SecretWriter:
++    current = scope.secrets
++    if callable(getattr(current, "set", None)) and callable(getattr(current, "delete", None)):
++        return cast(SecretWriter, current)
++    mode = str(config_module.load(scope).get("security.secret_store") or "auto")
++    return open_secret_store(scope.home, scope.profile_id, mode=mode)
++
++
++def _tokens(scope: Scope, provider: str, entry: PoolEntry) -> TokenSet | None:
++    try:
++        stored = scope.secrets.get(secret_name(provider, entry.id)) if scope.secrets else None
++        return TokenSet.from_secret(stored) if stored else None
++    except Exception:
++        return None
++
++
++def _when(value: str | None) -> datetime | None:
++    if not value:
++        return None
++    try:
++        return datetime.fromisoformat(value)
++    except ValueError:
++        return None
++
++
++def _account(scope: Scope, provider: str, entry: PoolEntry, now: datetime) -> dict[str, Any]:
++    tokens = _tokens(scope, provider, entry)
++    expires = tokens.expires_at if tokens is not None else _when(entry.expires_at)
++    return {
++        "id": entry.id,
++        "label": entry.label,
++        "source": entry.source,
++        "status": entry.status,
++        "expires_at": expires.isoformat() if expires is not None else None,
++        "expired": expires is not None and expires <= now,
++        "plan": chatgpt.plan(tokens.access_token) if tokens is not None else None,
++    }
++
++
++@router.get(ACCOUNTS_PATH)
++def accounts(provider: str, scope: ReadScope) -> dict[str, Any]:
++    profile = provider_profile(scope, provider)
++    store = AuthStore(scope.home, env=scope.env)
++    try:
++        pool, _inherited = load_pool(store, profile.name, _env_rows(scope, profile))
++        state, _from_root = store.provider_state(profile.name)
++    except IndusError as exc:
++        _fail(500, "auth_unreadable", exc.message)
++    now = scope.clock.now()
++    rows = [_account(scope, profile.name, e, now) for e in pool.entries if e.auth_type == "oauth"]
++    flows = flows_for(profile.name)
++    since = (state or {}).get("signed_in_at")
++    return {
++        "provider": profile.name,
++        "label": profile.label,
++        "signed_in": bool(rows),
++        "signed_in_at": str(since) if since and rows else None,
++        "flows": {"browser": flows.pkce is not None, "device": flows.device is not None},
++        "accounts": rows,
++    }
++
++
++@router.delete(ACCOUNTS_PATH)
++def sign_out(provider: str, scope: WriteScope) -> dict[str, Any]:
++    profile = provider_profile(scope, provider)
++    store = AuthStore(scope.home, env=scope.env)
++    try:
++        pool, inherited = load_pool(store, profile.name, _env_rows(scope, profile))
++    except IndusError as exc:
++        _fail(500, "auth_unreadable", exc.message)
++    if inherited and any(e.auth_type == "oauth" for e in pool.entries):
++        _fail(409, "inherited_pool", "These sign-ins belong to the default profile.")
++    removed: list[PoolEntry] = []
++
++    def change(current: Pool, doc: dict[str, Any]) -> None:
++        removed.extend(e for e in current.entries if e.auth_type == "oauth")
++        current.entries[:] = [e for e in current.entries if e.auth_type != "oauth"]
++        providers = doc.get("providers")
++        if isinstance(providers, dict):
++            cast(dict[str, Any], providers).pop(profile.name, None)
++        if doc.get("active_provider") == profile.name:
++            doc.pop("active_provider", None)
++
++    try:
++        edit_pool(store, profile.name, change, _env_rows(scope, profile))
++    except IndusError as exc:
++        _fail(500, "pool_unwritable", exc.message)
++    writer = _writer(scope)
++    for entry in removed:
++        with contextlib.suppress(IndusError):
++            writer.delete(secret_name(profile.name, entry.id))
++    return {"provider": profile.name, "removed": len(removed), "signed_in": False}
+diff --git a/src/indus/web/routes/system.py b/src/indus/web/routes/system.py
+index c97f67d..de697be 100644
+--- a/src/indus/web/routes/system.py
++++ b/src/indus/web/routes/system.py
+@@ -547,6 +547,8 @@ class PoolAddBody(BaseModel):
+ @router.post("/api/credentials/pool", status_code=201)
+ def add_pool(body: PoolAddBody, scope: WriteScope) -> dict[str, Any]:
+     profile = provider_profile(scope, body.provider)
++    if profile.signs_in:
++        _fail(400, "sign_in_only", "This provider takes no API key; sign in instead.")
+     value = body.api_key.strip()
+     if is_placeholder(value):
+         _fail(400, "placeholder_key", "That does not look like a real key; nothing was saved.")
+diff --git a/tests/contract/cli/non_tty_table.yaml b/tests/contract/cli/non_tty_table.yaml
+index 7fa111f..2a00e7e 100644
+--- a/tests/contract/cli/non_tty_table.yaml
++++ b/tests/contract/cli/non_tty_table.yaml
+@@ -24,7 +24,7 @@ commands:
+   auth reset: 2
+   auth priority: 2
+   auth refresh: 2
+-  auth status: 2
++  auth status: 0          # every provider with credentials or a sign-in (none here)
+   auth logout: 2
+   status: 0
+   doctor: 1               # a fresh profile has no settings file and no provider yet
+diff --git a/tests/contract/web/test_profiles_models_routes.py b/tests/contract/web/test_profiles_models_routes.py
+index d4deca3..eb8acc3 100644
+--- a/tests/contract/web/test_profiles_models_routes.py
++++ b/tests/contract/web/test_profiles_models_routes.py
+@@ -20,7 +20,7 @@ from indus.foundation.secrets import SecretStore
+ from indus.providers.auth.device_code import DeviceFlowSpec
+ from indus.providers.auth.pool_model import secret_name
+ from indus.providers.auth.store import AuthStore
+-from indus.web.routes import models, profiles
++from indus.web.routes import models, profiles, provider_accounts
+ from tests.contract.web.rest_app import (
+     RestApp,
+     build_rest_app,
+@@ -56,7 +56,9 @@ def _wait(rest: RestApp, name: str, params: dict[str, str]) -> dict[str, Any]:
+ 
+ def test_route_lists_are_pinned(rest: RestApp) -> None:
+     assert route_table(rest.app, ("/api/profiles",)) == set(profiles.ROUTE_LIST)
+-    assert route_table(rest.app, ("/api/model", "/api/providers/login")) == set(models.ROUTE_LIST)
++    assert route_table(rest.app, ("/api/model", "/api/providers/login")) == set(
++        models.ROUTE_LIST
++    ) | set(provider_accounts.ROUTE_LIST)
+     assert unscoped_writes(rest.app, ("/api/model", "/api/providers/login")) == []
+     expected = {f"{m} {p}" for m, p, _ in profiles.ROUTE_LIST if m != "GET"}
+     assert set(unscoped_writes(rest.app, ("/api/profiles",))) == expected
+diff --git a/tests/contract/web/test_provider_accounts_routes.py b/tests/contract/web/test_provider_accounts_routes.py
+new file mode 100644
+index 0000000..fb935e0
+--- /dev/null
++++ b/tests/contract/web/test_provider_accounts_routes.py
+@@ -0,0 +1,187 @@
++"""W61-M1: the dashboard's ChatGPT sign-in — start/poll/cancel through ``/api/providers/login``,
++status and sign-out through ``/api/providers/login/accounts/{provider}`` (the "Contract for UI" in
++docs/notes/P08/chatgpt-sign-in.md). A fake sign-in service stands in for OpenAI; no answer may carry
++a token, the device id or the verifier."""
++
++from __future__ import annotations
++
++import json
++import time
++from collections.abc import Iterator
++from dataclasses import replace
++from datetime import timedelta
++from typing import Any, cast
++
++import httpx
++import pytest
++
++from indus.foundation.config import loader as config_loader
++from indus.foundation.scope import Scope
++from indus.providers.auth.device_code import TokenSet
++from indus.providers.auth.pool_model import PoolEntry, edit_pool, secret_name
++from indus.providers.auth.store import AuthStore
++from indus.web.routes import provider_accounts
++from tests.contract.web.rest_app import RestApp, build_rest_app, pause, route_table, unscoped_writes
++from tests.fakes import chatgpt_auth as fake
++from tests.fakes.clock import FakeClock
++
++WRITE = {"profile": "work"}
++ACCOUNTS = "/api/providers/login/accounts/openai-codex"
++SPEC = replace(fake.DEVICE_SPEC, min_interval=1)
++
++
++@pytest.fixture
++def rest(scope: Scope) -> Iterator[RestApp]:
++    config_loader.reset()
++    built = build_rest_app(scope)
++    yield built
++    built.close()
++    config_loader.reset()
++
++
++def _code(answer: Any) -> str:
++    return answer.json()["detail"]["code"]
++
++
++def _poll(rest: RestApp, session_id: str, clock: FakeClock) -> dict[str, Any]:
++    """Poll the session the way the page does, moving the scope's fake clock on so the sign-in
++    thread's interval waits pass."""
++    deadline = time.monotonic() + 20
++    while True:
++        got = rest.client.get(f"/api/providers/login/{session_id}", params=WRITE).json()
++        if got["status"] != "pending" or time.monotonic() > deadline:
++            return got
++        clock.advance(0.5)
++        pause(0.05)
++
++
++def _secrets_in(text: str) -> list[str]:
++    values = (
++        fake.fake_jwt(1),
++        fake.fake_jwt(101),
++        fake.fake_refresh(1),
++        "dev-auth-1",
++        "verifier-1",
++    )
++    return [v for v in values if v in text]
++
++
++def _usercode(interval: int = 1) -> httpx.Response:
++    return httpx.Response(
++        200, json={"device_auth_id": "dev-auth-1", "user_code": "ABCD-1234", "interval": interval}
++    )
++
++
++def test_routes_are_scoped_and_writes_need_a_profile(rest: RestApp) -> None:
++    assert route_table(rest.app, ("/api/providers/login/accounts",)) == set(
++        provider_accounts.ROUTE_LIST
++    )
++    assert unscoped_writes(rest.app, ("/api/providers/login/accounts",)) == []
++
++
++def test_device_sign_in_status_and_sign_out(rest: RestApp, scope: Scope) -> None:
++    server = fake.FakeSignIn(usercode=[_usercode()])
++    rest.state.extras["providers.device_flows"] = {"openai-codex": SPEC}
++    rest.state.extras["providers.http_client"] = server.factory()
++
++    before = rest.client.get(ACCOUNTS, params=WRITE)
++    assert before.status_code == 200
++    assert before.json() == {
++        "provider": "openai-codex",
++        "label": "OpenAI (ChatGPT sign-in)",
++        "signed_in": False,
++        "signed_in_at": None,
++        "flows": {"browser": True, "device": True},
++        "accounts": [],
++    }
++
++    started = rest.client.post(
++        "/api/providers/login/start", params=WRITE, json={"provider": "openai-codex"}
++    )
++    assert started.status_code == 200, started.text
++    body = started.json()
++    assert body["status"] == "pending" and body["user_code"] == "ABCD-1234"
++    assert body["verification_url"] == SPEC.verify_page
++    assert body["interval"] == 1 and body["expires_in"] == SPEC.deadline_seconds
++    assert _secrets_in(started.text) == []
++
++    done = _poll(rest, body["session_id"], cast(FakeClock, scope.clock))
++    assert done["status"] == "approved", done
++    assert _secrets_in(json.dumps(done)) == []
++
++    status = rest.client.get(ACCOUNTS, params=WRITE)
++    got = status.json()
++    assert got["signed_in"] and got["signed_in_at"]
++    [account] = got["accounts"]
++    assert account["source"] == "device_code" and account["plan"] == "plus"
++    assert account["status"] == "ok" and not account["expired"] and account["expires_at"]
++    assert _secrets_in(status.text) == []
++
++    options = rest.client.get("/api/model/options", params=WRITE).json()
++    row = next(p for p in options["providers"] if p["name"] == "openai-codex")
++    assert row["configured"] and row["device_login"] and row["sign_in"]
++
++    out = rest.client.delete(ACCOUNTS, params=WRITE)
++    assert out.status_code == 200 and out.json() == {
++        "provider": "openai-codex",
++        "removed": 1,
++        "signed_in": False,
++    }
++    assert rest.client.get(ACCOUNTS, params=WRITE).json()["accounts"] == []
++    again = rest.client.delete(ACCOUNTS, params=WRITE).json()
++    assert again["removed"] == 0
++
++
++def test_sign_out_deletes_the_stored_tokens(rest: RestApp, scope: Scope) -> None:
++    now = scope.clock.now()
++    tokens = TokenSet(
++        fake.fake_jwt(1), now, refresh_token=fake.fake_refresh(1), expires_at=now - timedelta(1)
++    )
++    entry = PoolEntry(id="c0de0004", label="old", auth_type="oauth", source="pkce")
++    assert scope.secrets is not None
++    scope.secrets.set(secret_name("openai-codex", entry.id), tokens.to_secret())  # pyright: ignore[reportAttributeAccessIssue]
++    edit_pool(AuthStore(scope.home, env=scope.env), "openai-codex", lambda p, _d: p.add(entry))
++    status = rest.client.get(ACCOUNTS, params=WRITE).json()
++    assert status["signed_in"] and status["accounts"][0]["expired"] is True
++    assert status["accounts"][0]["plan"] == "plus"
++    assert _secrets_in(json.dumps(status)) == []
++    assert rest.client.delete(ACCOUNTS, params=WRITE).json()["removed"] == 1
++    assert scope.secrets.get(secret_name("openai-codex", entry.id)) is None
++
++
++def test_poll_cancel_and_failures_say_nothing_secret(rest: RestApp) -> None:
++    server = fake.FakeSignIn(
++        usercode=[_usercode()], polls=[httpx.Response(403, json={"error": "pending"})]
++    )
++    rest.state.extras["providers.device_flows"] = {"openai-codex": SPEC}
++    rest.state.extras["providers.http_client"] = server.factory()
++    started = rest.client.post(
++        "/api/providers/login/start", params=WRITE, json={"provider": "openai-codex"}
++    ).json()
++    cancelled = rest.client.delete(f"/api/providers/login/{started['session_id']}", params=WRITE)
++    assert cancelled.json()["status"] == "cancelled"
++
++    refused = fake.FakeSignIn(usercode=[httpx.Response(500, json={"device_auth_id": "dev-auth-1"})])
++    rest.state.extras["providers.http_client"] = refused.factory()
++    answer = rest.client.post(
++        "/api/providers/login/start", params=WRITE, json={"provider": "openai-codex"}
++    )
++    assert answer.status_code == 502 and _code(answer) == "sign_in_unavailable"
++    assert _secrets_in(answer.text) == []
++
++
++def test_unknown_provider_and_api_keys_for_a_sign_in_provider(rest: RestApp) -> None:
++    missing = rest.client.get("/api/providers/login/accounts/nope", params=WRITE)
++    assert missing.status_code == 404 and _code(missing) == "unknown_provider"
++    key = rest.client.post(
++        "/api/credentials/pool",
++        params=WRITE,
++        json={"provider": "openai-codex", "api_key": "k" * 32},
++    )
++    assert key.status_code == 400 and _code(key) == "sign_in_only"
++
++
++def test_routes_need_the_dashboard_session(rest: RestApp) -> None:
++    anonymous = rest.anonymous()
++    assert anonymous.get(ACCOUNTS, params=WRITE).status_code == 401
++    assert anonymous.delete(ACCOUNTS, params=WRITE).status_code == 401
+diff --git a/tests/fakes/chatgpt_auth.py b/tests/fakes/chatgpt_auth.py
+new file mode 100644
+index 0000000..6302e91
+--- /dev/null
++++ b/tests/fakes/chatgpt_auth.py
+@@ -0,0 +1,194 @@
++"""A fake ChatGPT sign-in service and a fake Codex backend, as ``httpx.MockTransport`` handlers.
++
++Nothing here reaches auth.openai.com or chatgpt.com: the sign-in endpoints live on
++``auth.chatgpt-fake.test`` (pass ``DEVICE_SPEC`` / ``BROWSER_SPEC`` to the flows), and the backend
++handler answers whatever host the request names without any network. Tokens are built at run time:
++``fake_jwt`` makes an unsigned JWT-shaped access token carrying the account claims the backend
++headers come from.
++"""
++
++from __future__ import annotations
++
++import base64
++import json
++from collections.abc import Callable
++from dataclasses import dataclass, field
++from typing import Any
++from urllib.parse import parse_qs
++
++import httpx
++
++from indus.providers.auth.chatgpt import ChatGptDeviceSpec
++from indus.providers.auth.pkce import PkceFlowSpec
++from tests.fakes.clock import FakeClock
++
++ISSUER = "https://auth.chatgpt-fake.test"
++DEVICE_SPEC = ChatGptDeviceSpec(
++    usercode_url=f"{ISSUER}/api/accounts/deviceauth/usercode",
++    poll_url=f"{ISSUER}/api/accounts/deviceauth/token",
++    verify_page=f"{ISSUER}/codex/device",
++    token_url=f"{ISSUER}/oauth/token",
++    redirect_uri=f"{ISSUER}/deviceauth/callback",
++    client_id="client-under-test",
++)
++BROWSER_SPEC = PkceFlowSpec(
++    provider="openai-codex",
++    authorize_url=f"{ISSUER}/oauth/authorize",
++    exchange_url=f"{ISSUER}/oauth/token",
++    exchange="token",
++    client_id="client-under-test",
++    scope="openid profile email offline_access",
++    extra_params={"id_token_add_organizations": "true"},
++    fallback_device=DEVICE_SPEC,
++    redirect_host="localhost",
++    callback_path="/auth/callback",
++)
++ACCOUNT = "acct-under-test-1"
++
++
++def _b64(data: dict[str, Any]) -> str:
++    raw = json.dumps(data, separators=(",", ":")).encode()
++    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
++
++
++def fake_jwt(n: int = 1, *, account: str = ACCOUNT, plan: str = "plus", exp: int = 0) -> str:
++    """An unsigned three-part token with the ChatGPT claim set (never a real credential)."""
++    claims = {
++        "https://api.openai.com/auth": {"chatgpt_account_id": account, "chatgpt_plan_type": plan},
++        "exp": exp,
++        "n": n,
++    }
++    return ".".join((_b64({"alg": "none", "typ": "JWT"}), _b64(claims), "sig" + "ab" * 6 + str(n)))
++
++
++def fake_refresh(n: int = 1) -> str:
++    return "-".join(("fake", "refresh", str(n), "0" * 10))
++
++
++def tokens_answer(n: int = 1, *, expires_in: int = 3600, refresh: bool = True) -> httpx.Response:
++    body: dict[str, Any] = {
++        "access_token": fake_jwt(n),
++        "id_token": fake_jwt(100 + n),
++        "token_type": "Bearer",
++        "expires_in": expires_in,
++    }
++    if refresh:
++        body["refresh_token"] = fake_refresh(n)
++    return httpx.Response(200, json=body)
++
++
++@dataclass
++class FakeSignIn:
++    """The sign-in service. ``usercode`` and ``polls`` are scripts (the last answer repeats);
++    every request is recorded with the fake clock's monotonic time."""
++
++    clock: FakeClock | None = None
++    usercode: list[httpx.Response] = field(
++        default_factory=lambda: [
++            httpx.Response(
++                200,
++                json={"device_auth_id": "dev-auth-1", "user_code": "ABCD-1234", "interval": "5"},
++            )
++        ]
++    )
++    polls: list[httpx.Response] = field(
++        default_factory=lambda: [
++            httpx.Response(
++                200,
++                json={
++                    "authorization_code": "auth-code-1",
++                    "code_verifier": "verifier-1" + "v" * 40,
++                },
++            )
++        ]
++    )
++    token: list[httpx.Response] = field(default_factory=lambda: [tokens_answer(1)])
++    poll_times: list[float] = field(default_factory=list[float])
++    requests: list[httpx.Request] = field(default_factory=list[httpx.Request])
++    token_forms: list[dict[str, str]] = field(default_factory=list[dict[str, str]])
++
++    @staticmethod
++    def _next(script: list[httpx.Response]) -> httpx.Response:
++        return script.pop(0) if len(script) > 1 else script[0]
++
++    def handle(self, request: httpx.Request) -> httpx.Response:
++        self.requests.append(request)
++        path = request.url.path
++        if path.endswith("/deviceauth/usercode"):
++            return self._next(self.usercode)
++        if path.endswith("/deviceauth/token"):
++            if self.clock is not None:
++                self.poll_times.append(self.clock.monotonic())
++            return self._next(self.polls)
++        if path.endswith("/oauth/token"):
++            self.token_forms.append(
++                {k: v[0] for k, v in parse_qs(request.content.decode()).items()}
++            )
++            return self._next(self.token)
++        return httpx.Response(404, json={"error": "not_found"})
++
++    def client(self) -> httpx.AsyncClient:
++        return httpx.AsyncClient(transport=httpx.MockTransport(self.handle))
++
++    def factory(self) -> Callable[[], httpx.AsyncClient]:
++        return self.client
++
++
++def sse(*events: dict[str, Any]) -> bytes:
++    return b"".join(f"data: {json.dumps(e)}\n\n".encode() for e in events)
++
++
++def completed_reply(text: str = "hello", model: str = "gpt-5.5") -> bytes:
++    """A streamed Responses answer: one text delta, the finished item, ``response.completed``."""
++    item = {
++        "type": "message",
++        "id": "msg_1",
++        "role": "assistant",
++        "content": [{"type": "output_text", "text": text}],
++    }
++    return sse(
++        {"type": "response.created", "response": {"id": "resp_1", "model": model}},
++        {
++            "type": "response.output_text.delta",
++            "item_id": "msg_1",
++            "output_index": 0,
++            "delta": text,
++        },
++        {"type": "response.output_item.done", "output_index": 0, "item": item},
++        {
++            "type": "response.completed",
++            "response": {
++                "id": "resp_1",
++                "model": model,
++                "status": "completed",
++                "output": [item],
++                "usage": {"input_tokens": 3, "output_tokens": 1, "total_tokens": 4},
++            },
++        },
++    )
++
++
++@dataclass
++class FakeBackend:
++    """The Codex backend: ``/responses`` streams ``reply``; ``/models`` answers ``catalogue``."""
++
++    reply: bytes = field(default_factory=completed_reply)
++    catalogue: dict[str, Any] | None = None
++    status: int = 200
++    requests: list[httpx.Request] = field(default_factory=list[httpx.Request])
++
++    def handle(self, request: httpx.Request) -> httpx.Response:
++        self.requests.append(request)
++        if self.status != 200:
++            return httpx.Response(self.status, json={"detail": "refused"})
++        if request.url.path.endswith("/models"):
++            return httpx.Response(200, json=self.catalogue or {"models": []})
++        body = json.loads(request.content or b"{}")
++        if not body.get("stream"):
++            return httpx.Response(400, json={"detail": "Stream must be set to true"})
++        return httpx.Response(
++            200, content=self.reply, headers={"content-type": "text/event-stream"}
++        )
++
++    def client(self) -> httpx.AsyncClient:
++        return httpx.AsyncClient(transport=httpx.MockTransport(self.handle))
+diff --git a/tests/unit/cli/commands/test_auth_chatgpt.py b/tests/unit/cli/commands/test_auth_chatgpt.py
+new file mode 100644
+index 0000000..525be63
+--- /dev/null
++++ b/tests/unit/cli/commands/test_auth_chatgpt.py
+@@ -0,0 +1,201 @@
++"""``indus auth`` with the ChatGPT sign-in (D-16.1282): add (browser / --device), status, logout,
++and the doctor rows. The flow itself is replaced by a fake at the ``run_sign_in`` seam, or runs
++against the fake sign-in service; nothing reaches OpenAI."""
++
++from __future__ import annotations
++
++from collections.abc import Iterator
++from datetime import timedelta
++from typing import Any
++
++import pytest
++
++from indus.cli.commands import auth as auth_cmd
++from indus.cli.doctor import DoctorContext
++from indus.cli.doctor.checks import check_auth
++from indus.foundation.config import loader
++from indus.foundation.scope import Scope
++from indus.providers import bundled
++from indus.providers.auth import pool_model
++from indus.providers.auth.device_code import TokenSet
++from indus.providers.auth.flows import SignInFlows
++from indus.providers.auth.pkce import PkceOutcome
++from indus.providers.auth.pool_model import PoolEntry, edit_pool, secret_name
++from indus.providers.auth.store import AuthStore
++from tests.fakes import chatgpt_auth as fake
++from tests.fakes.secret_store import MemorySecretStore
++from tests.unit.cli.commands.test_auth import run, stored
++
++
++@pytest.fixture(autouse=True)
++def fresh_state() -> Iterator[None]:
++    loader.reset()
++    pool_model.reset_pending_requests()
++    yield
++    loader.reset()
++
++
++@pytest.fixture
++def secrets() -> MemorySecretStore:
++    return MemorySecretStore()
++
++
++@pytest.fixture
++def clean_scope(scope: Scope, secrets: MemorySecretStore) -> Scope:
++    cleared: dict[str, str | None] = {n: None for n in bundled.env_var_names()}
++    cleared["INDUS_INFERENCE_PROVIDER"] = None
++    return scope.with_env(scope.env.with_overlay(cleared)).with_secrets(secrets)
++
++
++def _signed_in(scope: Scope, *, hours: float = 1.0) -> TokenSet:
++    now = scope.clock.now()
++    return TokenSet(
++        fake.fake_jwt(1, plan="pro"),
++        now,
++        refresh_token=fake.fake_refresh(1),
++        expires_at=now + timedelta(hours=hours),
++    )
++
++
++def _fake_flow(
++    seen: list[tuple[SignInFlows, Any]], tokens: TokenSet, *, via_device: bool = False
++) -> Any:
++    def sign_in(env: object, flows: SignInFlows, options: Any) -> PkceOutcome:
++        seen.append((flows, options))
++        return PkceOutcome(tokens=tokens, via_device=via_device)
++
++    return sign_in
++
++
++def test_add_signs_in_with_the_browser_by_default(
++    clean_scope: Scope, secrets: MemorySecretStore, monkeypatch: pytest.MonkeyPatch
++) -> None:
++    seen: list[tuple[SignInFlows, Any]] = []
++    tokens = _signed_in(clean_scope)
++    monkeypatch.setattr(auth_cmd, "run_sign_in", _fake_flow(seen, tokens))
++    result = run(clean_scope, "auth", "add", "openai-codex", "--no-browser")
++    assert result.exit_code == 0, result.output
++    flows, options = seen[0]
++    assert flows.provider == "openai-codex" and not options.device and options.no_browser
++    doc = stored(clean_scope)
++    row = doc["pool"]["openai-codex"][0]
++    assert (row["auth_type"], row["source"]) == ("oauth", "pkce")
++    assert TokenSet.from_secret(secrets.get(secret_name("openai-codex", row["id"])) or "") == tokens
++    assert "Account plan: pro." in result.stdout
++    for secret in (tokens.access_token, tokens.refresh_token or ""):
++        assert secret not in result.output
++        assert secret not in (clean_scope.home / "auth.json").read_text()
++
++
++def test_add_with_device_runs_the_device_flow(
++    clean_scope: Scope, monkeypatch: pytest.MonkeyPatch
++) -> None:
++    seen: list[tuple[SignInFlows, Any]] = []
++    monkeypatch.setattr(
++        auth_cmd, "run_sign_in", _fake_flow(seen, _signed_in(clean_scope), via_device=True)
++    )
++    result = run(clean_scope, "auth", "add", "chatgpt", "--device")
++    assert result.exit_code == 0, result.output
++    assert seen[0][1].device
++    assert stored(clean_scope)["pool"]["openai-codex"][0]["source"] == "device_code"
++
++
++def test_device_flow_end_to_end_against_the_fake_service(
++    clean_scope: Scope, secrets: MemorySecretStore, monkeypatch: pytest.MonkeyPatch
++) -> None:
++    """The real ``_sign_in`` path with ``--device``: the fake service approves at once."""
++    server = fake.FakeSignIn()
++    flows = SignInFlows(provider="openai-codex", device=fake.DEVICE_SPEC, oauth_default=True)
++    monkeypatch.setattr(auth_cmd, "flows_for", lambda _p: flows)
++    monkeypatch.setattr(auth_cmd.device_code, "make_client", lambda *_a, **_k: server.client())
++
++    async def no_wait(_seconds: float) -> None:
++        return None
++
++    monkeypatch.setattr(clean_scope.clock, "sleep", no_wait)
++    result = run(clean_scope, "auth", "add", "openai-codex", "--device", "--no-browser")
++    assert result.exit_code == 0, result.output
++    assert "ABCD-1234" in result.stdout and fake.DEVICE_SPEC.verify_page in result.stdout
++    row = stored(clean_scope)["pool"]["openai-codex"][0]
++    kept = TokenSet.from_secret(secrets.get(secret_name("openai-codex", row["id"])) or "")
++    assert kept.access_token == fake.fake_jwt(1)
++    assert fake.fake_jwt(1) not in result.output and "dev-auth-1" not in result.output
++
++
++def test_an_api_key_is_refused_for_a_sign_in_provider(clean_scope: Scope) -> None:
++    for args in (["--api-key", "k" * 30], ["--type", "api-key"]):
++        result = run(clean_scope, "auth", "add", "openai-codex", *args)
++        assert result.exit_code == 1 and "takes no API key" in result.stderr
++
++
++def test_device_for_a_provider_without_one_is_refused(clean_scope: Scope) -> None:
++    result = run(clean_scope, "auth", "add", "openrouter", "--device")
++    assert result.exit_code == 1 and "no device sign-in" in result.stderr
++
++
++def _store_sign_in(scope: Scope, secrets: MemorySecretStore, tokens: TokenSet) -> PoolEntry:
++    entry = PoolEntry(id="c0de0003", label="work", auth_type="oauth", source="pkce")
++    secrets.set(secret_name("openai-codex", entry.id), tokens.to_secret())
++    edit_pool(AuthStore(scope.home), "openai-codex", lambda p, _d: p.add(entry))
++    with AuthStore(scope.home).transaction() as doc:
++        doc["providers"] = {"openai-codex": {"signed_in_at": "2026-10-25T09:00:00+00:00"}}
++        doc["active_provider"] = "openai-codex"
++    return entry
++
++
++def test_status_without_a_provider_lists_the_sign_in(
++    clean_scope: Scope, secrets: MemorySecretStore
++) -> None:
++    empty = run(clean_scope, "auth", "status")
++    assert empty.exit_code == 0 and "No credentials or sign-ins yet" in empty.stdout
++    tokens = _signed_in(clean_scope, hours=2)
++    _store_sign_in(clean_scope, secrets, tokens)
++    result = run(clean_scope, "auth", "status")
++    assert result.exit_code == 0, result.output
++    assert "OpenAI (ChatGPT sign-in) (openai-codex)" in result.stdout
++    assert 'sign-in "work" (pkce): token valid for 2h' in result.stdout
++    assert "plan pro" in result.stdout
++    assert "sign-in flows: browser (PKCE), device code" in result.stdout
++    assert tokens.access_token not in result.output
++
++
++def test_status_says_an_expired_token_renews_on_next_use(
++    clean_scope: Scope, secrets: MemorySecretStore
++) -> None:
++    _store_sign_in(clean_scope, secrets, _signed_in(clean_scope, hours=-1))
++    result = run(clean_scope, "auth", "status", "openai-codex")
++    assert "token expired; renewed on next use" in result.stdout
++
++
++def test_logout_with_the_provider_option_deletes_the_tokens(
++    clean_scope: Scope, secrets: MemorySecretStore
++) -> None:
++    entry = _store_sign_in(clean_scope, secrets, _signed_in(clean_scope))
++    result = run(clean_scope, "auth", "logout", "--provider", "openai-codex")
++    assert result.exit_code == 0, result.output
++    assert "Signed out of openai-codex: removed 1" in result.stdout
++    assert secrets.get(secret_name("openai-codex", entry.id)) is None
++    doc = stored(clean_scope)
++    assert doc["pool"].get("openai-codex", []) == [] and "active_provider" not in doc
++    assert AuthStore(clean_scope.home).signed_in() == []
++
++
++def test_logout_needs_one_provider(clean_scope: Scope) -> None:
++    assert run(clean_scope, "auth", "logout").exit_code == 2
++    both = run(clean_scope, "auth", "logout", "openrouter", "--provider", "openai-codex")
++    assert both.exit_code == 2
++
++
++def test_doctor_reports_each_sign_in_without_its_token(
++    clean_scope: Scope, secrets: MemorySecretStore
++) -> None:
++    tokens = _signed_in(clean_scope, hours=-1)
++    _store_sign_in(clean_scope, secrets, tokens)
++    findings = check_auth(DoctorContext(scope=clean_scope))
++    text = "\n".join(f.message for f in findings)
++    assert 'openai-codex sign-in "work": token expired; renewed on next use' in text
++    assert tokens.access_token not in text
++
++    secrets.delete(secret_name("openai-codex", "c0de0003"))
++    missing = [f for f in check_auth(DoctorContext(scope=clean_scope)) if f.severity == "warn"]
++    assert missing and missing[0].fix == "indus auth add openai-codex"
+diff --git a/tests/unit/providers/auth/test_chatgpt.py b/tests/unit/providers/auth/test_chatgpt.py
+new file mode 100644
+index 0000000..5ef414b
+--- /dev/null
++++ b/tests/unit/providers/auth/test_chatgpt.py
+@@ -0,0 +1,439 @@
++"""ChatGPT sign-in (D-16.1282): claims, the device-code flow, the browser flow's redirect, the row.
++
++Everything runs against ``tests.fakes.chatgpt_auth`` (MockTransport, a fake host, run-time tokens);
++nothing reaches OpenAI.
++"""
++
++from __future__ import annotations
++
++import asyncio
++import json
++import socket
++import urllib.error
++import urllib.request
++from collections.abc import Awaitable
++from dataclasses import replace
++from datetime import UTC, datetime, timedelta
++from urllib.parse import parse_qs, urlencode, urlsplit
++
++import httpx
++import pytest
++
++from indus.providers.auth import chatgpt, chatgpt_facts, device_signin, pkce
++from indus.providers.auth.chatgpt import ChatGptDeviceSpec
++from indus.providers.auth.device_code import (
++    DeviceAuthorization,
++    DeviceCodeExpired,
++    DeviceFlowError,
++    DeviceFlowSpec,
++    SignInServiceDown,
++    TokenSet,
++)
++from indus.providers.auth.flows import flows_for
++from tests.fakes import chatgpt_auth as fake
++from tests.fakes.clock import FakeClock
++
++START = datetime(2026, 10, 25, 9, 0, tzinfo=UTC)
++
++
++async def _drive[T](clock: FakeClock, work: Awaitable[T], step: float = 0.5) -> T:
++    task = asyncio.ensure_future(work)
++    for _ in range(200_000):
++        await clock.run_until_idle()
++        if task.done():
++            return task.result()
++        clock.advance(step)
++    raise AssertionError("never finished")
++
++
++def _login(server: fake.FakeSignIn) -> tuple[TokenSet | BaseException, list[str]]:
++    clock = server.clock
++    assert clock is not None
++    lines: list[str] = []
++
++    async def main() -> TokenSet | BaseException:
++        async with server.client() as client:
++            try:
++                return await _drive(
++                    clock,
++                    device_signin.run_login(
++                        fake.DEVICE_SPEC,
++                        clock=clock,
++                        say=lines.append,
++                        open_url=None,
++                        client=client,
++                    ),
++                )
++            except BaseException as exc:
++                return exc
++
++    return asyncio.run(main()), lines
++
++
++def _gaps(times: list[float]) -> list[float]:
++    return [round(b - a, 3) for a, b in zip(times, times[1:], strict=False)]
++
++
++def _poll(status: int) -> httpx.Response:
++    return httpx.Response(status, json={"error": {"code": "deviceauth_pending"}})
++
++
++# -- claims ----------------------------------------------------------------------------------------
++
++
++def test_account_headers_and_plan_come_from_the_token_claims() -> None:
++    token = fake.fake_jwt(account="acct-42", plan="pro")
++    assert chatgpt.account_id(token) == "acct-42"
++    assert chatgpt.plan(token) == "pro"
++    assert chatgpt.account_headers(token) == {"ChatGPT-Account-ID": "acct-42"}
++
++
++def test_residency_claim_adds_its_header() -> None:
++    claims = {
++        chatgpt_facts.AUTH_CLAIM: {"chatgpt_account_id": "a1", "chatgpt_data_residency": "eu"}
++    }
++    body = fake._b64(claims)  # pyright: ignore[reportPrivateUsage]
++    token = f"{fake._b64({'alg': 'none'})}.{body}.sig"  # pyright: ignore[reportPrivateUsage]
++    assert chatgpt.account_headers(token) == {
++        "ChatGPT-Account-ID": "a1",
++        "x-openai-internal-codex-residency": "eu",
++    }
++
++
++@pytest.mark.parametrize("token", ["", "not-a-jwt", "a.b", "a.%%%.c", "a.bm90LWpzb24.c"])
++def test_anything_else_gives_no_headers(token: str) -> None:
++    assert chatgpt.claims(token) == {}
++    assert chatgpt.account_headers(token) == {}
++    assert chatgpt.plan(token) is None
++
++
++def test_a_claim_with_a_line_break_never_becomes_a_header() -> None:
++    token = fake.fake_jwt(account="acct\r\nX-Evil: 1")
++    assert chatgpt.account_headers(token) == {}
++
++
++# -- the flows row ---------------------------------------------------------------------------------
++
++
++def test_the_row_uses_the_public_client_and_its_registered_redirect() -> None:
++    flows = flows_for("openai-codex")
++    assert flows.oauth_default and flows.pkce is not None
++    spec = flows.pkce
++    assert spec.client_id == chatgpt_facts.CLIENT_ID and spec.exchange == "token"
++    assert spec.authorize_url == "https://auth.openai.com/oauth/authorize"
++    assert spec.exchange_url == "https://auth.openai.com/oauth/token"
++    assert (spec.fixed_port, spec.redirect_host, spec.callback_path) == (
++        1455,
++        "localhost",
++        "/auth/callback",
++    )
++    assert isinstance(spec.fallback_device, ChatGptDeviceSpec)
++    assert isinstance(flows.device, ChatGptDeviceSpec)
++    refresh = device_signin.refresh_spec("openai-codex")
++    assert refresh is not None and refresh.token_url == chatgpt_facts.TOKEN_URL
++    assert refresh.client_id == chatgpt_facts.CLIENT_ID and refresh.scope == ""
++    assert device_signin.refresh_spec("anthropic") is None
++
++
++def test_the_listener_binds_loopback_while_the_redirect_says_localhost() -> None:
++    with pkce.LoopbackServer(path="/auth/callback", redirect_host="localhost") as server:
++        assert server.redirect_uri == f"http://localhost:{server.port}/auth/callback"
++        assert server._server.server_address[0] == "127.0.0.1"  # pyright: ignore[reportPrivateUsage]
++    with pkce.LoopbackServer(redirect_host="evil.example") as other:
++        assert other.redirect_uri.startswith("http://127.0.0.1:")
++
++
++# -- device code -----------------------------------------------------------------------------------
++
++
++def test_device_sign_in_polls_at_the_server_interval_then_exchanges() -> None:
++    clock = FakeClock(START)
++    server = fake.FakeSignIn(
++        clock, polls=[_poll(403), _poll(404), _poll(403), fake.FakeSignIn().polls[0]]
++    )
++    tokens, lines = _login(server)
++    assert isinstance(tokens, TokenSet), tokens
++    assert tokens.access_token == fake.fake_jwt(1)
++    assert tokens.refresh_token == fake.fake_refresh(1)
++    assert _gaps(server.poll_times) == [5, 5, 5]
++    first = server.requests[0]
++    assert json.loads(first.content) == {"client_id": "client-under-test"}
++    poll = server.requests[1]
++    assert json.loads(poll.content) == {"device_auth_id": "dev-auth-1", "user_code": "ABCD-1234"}
++    assert server.token_forms == [
++        {
++            "grant_type": "authorization_code",
++            "code": "auth-code-1",
++            "redirect_uri": fake.DEVICE_SPEC.redirect_uri,
++            "client_id": "client-under-test",
++            "code_verifier": "verifier-1" + "v" * 40,
++        }
++    ]
++    text = "\n".join(lines)
++    assert "ABCD-1234" in text and fake.DEVICE_SPEC.verify_page in text
++    assert "dev-auth-1" not in text  # the device id is never shown
++
++
++def test_interval_is_never_under_three_seconds() -> None:
++    clock = FakeClock(START)
++    usercode = httpx.Response(200, json={"device_auth_id": "d", "user_code": "C", "interval": 1})
++    server = fake.FakeSignIn(
++        clock, usercode=[usercode], polls=[_poll(404), _poll(404), fake.FakeSignIn().polls[0]]
++    )
++    tokens, _ = _login(server)
++    assert isinstance(tokens, TokenSet)
++    assert _gaps(server.poll_times) == [3, 3]
++
++
++def test_usercode_429_waits_retry_after_then_succeeds() -> None:
++    clock = FakeClock(START)
++    limited = httpx.Response(429, headers={"Retry-After": "7"}, json={"error": "slow"})
++    server = fake.FakeSignIn(clock, usercode=[limited, fake.FakeSignIn().usercode[0]])
++    tokens, _ = _login(server)
++    assert isinstance(tokens, TokenSet)
++    assert sum(1 for r in server.requests if r.url.path.endswith("usercode")) == 2
++
++
++def test_usercode_429_every_time_is_a_service_problem() -> None:
++    clock = FakeClock(START)
++    server = fake.FakeSignIn(clock, usercode=[httpx.Response(429, json={})])
++    result, _ = _login(server)
++    assert isinstance(result, SignInServiceDown) and result.last_status == 429
++    assert sum(1 for r in server.requests if r.url.path.endswith("usercode")) == 4
++
++
++def test_usercode_answer_without_its_fields_is_refused() -> None:
++    clock = FakeClock(START)
++    server = fake.FakeSignIn(clock, usercode=[httpx.Response(200, json={"user_code": "X"})])
++    result, _ = _login(server)
++    assert isinstance(result, DeviceFlowError) and "lacks its code" in str(result)
++
++
++def test_server_errors_back_off_and_six_in_a_row_end_the_flow() -> None:
++    clock = FakeClock(START)
++    server = fake.FakeSignIn(clock, polls=[httpx.Response(503, text="busy")])
++    result, _ = _login(server)
++    assert isinstance(result, SignInServiceDown) and result.last_status == 503
++    assert len(server.poll_times) == 6
++    assert _gaps(server.poll_times) == [10, 20, 40, 60, 60]
++
++
++def test_a_blip_then_approval_still_signs_in() -> None:
++    clock = FakeClock(START)
++    server = fake.FakeSignIn(
++        clock,
++        polls=[httpx.Response(502, text="x"), _poll(403), fake.FakeSignIn().polls[0]],
++    )
++    tokens, _ = _login(server)
++    assert isinstance(tokens, TokenSet)
++    assert _gaps(server.poll_times) == [10, 5]
++
++
++def test_transport_errors_count_as_failures() -> None:
++    clock = FakeClock(START)
++    server = fake.FakeSignIn(clock)
++
++    def handle(request: httpx.Request) -> httpx.Response:
++        if request.url.path.endswith("/deviceauth/token"):
++            server.poll_times.append(clock.monotonic())
++            raise httpx.ConnectError("refused", request=request)
++        return server.handle(request)
++
++    async def main() -> BaseException | TokenSet:
++        async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
++            try:
++                grant = await _drive(
++                    clock, device_signin.start(client, fake.DEVICE_SPEC, clock=clock)
++                )
++                return await _drive(
++                    clock, device_signin.finish(client, fake.DEVICE_SPEC, grant, clock=clock)
++                )
++            except BaseException as exc:
++                return exc
++
++    result = asyncio.run(main())
++    assert isinstance(result, SignInServiceDown) and "no connection" in str(result)
++
++
++def test_unexpected_status_stops_at_once() -> None:
++    clock = FakeClock(START)
++    server = fake.FakeSignIn(clock, polls=[httpx.Response(400, json={"error": "bad"})])
++    result, _ = _login(server)
++    assert isinstance(result, DeviceFlowError) and "HTTP 400" in str(result)
++    assert len(server.poll_times) == 1
++
++
++def test_the_code_expires_after_the_deadline() -> None:
++    clock = FakeClock(START)
++    spec = replace(fake.DEVICE_SPEC, deadline_seconds=30)
++    server = fake.FakeSignIn(clock, polls=[_poll(403)])
++
++    async def main() -> BaseException | TokenSet:
++        async with server.client() as client:
++            try:
++                return await _drive(
++                    clock,
++                    device_signin.run_login(
++                        spec, clock=clock, say=lambda _l: None, open_url=None, client=client
++                    ),
++                )
++            except BaseException as exc:
++                return exc
++
++    result = asyncio.run(main())
++    assert isinstance(result, DeviceCodeExpired)
++    assert clock.monotonic() <= 31
++
++
++def test_a_refused_exchange_carries_no_secret() -> None:
++    clock = FakeClock(START)
++    leaky = httpx.Response(400, json={"error": "invalid_grant", "code": "auth-code-1"})
++    server = fake.FakeSignIn(clock, token=[leaky])
++    result, lines = _login(server)
++    assert isinstance(result, DeviceFlowError) and "HTTP 400" in str(result)
++    for secret in ("auth-code-1", "verifier-1", "dev-auth-1"):
++        assert secret not in str(result) and secret not in "\n".join(lines)
++
++
++def test_approval_without_a_code_is_refused() -> None:
++    clock = FakeClock(START)
++    server = fake.FakeSignIn(clock, polls=[httpx.Response(200, json={"authorization_code": "x"})])
++    result, _ = _login(server)
++    assert isinstance(result, DeviceFlowError) and "no authorization code" in str(result)
++
++
++def test_rfc_device_specs_still_go_the_rfc_way() -> None:
++    spec = DeviceFlowSpec(
++        "example", "https://idp.example.test/d", "https://idp.example.test/t", "c"
++    )
++    seen: list[str] = []
++
++    def handle(request: httpx.Request) -> httpx.Response:
++        seen.append(request.url.path)
++        return httpx.Response(
++            200,
++            json={
++                "device_code": "dc",
++                "user_code": "U",
++                "verification_uri": "https://idp.example.test/v",
++                "expires_in": 60,
++            },
++        )
++
++    async def main() -> DeviceAuthorization:
++        async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
++            return await device_signin.start(client, spec, clock=FakeClock(START))
++
++    grant = asyncio.run(main())
++    assert grant.user_code == "U" and seen == ["/d"]
++
++
++# -- the browser flow ------------------------------------------------------------------------------
++
++
++def _get(url: str) -> int:
++    try:
++        with urllib.request.urlopen(url, timeout=5) as reply:  # noqa: S310 (loopback only)
++            return int(reply.status)
++    except urllib.error.HTTPError as err:
++        return int(err.code)
++
++
++def _browser_login(
++    spec: pkce.PkceFlowSpec, answers: list[str], server: fake.FakeSignIn
++) -> tuple[pkce.PkceOutcome | BaseException, list[str], list[int]]:
++    clock = FakeClock(START)
++    server.clock = clock
++    opened: list[str] = []
++    statuses: list[int] = []
++    lines: list[str] = []
++
++    def opener(url: str) -> bool:
++        opened.append(url)
++        params = {k: v[0] for k, v in parse_qs(urlsplit(url).query).items()}
++        if "redirect_uri" not in params:  # the device page of the fallback
++            return True
++        target = params["redirect_uri"].replace("localhost", "127.0.0.1")
++        for answer in answers:
++            query = answer.replace("{state}", params["state"])
++            statuses.append(_get(f"{target}?{query}"))
++        return True
++
++    async def main() -> pkce.PkceOutcome | BaseException:
++        async with server.client() as client:
++            try:
++                return await _drive(
++                    clock,
++                    pkce.run_pkce_login(
++                        spec,
++                        clock=clock,
++                        say=lines.append,
++                        env={"DISPLAY": ":0"},
++                        client=client,
++                        open_url=opener,
++                        timeout=10,
++                    ),
++                    step=0.1,
++                )
++            except BaseException as exc:
++                return exc
++
++    result = asyncio.run(main())
++    return result, opened + lines, statuses
++
++
++def test_browser_sign_in_checks_state_and_exchanges_once() -> None:
++    server = fake.FakeSignIn()
++    answers = [
++        urlencode({"code": "stolen", "state": "wrong"}),
++        "code=auth-code-1&state={state}",
++        "code=again&state={state}",
++    ]
++    result, lines, statuses = _browser_login(fake.BROWSER_SPEC, answers, server)
++    assert isinstance(result, pkce.PkceOutcome) and result.tokens is not None, result
++    assert result.tokens.access_token == fake.fake_jwt(1)
++    assert statuses[:2] == [400, 200]
++    assert len(server.token_forms) == 1
++    form = server.token_forms[0]
++    assert form["code"] == "auth-code-1" and form["client_id"] == "client-under-test"
++    assert form["redirect_uri"].startswith("http://localhost:") and form["code_verifier"]
++    url = lines[0]
++    params = {k: v[0] for k, v in parse_qs(urlsplit(url).query).items()}
++    assert params["client_id"] == "client-under-test"
++    assert params["scope"] == "openid profile email offline_access"
++    assert params["id_token_add_organizations"] == "true"
++    assert params["code_challenge_method"] == "S256" and params["response_type"] == "code"
++    assert urlsplit(params["redirect_uri"]).path == "/auth/callback"
++    assert fake.fake_jwt(1) not in "\n".join(lines)
++
++
++def test_browser_flow_falls_back_to_the_device_code_when_the_port_is_busy() -> None:
++    holder = socket.socket()
++    holder.bind(("127.0.0.1", 0))
++    holder.listen(1)
++    try:
++        spec = replace(fake.BROWSER_SPEC, fixed_port=int(holder.getsockname()[1]))
++        server = fake.FakeSignIn()
++        server.polls = [fake.FakeSignIn().polls[0]]
++        result, lines, _ = _browser_login(spec, [], server)
++    finally:
++        holder.close()
++    assert isinstance(result, pkce.PkceOutcome) and result.via_device, result
++    assert any("busy" in line for line in lines)
++    assert any("ABCD-1234" in line for line in lines)
++
++
++def test_tokens_from_the_exchange_expire_as_announced() -> None:
++    clock = FakeClock(START)
++    server = fake.FakeSignIn(clock, token=[fake.tokens_answer(3, expires_in=600)])
++    tokens, _ = _login(server)
++    assert isinstance(tokens, TokenSet)
++    assert tokens.expires_at == tokens.obtained_at + timedelta(seconds=600)
++    assert "id_token" not in tokens.to_secret()  # the id token is never kept
++
++
++def test_facts_cite_their_sources() -> None:
++    doc = chatgpt_facts.__doc__ or ""
++    for source in ("server.rs", "device_code_auth.rs", "auth.rs", "client.rs"):
++        assert source in doc
++    assert chatgpt_facts.ORIGINATOR == "indus-agent"
+diff --git a/tests/unit/providers/auth/test_pkce.py b/tests/unit/providers/auth/test_pkce.py
+index 12fa511..f642f78 100644
+--- a/tests/unit/providers/auth/test_pkce.py
++++ b/tests/unit/providers/auth/test_pkce.py
+@@ -361,8 +361,9 @@ def test_tunnel_hint_text() -> None:
+ 
+ 
+ def test_only_documented_flows_are_registered() -> None:
+-    """R01.12: one flow, OpenRouter's key mint; it needs no client id and is not the default."""
+-    assert set(FLOWS) == {"openrouter"}
++    """R01.12: OpenRouter's key mint (no client id, not the default), plus the owner's one
++    exception, the ChatGPT sign-in (D-16.1282)."""
++    assert set(FLOWS) == {"openrouter", "openai-codex"}
+     flows = flows_for("openrouter")
+     assert flows.pkce is not None and flows.pkce.client_id == "" and flows.device is None
+     assert not flows.oauth_default
+diff --git a/tests/unit/providers/test_bundled.py b/tests/unit/providers/test_bundled.py
+index 43f1c70..a7156c0 100644
+--- a/tests/unit/providers/test_bundled.py
++++ b/tests/unit/providers/test_bundled.py
+@@ -1,4 +1,7 @@
+-"""P03-03: the bundled catalogue validates and keeps keys on their own hosts (A55, D-16.42)."""
++"""P03-03: the bundled catalogue validates and keeps keys on their own hosts (A55, D-16.42).
++
++D-16.1282 (owner, 2026-10-25) adds exactly one sign-in route, ``openai-codex``; the pins below keep
++it the only one."""
+ 
+ from __future__ import annotations
+ 
+@@ -18,6 +21,7 @@ from tooling.checks.banned import load_patterns, scan_text
+ EXPECTED_ORDER = [
+     "openrouter",
+     "openai",
++    "openai-codex",
+     "anthropic",
+     "gemini",
+     "deepseek",
+@@ -76,8 +80,12 @@ def test_vendor_profiles_need_keys_and_have_their_own_host() -> None:
+     hosts = [p.hostname for p in vendors]
+     assert len(hosts) == len(set(hosts))
+     for profile in vendors:
+-        assert profile.auth_type == "api_key" and profile.env_vars and profile.auto_detect
+         assert not profile.base_url_env_var  # a vendor key never follows an env-chosen URL
++        assert profile.auto_detect
++        if profile.signs_in:
++            assert not profile.env_vars  # a sign-in comes from the pool, never a variable
++            continue
++        assert profile.auth_type == "api_key" and profile.env_vars
+ 
+ 
+ def test_local_and_custom_not_auto_detected() -> None:
+@@ -102,12 +110,17 @@ def test_wire_formats() -> None:
+     assert by_name["huggingface"].env_vars == ("HF_TOKEN",)
+ 
+ 
+-def test_no_oauth_or_portal_routes() -> None:
++def test_the_only_sign_in_route_is_the_owners_chatgpt_one() -> None:
++    """D-16.1282: ChatGPT sign-in only; no Anthropic subscription route, no portal (P2, R01.12)."""
++    signing_in = [p for p in bundled.PROFILES if p.auth_type == "oauth"]
++    assert [p.name for p in signing_in] == ["openai-codex"]
++    assert signing_in[0].hostname == "chatgpt.com"
+     for profile in bundled.PROFILES:
+-        assert profile.auth_type in ("api_key", "api_key_optional")
++        assert profile.auth_type in ("api_key", "api_key_optional", "oauth")
+         assert "portal" not in profile.name
+         for name in profile.env_vars:
+             assert "OAUTH" not in name and name != "ANTHROPIC_TOKEN"
++    assert bundled.by_name()["anthropic"].auth_type == "api_key"
+ 
+ 
+ def test_no_banned_names_in_any_field() -> None:
+@@ -121,8 +134,13 @@ def test_no_banned_names_in_any_field() -> None:
+         assert scan_text(text, patterns) == [], profile.name
+ 
+ 
+-def test_default_headers_are_empty() -> None:
+-    assert all(not p.default_headers for p in bundled.PROFILES)
++def test_default_headers_name_only_this_product() -> None:
++    """Only the ChatGPT route sends a header of its own: ``originator``, naming Indus Agent."""
++    for profile in bundled.PROFILES:
++        if profile.name == "openai-codex":
++            assert dict(profile.default_headers) == {"originator": "indus-agent"}
++        else:
++            assert not profile.default_headers
+ 
+ 
+ def test_env_var_names_cover_every_profile() -> None:
+diff --git a/tests/unit/providers/test_chatgpt_backend.py b/tests/unit/providers/test_chatgpt_backend.py
+new file mode 100644
+index 0000000..53fecff
+--- /dev/null
++++ b/tests/unit/providers/test_chatgpt_backend.py
+@@ -0,0 +1,450 @@
++"""The ``openai-codex`` route (D-16.1282): profile, request shape, streaming, model list, renewal.
++
++A fake Codex backend and a fake sign-in service (``tests.fakes.chatgpt_auth``) stand in for OpenAI;
++no request leaves the process.
++"""
++
++from __future__ import annotations
++
++import asyncio
++import json
++import threading
++from dataclasses import replace
++from datetime import UTC, datetime, timedelta
++from pathlib import Path
++from typing import Any
++
++import httpx
++import pytest
++
++from indus.foundation.clock import SystemClock
++from indus.foundation.errors import KeyHostMismatch, NoUsableProvider
++from indus.foundation.scope import Scope
++from indus.providers import bundled, model_list
++from indus.providers.auth import chatgpt, renew
++from indus.providers.auth.device_code import (
++    DeviceFlowSpec,
++    RefreshThrottled,
++    ReloginRequired,
++    TokenSet,
++)
++from indus.providers.auth.pool_model import Pool, PoolEntry, edit_pool, load_pool, secret_name
++from indus.providers.auth.store import AuthStore
++from indus.providers.pool import Lease, PoolRuntime
++from indus.providers.profile import USER_AGENT
++from indus.providers.route import RuntimeRoute, Secret, resolve
++from indus.providers.streaming import StreamFlags, stream_call
++from indus.providers.timeouts import TimeoutPolicy
++from indus.providers.transports import get_transport
++from indus.providers.types import ChatRequest
++from tests.fakes import chatgpt_auth as fake
++from tests.fakes.clock import FakeClock
++from tests.fakes.secret_store import MemorySecretStore
++from tests.unit.providers.conftest import ScopeFactory
++
++NOW = datetime(2026, 10, 25, 9, 0, tzinfo=UTC)
++PROFILE = bundled.by_name()["openai-codex"]
++BASE = PROFILE.base_url
++REQ = ChatRequest(
++    model="gpt-5.5",
++    messages=[{"role": "system", "content": "be brief"}, {"role": "user", "content": "hi"}],
++    max_tokens=500,
++    temperature=0.2,
++    stream=False,
++)
++REFRESH_SPEC = DeviceFlowSpec(
++    provider="openai-codex",
++    device_authorization_url="",
++    token_url=f"{fake.ISSUER}/oauth/token",
++    client_id="client-under-test",
++)
++
++
++def _route(token: str | None = None) -> RuntimeRoute:
++    return RuntimeRoute(
++        provider=PROFILE.name,
++        model="gpt-5.5",
++        api_mode=PROFILE.api_mode,
++        base_url=BASE,
++        api_key=Secret(token or fake.fake_jwt()),
++        headers={"User-Agent": USER_AGENT, **PROFILE.default_headers},
++        profile=PROFILE,
++    )
++
++
++# -- the profile -----------------------------------------------------------------------------------
++
++
++def test_profile_is_a_sign_in_only_vendor_row_on_chatgpt_com() -> None:
++    assert PROFILE.signs_in and PROFILE.needs_key and not PROFILE.env_vars
++    assert PROFILE.hostname == "chatgpt.com" and PROFILE.stream_only
++    assert PROFILE.api_mode == "responses" and PROFILE.family == "vendor"
++    assert PROFILE.default_models and "gpt-5.5" in PROFILE.default_models
++    assert bundled.by_name()["openai-codex"] is PROFILE
++    assert PROFILE.label == "OpenAI (ChatGPT sign-in)"
++
++
++def test_resolve_without_a_sign_in_says_how_to_sign_in(make_scope: ScopeFactory) -> None:
++    scope = make_scope(config={"model": {"provider": "openai-codex", "default": "gpt-5.5"}})
++    with pytest.raises(NoUsableProvider) as caught:
++        resolve(scope)
++    assert "not signed in" in str(caught.value)
++    assert caught.value.hint == "sign in with `indus auth add openai-codex`"
++
++
++def _sign_in(scope: Scope, token: str, *, expires: datetime | None = None) -> PoolEntry:
++    entry = PoolEntry(id="c0de0001", label="sign-in-1", auth_type="oauth", source="pkce")
++    tokens = TokenSet(token, NOW, refresh_token=fake.fake_refresh(1), expires_at=expires)
++    assert scope.secrets is not None
++    scope.secrets.set(secret_name("openai-codex", entry.id), tokens.to_secret())  # pyright: ignore[reportAttributeAccessIssue]
++    edit_pool(AuthStore(scope.home, env=scope.env), "openai-codex", lambda p, _d: p.add(entry))
++    return entry
++
++
++def test_resolve_with_a_sign_in_uses_its_access_token(make_scope: ScopeFactory) -> None:
++    scope = make_scope(config={"model": {"provider": "chatgpt", "default": "gpt-5.5"}})
++    token = fake.fake_jwt(7)
++    _sign_in(scope, token)
++    route = resolve(scope)
++    assert route.provider == "openai-codex" and route.base_url == BASE
++    assert route.api_key is not None and route.api_key.reveal() == token
++    assert route.headers["originator"] == "indus-agent"
++    assert route.headers["User-Agent"].startswith("indus/")
++    assert token not in repr(route)
++
++
++def test_a_token_that_happens_to_contain_xxx_is_still_used(make_scope: ScopeFactory) -> None:
++    scope = make_scope(config={"model": {"provider": "openai-codex", "default": "gpt-5.5"}})
++    token = fake.fake_jwt(9) + "XxX"
++    _sign_in(scope, token)
++    route = resolve(scope)
++    assert route.api_key is not None and route.api_key.reveal() == token
++
++
++def test_the_token_never_follows_a_saved_url_to_another_host(make_scope: ScopeFactory) -> None:
++    scope = make_scope(
++        config={
++            "model": {
++                "provider": "openai-codex",
++                "default": "gpt-5.5",
++                "base_url": "https://proxy.example.test/v1",
++            }
++        }
++    )
++    _sign_in(scope, fake.fake_jwt(8))
++    with pytest.raises(KeyHostMismatch) as caught:
++        resolve(scope)
++    assert fake.fake_jwt(8) not in str(caught.value)
++
++
++# -- the request -----------------------------------------------------------------------------------
++
++
++def test_request_is_streamed_unstored_and_carries_the_account_header() -> None:
++    token = fake.fake_jwt(account="acct-77")
++    request = get_transport("responses").build_request(_route(token), REQ)
++    assert str(request.url) == "https://chatgpt.com/backend-api/codex/responses"
++    assert request.headers["authorization"] == f"Bearer {token}"
++    assert request.headers["ChatGPT-Account-ID"] == "acct-77"
++    assert request.headers["originator"] == "indus-agent"
++    assert request.headers["accept"] == "text/event-stream"
++    assert request.headers["User-Agent"] == USER_AGENT
++    body = json.loads(request.content)
++    assert body["stream"] is True and body["store"] is False
++    assert body["instructions"] == "be brief"
++    assert "max_output_tokens" not in body and "temperature" not in body
++    assert body["input"][0]["role"] == "user"
++
++
++def test_instructions_are_always_present() -> None:
++    req = replace(REQ, messages=[{"role": "user", "content": "hi"}])
++    body = json.loads(get_transport("responses").build_request(_route(), req).content)
++    assert body["instructions"] == chatgpt.DEFAULT_INSTRUCTIONS
++
++
++def test_effort_is_clamped_to_the_profile_ladder() -> None:
++    req = replace(REQ, reasoning_effort="minimal")
++    body = json.loads(get_transport("responses").build_request(_route(), req).content)
++    assert body["reasoning"]["effort"] == "low"
++    assert body["include"] == ["reasoning.encrypted_content"]
++
++
++def test_other_responses_routes_keep_their_shape() -> None:
++    plain = RuntimeRoute(
++        provider="custom",
++        model="m",
++        api_mode="responses",
++        base_url="https://llm.example.test/v1",
++        api_key=Secret(fake.fake_jwt()),
++    )
++    request = get_transport("responses").build_request(plain, REQ)
++    body = json.loads(request.content)
++    assert body["stream"] is False and body["max_output_tokens"] == 500
++    assert "ChatGPT-Account-ID" not in request.headers
++
++
++def test_a_non_streaming_call_still_streams_to_the_backend() -> None:
++    backend = fake.FakeBackend()
++    flags = StreamFlags(streaming=False)
++
++    async def go() -> Any:
++        async with backend.client() as client:
++            return await stream_call(
++                client,
++                get_transport("responses"),
++                _route(),
++                REQ,
++                policy=TimeoutPolicy(),
++                clock=SystemClock(),
++                on_event=lambda _e: None,
++                route_epoch=lambda: 0,
++                flags=flags,
++            )
++
++    outcome = asyncio.run(go())
++    assert outcome.response.content == "hello"
++    assert outcome.streamed and flags.streaming
++    assert len(backend.requests) == 1
++
++
++def test_a_refusal_is_reported_without_the_token() -> None:
++    backend = fake.FakeBackend(status=401)
++    token = fake.fake_jwt(5)
++
++    async def go() -> Any:
++        async with backend.client() as client:
++            return await stream_call(
++                client,
++                get_transport("responses"),
++                _route(token),
++                REQ,
++                policy=TimeoutPolicy(),
++                clock=SystemClock(),
++                on_event=lambda _e: None,
++                route_epoch=lambda: 0,
++            )
++
++    with pytest.raises(Exception) as caught:
++        asyncio.run(go())
++    assert token not in str(caught.value) and token not in repr(caught.value)
++
++
++# -- the model list --------------------------------------------------------------------------------
++
++
++def test_catalogue_shape_is_read_hidden_dropped_and_ranked() -> None:
++    payload = {
++        "models": [
++            {"slug": "gpt-b", "priority": 2},
++            {"slug": "gpt-hidden", "visibility": "hide", "priority": 0},
++            {"slug": "gpt-a", "priority": 1, "visibility": "list"},
++            {"slug": "gpt-c"},
++        ]
++    }
++    assert [m.id for m in model_list.parse_models(payload)] == ["gpt-a", "gpt-b", "gpt-c"]
++
++
++def test_list_models_asks_with_the_account_header_and_client_version() -> None:
++    backend = fake.FakeBackend(catalogue={"models": [{"slug": "gpt-x", "priority": 1}]})
++    token = fake.fake_jwt(account="acct-9")
++
++    async def go() -> list[str]:
++        async with backend.client() as client:
++            return [m.id for m in await model_list.list_models(_route(token), client=client)]
++
++    assert asyncio.run(go()) == ["gpt-x"]
++    sent = backend.requests[0]
++    assert sent.url.path == "/backend-api/codex/models"
++    assert sent.url.params["client_version"]
++    assert sent.headers["ChatGPT-Account-ID"] == "acct-9"
++
++
++def test_list_models_falls_back_to_the_documented_list() -> None:
++    for backend in (fake.FakeBackend(status=401), fake.FakeBackend(catalogue={"models": []})):
++
++        async def go(b: fake.FakeBackend = backend) -> list[str]:
++            async with b.client() as client:
++                return [m.id for m in await model_list.list_models(_route(), client=client)]
++
++        assert asyncio.run(go()) == list(PROFILE.default_models)
++
++
++# -- renewal ---------------------------------------------------------------------------------------
++
++
++class Stored:
++    def __init__(self, tmp_path: Path, *, expires: datetime | None = None) -> None:
++        self.home = tmp_path / "home"
++        self.home.mkdir(exist_ok=True)
++        self.secrets = MemorySecretStore()
++        self.entry = PoolEntry(id="c0de0002", label="s", auth_type="oauth", source="device_code")
++        self.tokens = TokenSet(
++            fake.fake_jwt(1), NOW, refresh_token=fake.fake_refresh(1), expires_at=expires
++        )
++        self.secrets.set(secret_name("openai-codex", self.entry.id), self.tokens.to_secret())
++        edit_pool(AuthStore(self.home), "openai-codex", lambda p, _d: p.add(self.entry))
++
++    def renew(self, server: fake.FakeSignIn, seen: str | None) -> TokenSet | None:
++        return renew.renew_stored(
++            home=self.home,
++            secrets=self.secrets,
++            provider="openai-codex",
++            entry_id=self.entry.id,
++            spec=REFRESH_SPEC,
++            clock=FakeClock(NOW),
++            seen_access=seen,
++            make_client=server.factory(),
++        )
++
++    def current(self) -> TokenSet:
++        stored = self.secrets.get(secret_name("openai-codex", self.entry.id))
++        assert stored is not None
++        return TokenSet.from_secret(stored)
++
++
++def test_renewal_stores_the_new_pair_and_the_row_expiry(tmp_path: Path) -> None:
++    held = Stored(tmp_path)
++    server = fake.FakeSignIn(token=[fake.tokens_answer(2, expires_in=900)])
++    fresh = held.renew(server, held.tokens.access_token)
++    assert fresh is not None and fresh.access_token == fake.fake_jwt(2)
++    assert held.current().refresh_token == fake.fake_refresh(2)
++    assert server.token_forms == [
++        {
++            "grant_type": "refresh_token",
++            "refresh_token": fake.fake_refresh(1),
++            "client_id": "client-under-test",
++        }
++    ]
++    pool, _ = load_pool(AuthStore(held.home), "openai-codex")
++    assert pool.entries[0].expires_at == (NOW + timedelta(seconds=900)).isoformat()
++    assert fake.fake_jwt(2) not in (held.home / "auth.json").read_text()
++
++
++def test_a_pair_renewed_elsewhere_is_adopted_without_a_request(tmp_path: Path) -> None:
++    held = Stored(tmp_path)
++    server = fake.FakeSignIn()
++    got = held.renew(server, seen=fake.fake_jwt(99))  # the caller held an older token
++    assert got is not None and got.access_token == held.tokens.access_token
++    assert server.requests == []
++
++
++def test_two_sessions_renewing_at_once_spend_the_refresh_token_once(tmp_path: Path) -> None:
++    held = Stored(tmp_path)
++    server = fake.FakeSignIn(token=[fake.tokens_answer(2)])
++    seen = held.tokens.access_token
++    results: list[TokenSet | None] = []
++    gate = threading.Barrier(2)
++
++    def worker() -> None:
++        gate.wait()
++        results.append(held.renew(server, seen))
++
++    threads = [threading.Thread(target=worker) for _ in range(2)]
++    for thread in threads:
++        thread.start()
++    for thread in threads:
++        thread.join(10)
++    assert len(server.token_forms) == 1
++    assert [r.access_token if r else None for r in results] == [fake.fake_jwt(2)] * 2
++
++
++@pytest.mark.parametrize(
++    "answer",
++    [
++        httpx.Response(400, json={"error": "invalid_grant"}),
++        httpx.Response(
++            400, json={"error": {"code": "refresh_token_reused", "message": "already used"}}
++        ),
++        httpx.Response(401, json={"error": {"message": "expired"}}),
++    ],
++)
++def test_a_dead_grant_asks_to_sign_in_again_and_keeps_nothing_new(
++    tmp_path: Path, answer: httpx.Response
++) -> None:
++    held = Stored(tmp_path)
++    with pytest.raises(ReloginRequired) as caught:
++        held.renew(fake.FakeSignIn(token=[answer]), held.tokens.access_token)
++    assert held.current() == held.tokens
++    assert fake.fake_refresh(1) not in str(caught.value)
++
++
++def test_a_throttled_renewal_is_not_a_dead_grant(tmp_path: Path) -> None:
++    held = Stored(tmp_path)
++    with pytest.raises(RefreshThrottled):
++        held.renew(fake.FakeSignIn(token=[httpx.Response(429, json={})]), None)
++
++
++def test_nothing_stored_means_nothing_to_renew(tmp_path: Path) -> None:
++    held = Stored(tmp_path)
++    held.secrets.delete(secret_name("openai-codex", held.entry.id))
++    assert held.renew(fake.FakeSignIn(), None) is None
++
++
++# -- renewal ahead of expiry in the pool ----------------------------------------------------------
++
++
++def _runtime(held: Stored, calls: list[str], clock: FakeClock) -> PoolRuntime:
++    async def refresher(provider: str, entry: PoolEntry, stored: str) -> str | None:
++        calls.append(entry.id)
++        return fake.fake_jwt(3)
++
++    return PoolRuntime(
++        PROFILE,
++        store=AuthStore(held.home),
++        secrets=held.secrets,
++        env={},
++        clock=clock,
++        refresher=refresher,
++    )
++
++
++def test_a_token_about_to_expire_is_renewed_before_the_request(tmp_path: Path) -> None:
++    held = Stored(tmp_path, expires=NOW + timedelta(seconds=60))
++    calls: list[str] = []
++    runtime = _runtime(held, calls, FakeClock(NOW))
++    lease = runtime.lease(_route(), "gpt-5.5")
++    assert lease is not None
++    renewed = asyncio.run(runtime.renewed_ahead(lease))
++    assert calls == [held.entry.id] and renewed.key.reveal() == fake.fake_jwt(3)
++
++
++def test_a_token_with_time_left_is_used_as_it_is(tmp_path: Path) -> None:
++    held = Stored(tmp_path, expires=NOW + timedelta(hours=1))
++    calls: list[str] = []
++    runtime = _runtime(held, calls, FakeClock(NOW))
++    lease = runtime.lease(_route(), "gpt-5.5")
++    assert lease is not None
++    assert asyncio.run(runtime.renewed_ahead(lease)) is lease and calls == []
++
++
++def test_the_call_loop_sends_the_renewed_token(tmp_path: Path) -> None:
++    held = Stored(tmp_path, expires=NOW - timedelta(seconds=1))
++    calls: list[str] = []
++    runtime = _runtime(held, calls, FakeClock(NOW))
++    sent: list[str] = []
++
++    async def run(route: RuntimeRoute, _adjust: Any) -> str:
++        assert route.api_key is not None
++        sent.append(route.api_key.reveal())
++        return "ok"
++
++    assert asyncio.run(runtime.call(_route(), run)) == "ok"
++    assert sent == [fake.fake_jwt(3)]
++
++
++def test_api_key_leases_are_never_touched(tmp_path: Path) -> None:
++    held = Stored(tmp_path)
++    runtime = _runtime(held, [], FakeClock(NOW))
++    lease = Lease("unknown", "x", Secret("k" * 20))
++    assert asyncio.run(runtime.renewed_ahead(lease)) is lease
++
++
++def test_signed_in_rows_show_in_the_store(tmp_path: Path) -> None:
++    held = Stored(tmp_path)
++    assert AuthStore(held.home).signed_in() == ["openai-codex"]
++
++    def drop(pool: Pool, _doc: dict[str, Any]) -> None:
++        pool.entries.clear()
++
++    edit_pool(AuthStore(held.home), "openai-codex", drop)
++    assert AuthStore(held.home).signed_in() == []
