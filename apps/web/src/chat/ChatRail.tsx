@@ -253,7 +253,7 @@ const capsLabel = "type-heading whitespace-nowrap text-[0.75rem] text-ink-soft u
 export function feedBadge(status: FeedStatus): { text: string; tone: BadgeTone } {
   switch (status.phase) {
     case "live":
-      return { text: "live", tone: "ok" };
+      return { text: "live", tone: "accent" };
     case "connecting":
       return { text: "connecting", tone: "warn" };
     case "retrying":
@@ -375,7 +375,7 @@ function SessionList({
                     className={cx(
                       "flex w-full flex-col gap-0.5 rounded-[4px] border-l-2 px-2 py-1.5 text-left",
                       here
-                        ? "border-ink bg-ink/10 text-ink"
+                        ? "border-accent bg-ink/10 text-ink"
                         : "border-transparent text-ink-muted hover:bg-hover hover:text-ink",
                     )}
                     onClick={() => onResume(session.id)}
@@ -523,7 +523,7 @@ function ReasoningPicker({
       <span className="relative inline-flex">
         <select
           id={id}
-          className="type-data h-7 appearance-none border border-line bg-transparent pr-7 pl-2 text-[0.75rem] text-ink outline-none focus:border-ink"
+          className="type-data h-7 appearance-none border border-line bg-transparent pr-7 pl-2 text-[0.75rem] text-ink outline-none focus:border-accent"
           value={chosen}
           onChange={(event) => {
             const value = event.target.value;

@@ -2,6 +2,7 @@
 // and toasts. Providers that need the browser (router, outer query cache) are set up in main.tsx
 // so tests can supply memory equivalents.
 
+import { BRAND_NAME } from "@indus/ui";
 import { Menu } from "lucide-react";
 import { type ComponentType, type ReactNode, Suspense, useEffect, useMemo, useState } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router";
@@ -87,7 +88,7 @@ function Shell({ chatHost, sidebarFooter }: Required<Pick<AppProps, "chatHost">>
       plugins.manifests.some((m) => m.tab.override === location.pathname));
   const pageSlot = SLOT_PAGES.find((page) => location.pathname === `/${page}`);
   const onChat = chatEnabled && current?.path === CHAT_PATH;
-  const title = current?.title ?? "Indus Agent";
+  const title = current?.title ?? BRAND_NAME;
 
   const toggleCollapsed = () => {
     setCollapsed((was) => {

@@ -23,9 +23,9 @@ export function Switch({
       onCheckedChange={onCheckedChange}
       disabled={disabled}
       aria-label={label}
-      className="relative h-[1.125rem] w-[2.125rem] shrink-0 cursor-pointer border border-line-strong bg-wash transition-colors data-[state=checked]:border-ink-soft data-[state=checked]:bg-ink-faint disabled:cursor-not-allowed disabled:opacity-50"
+      className="relative h-[1.125rem] w-[2.125rem] shrink-0 cursor-pointer border border-line-strong bg-wash transition-colors data-[state=checked]:border-accent/60 data-[state=checked]:bg-accent/40 disabled:cursor-not-allowed disabled:opacity-50"
     >
-      <RadixSwitch.Thumb className="block size-3 translate-x-[0.1875rem] bg-ink-soft transition-transform data-[state=checked]:translate-x-[1.0625rem] data-[state=checked]:bg-ink" />
+      <RadixSwitch.Thumb className="block size-3 translate-x-[0.1875rem] bg-ink-soft transition-transform data-[state=checked]:translate-x-[1.0625rem] data-[state=checked]:bg-accent" />
     </RadixSwitch.Root>
   );
 }

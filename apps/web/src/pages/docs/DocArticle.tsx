@@ -81,7 +81,8 @@ function Inlines({ runs, ctx }: { runs: readonly Inline[]; ctx: Context }) {
   );
 }
 
-const LINK = "text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink";
+const LINK =
+  "text-accent underline decoration-line-strong underline-offset-2 hover:decoration-accent";
 
 function DocLink({ run, ctx }: { run: Extract<Inline, { type: "link" }>; ctx: Context }) {
   const target = resolveLink(ctx.slug, run.href);

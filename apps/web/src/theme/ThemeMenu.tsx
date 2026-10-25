@@ -8,12 +8,19 @@ import { useDismiss } from "../ui/useDismiss.ts";
 import { PRESETS, type Preset } from "./presets.ts";
 import { useTheme } from "./ThemeProvider.tsx";
 
+/** Canvas, ink and a third chip: the accent when the preset names one, else an ink mix. */
 function Swatch({ preset }: { preset: Preset }) {
-  const mid = `color-mix(in srgb, ${preset.ink} 45%, ${preset.canvas})`;
+  const third = preset.accent ?? `color-mix(in srgb, ${preset.ink} 45%, ${preset.canvas})`;
   return (
     <span aria-hidden="true" className="flex h-3.5 shrink-0 border border-line-strong">
-      {[preset.canvas, preset.ink, mid].map((colour) => (
-        <span key={colour} className="w-2.5" style={{ background: colour }} />
+      {(
+        [
+          ["canvas", preset.canvas],
+          ["ink", preset.ink],
+          ["third", third],
+        ] as const
+      ).map(([part, colour]) => (
+        <span key={part} className="w-2.5" style={{ background: colour }} />
       ))}
     </span>
   );

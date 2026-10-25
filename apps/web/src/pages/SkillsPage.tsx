@@ -51,7 +51,7 @@ function PanelItem({
       onClick={onClick}
       className={cx(
         "type-label flex h-[1.6875rem] w-full items-center gap-2 px-2 text-left text-[0.6875rem] tracking-[0.08em] transition-colors",
-        active ? "bg-ink text-on-ink" : "text-ink-muted hover:bg-hover",
+        active ? "bg-accent text-on-accent" : "text-ink-muted hover:bg-hover",
       )}
     >
       <Icon className="size-3.5 shrink-0" />
@@ -211,14 +211,16 @@ export function SkillsPage() {
                       onClick={() => setCategory(category === label ? null : label)}
                       className={cx(
                         "flex h-[1.4375rem] w-full items-center justify-between gap-2 px-1.5 text-left font-mono text-[0.6875rem]",
-                        category === label ? "bg-ink text-on-ink" : "text-ink-muted hover:bg-hover",
+                        category === label
+                          ? "bg-accent text-on-accent"
+                          : "text-ink-muted hover:bg-hover",
                       )}
                     >
                       <span className="truncate">{label}</span>
                       <span
                         className={cx(
                           "tabular-nums",
-                          category === label ? "text-on-ink" : "text-ink-soft",
+                          category === label ? "text-on-accent" : "text-ink-soft",
                         )}
                       >
                         {count}

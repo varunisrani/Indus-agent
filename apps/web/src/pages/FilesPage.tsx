@@ -282,7 +282,7 @@ export function FilesPage() {
       <form className="flex flex-wrap items-center gap-2" onSubmit={go} noValidate>
         <input
           aria-label="Path"
-          className="type-data h-[2.125rem] min-w-0 flex-1 border border-line bg-canvas px-3 text-[0.875rem] text-ink outline-none focus:border-ink"
+          className="type-data h-[2.125rem] min-w-0 flex-1 border border-line bg-canvas px-3 text-[0.875rem] text-ink outline-none focus:border-accent"
           value={draft}
           onChange={(e) => setDraft(e.currentTarget.value)}
           spellCheck={false}

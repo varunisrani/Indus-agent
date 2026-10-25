@@ -1,8 +1,11 @@
-// Left navigation. Wide screens: an inline column (wordmark, icon + uppercase label per page,
+// Left navigation. Wide screens: an inline column (the brand lockup, icon + uppercase label per page,
 // footer with status, actions, theme and version) that collapses to an icon rail (remembered per
 // browser); Documentation is an ordinary in-app page (W52-docs-1); the rail shows a tooltip per icon instead of clipped labels. Below 1,024 px: a
-// slide-over drawer opened from the header's menu button.
+// slide-over drawer opened from the header's menu button. The head carries the brand (W63): the
+// mark in the preset's accent beside the two-line wordmark in ink, as on the dark lockup, under a
+// thin band of the brand gradient; the collapsed rail shows the mark alone.
 
+import { BRAND_GRADIENT, BRAND_NAME, BRAND_WORDMARK, MARK_PATH, MARK_VIEWBOX } from "@indus/ui";
 import {
   BookOpen,
   ChartColumn,
@@ -183,7 +186,10 @@ function NavItems({
                 {({ isActive }) => (
                   <>
                     {isActive ? (
-                      <span aria-hidden="true" className="absolute inset-y-0 left-0 w-px bg-ink" />
+                      <span
+                        aria-hidden="true"
+                        className="absolute inset-y-0 left-0 w-px bg-accent"
+                      />
                     ) : null}
                     <span
                       aria-hidden="true"
@@ -202,10 +208,31 @@ function NavItems({
   );
 }
 
-function Wordmark() {
+/** The brand mark, filled with the preset's accent. */
+export function BrandMark({ className }: { className?: string }) {
   return (
-    <span className="type-wordmark text-ink select-none">
-      <span className="block">Indus</span> <span className="block">Agent</span>
+    <svg
+      aria-hidden="true"
+      viewBox={MARK_VIEWBOX}
+      className={cx("shrink-0 fill-accent", className)}
+      data-testid="brand-mark"
+    >
+      <path d={MARK_PATH} />
+    </svg>
+  );
+}
+
+/** The brand gradient turned on its side, for the thin band along the top of the head. */
+const BAND = BRAND_GRADIENT.replace("180deg", "90deg");
+
+function Lockup() {
+  const [first, second] = BRAND_WORDMARK;
+  return (
+    <span className="flex items-center gap-2.5 select-none" title={BRAND_NAME}>
+      <BrandMark className="size-7" />
+      <span className="type-wordmark text-ink" data-testid="wordmark">
+        <span className="block">{first}</span> <span className="block">{second}</span>
+      </span>
     </span>
   );
 }
@@ -220,22 +247,35 @@ export function Sidebar(props: SidebarProps) {
     <nav aria-label="Dashboard" className="flex h-full min-h-0 flex-col">
       <div
         className={cx(
-          "flex h-[3.25rem] shrink-0 items-center border-b border-line",
+          "relative flex h-[3.25rem] shrink-0 items-center border-b border-line",
           compact ? "justify-center" : "justify-between pr-4 pl-4",
         )}
       >
-        {compact ? null : <Wordmark />}
+        <span
+          aria-hidden="true"
+          data-testid="brand-band"
+          className="pointer-events-none absolute inset-x-0 top-0 h-[3px]"
+          style={{ backgroundImage: BAND }}
+        />
+        {compact ? null : <Lockup />}
         {wide ? (
           <button
             type="button"
-            className="inline-flex size-7 items-center justify-center text-ink-muted hover:text-ink"
+            className="group inline-flex size-7 items-center justify-center text-ink-muted hover:text-ink"
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
             aria-expanded={!collapsed}
             title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
             onClick={onToggleCollapsed}
           >
             {collapsed ? (
-              <PanelLeftOpen aria-hidden="true" className="size-4" />
+              <>
+                {/* The rail shows the mark; hovering or focusing it reveals the expand icon. */}
+                <BrandMark className="size-6 group-hover:hidden group-focus-visible:hidden" />
+                <PanelLeftOpen
+                  aria-hidden="true"
+                  className="hidden size-4 group-hover:block group-focus-visible:block"
+                />
+              </>
             ) : (
               <PanelLeftClose aria-hidden="true" className="size-4" />
             )}

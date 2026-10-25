@@ -11,6 +11,8 @@
     "vite.config.ts",
     "vitest.config.ts",
     "vite.chunks.ts",
+    "vite.brand.ts",
+    "vite.brand.test.ts",
     "vite.dev-bootstrap.ts",
     "vite.dev-bootstrap.test.ts"
   ]

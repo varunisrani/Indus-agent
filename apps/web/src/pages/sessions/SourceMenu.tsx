@@ -81,7 +81,7 @@ export function SourceMenu({
                       type="checkbox"
                       checked={picked.includes(source)}
                       onChange={() => toggle(source)}
-                      className="size-3.5 shrink-0 cursor-pointer appearance-none rounded-[2px] border border-line-strong checked:border-ink checked:bg-ink"
+                      className="size-3.5 shrink-0 cursor-pointer appearance-none rounded-[2px] border border-line-strong checked:border-accent checked:bg-accent"
                     />
                     <SourceIcon source={source} className="size-3.5 shrink-0" />
                     <span className="min-w-0 flex-1 truncate">{sourceLabel(source)}</span>

@@ -76,7 +76,7 @@ function GetKey({ url }: { url: string }) {
       href={url}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex items-center gap-1 text-[0.75rem] text-ink underline-offset-2 hover:underline"
+      className="inline-flex items-center gap-1 text-[0.75rem] text-accent underline-offset-2 hover:underline"
     >
       Get a key
       <ExternalLink aria-hidden="true" className="size-3" />

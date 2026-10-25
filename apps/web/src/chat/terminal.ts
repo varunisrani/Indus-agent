@@ -94,7 +94,8 @@ export function terminalColours(): Record<string, string> {
   return {
     background: cssVar("--indus-terminal-bg", dark ? "#000000" : "#f5f8fc"),
     foreground: cssVar("--indus-terminal-fg", dark ? "#f0e6d2" : "#170d02"),
-    cursor: cssVar("--indus-color-accent", dark ? "#8ab4f8" : "#2557c7"),
+    // A preset with its own accent (the Indus ones) sets the cursor in it (W63).
+    cursor: cssVar("--indus-brand-accent", dark ? "#8ab4f8" : "#2557c7"),
     selectionBackground: cssVar("--indus-color-selection", dark ? "#33415c" : "#cdd9f2"),
     black: map.black,
     red: map.red,

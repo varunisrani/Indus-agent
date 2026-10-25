@@ -115,7 +115,7 @@ function Pill({
       onClick={onClick}
       className={cx(
         "h-[26px] rounded-full px-3 text-[0.8125rem] whitespace-nowrap transition-colors disabled:cursor-not-allowed disabled:opacity-50",
-        state === "current" && "bg-ink text-on-ink",
+        state === "current" && "bg-accent text-on-accent",
         state === "visited" && "bg-selected text-ink hover:bg-hover",
         state === "future" && "text-ink-faint hover:text-ink-muted",
       )}
@@ -260,7 +260,7 @@ export function ProfileBuilderPage() {
         <div className="flex gap-2">
           <Link
             to={{ pathname: "/profiles", search: scope.search }}
-            className="type-button inline-flex h-[1.875rem] items-center border border-ink bg-ink px-3 text-on-ink hover:opacity-90"
+            className="type-button inline-flex h-[1.875rem] items-center border border-accent bg-accent px-3 text-on-accent hover:opacity-90"
           >
             Back to profiles
           </Link>
@@ -789,7 +789,7 @@ export function ProfileBuilderPage() {
             type="button"
             onClick={() => void create()}
             disabled={creating || nameProblem !== null}
-            className={cx(navClass, "bg-ink text-on-ink hover:opacity-90")}
+            className={cx(navClass, "bg-accent text-on-accent hover:opacity-90")}
           >
             {creating ? "Creating…" : "Create profile"}
           </button>
@@ -798,7 +798,7 @@ export function ProfileBuilderPage() {
             type="button"
             onClick={() => go(1)}
             disabled={blocked}
-            className={cx(navClass, "bg-ink text-on-ink hover:opacity-90")}
+            className={cx(navClass, "bg-accent text-on-accent hover:opacity-90")}
           >
             Next
           </button>

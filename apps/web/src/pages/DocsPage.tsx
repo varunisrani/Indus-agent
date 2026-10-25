@@ -120,7 +120,7 @@ export function DocsPage() {
                   No guide is called “{slug}”.{" "}
                   <button
                     type="button"
-                    className="text-ink underline underline-offset-2"
+                    className="text-accent underline underline-offset-2"
                     onClick={() => open({ slug: HOME_SLUG, anchor: "" })}
                   >
                     Go to the docs home

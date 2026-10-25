@@ -2,6 +2,7 @@
 // git pinned to a full 40-character commit (checked here before any request is sent), a catalogue
 // section (no backend yet) and the installed plugins with enable/disable.
 
+import { BRAND_NAME } from "@indus/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LoaderCircle, RefreshCw } from "lucide-react";
 import { type FormEvent, type ReactNode, useId, useState } from "react";
@@ -128,8 +129,8 @@ function RuntimeProviders() {
           </Select>
           <p className="m-0 text-[0.75rem] text-ink-muted">
             {chosen
-              ? `Indus Agent stores memories through the ${chosen} provider.`
-              : `Indus Agent uses its built-in memory files${
+              ? `${BRAND_NAME} stores memories through the ${chosen} provider.`
+              : `${BRAND_NAME} uses its built-in memory files${
                   memory.data ? ` (${Object.keys(memory.data.builtin_files).join(", ")})` : ""
                 }.`}
           </p>

@@ -3,6 +3,7 @@
 // visible. The version sits in the sidebar's bottom row (`VersionLine`). Collapsed, the block is a
 // single coloured dot whose tooltip carries the same facts.
 
+import { BRAND_NAME } from "@indus/ui";
 import type { StatusResponse } from "../lib/restTypes.ts";
 import { cx } from "../ui/cx.ts";
 import { useShellStatus } from "./shellStatus.ts";
@@ -94,7 +95,7 @@ export function StatusStrip({ compact = false }: { compact?: boolean }) {
   return <StatusStripView status={status.data} failed={status.isError} compact={compact} />;
 }
 
-/** "v0.1.0 · Indus Agent" in the sidebar's last row. */
+/** "v0.1.0 · Indus AGI Agent" in the sidebar's last row. */
 export function VersionLine() {
   const status = useShellStatus();
   return (
@@ -103,7 +104,7 @@ export function VersionLine() {
       className="m-0 flex items-center justify-between gap-2 px-5 text-[0.75rem] tracking-[0.08em] text-ink-soft"
     >
       <span>{status.data ? `v${status.data.version}` : "v…"}</span>
-      <span className="text-ink-muted">Indus Agent</span>
+      <span className="text-ink-muted">{BRAND_NAME}</span>
     </p>
   );
 }

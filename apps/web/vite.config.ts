@@ -1,5 +1,6 @@
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
+import { brandFavicon } from "./vite.brand.ts";
 import { CHUNK_LIMIT_KB, chunkBudget, chunkFor } from "./vite.chunks.ts";
 import { apiProxy, backendUrl, devBootstrap } from "./vite.dev-bootstrap.ts";
 
@@ -11,7 +12,7 @@ import { apiProxy, backendUrl, devBootstrap } from "./vite.dev-bootstrap.ts";
 const BACKEND = backendUrl();
 
 export default defineConfig({
-  plugins: [tailwindcss(), devBootstrap({ backend: BACKEND }), chunkBudget()],
+  plugins: [tailwindcss(), devBootstrap({ backend: BACKEND }), chunkBudget(), brandFavicon()],
   server: {
     host: "127.0.0.1",
     port: 5173,

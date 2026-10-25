@@ -232,7 +232,7 @@ export function SessionRow({
             onSelect(event.currentTarget.checked, event.shiftKey);
           }}
           onChange={() => {}}
-          className="mt-0.5 size-4 shrink-0 cursor-pointer appearance-none rounded-[2px] border border-line-strong bg-transparent checked:border-ink checked:bg-ink"
+          className="mt-0.5 size-4 shrink-0 cursor-pointer appearance-none rounded-[2px] border border-line-strong bg-transparent checked:border-accent checked:bg-accent"
         />
         <SourceIcon source={session.source} className="mt-0.5 size-4 shrink-0" />
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">

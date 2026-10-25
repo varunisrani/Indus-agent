@@ -56,7 +56,7 @@ export function TokenAnalyticsOff() {
         The token and cost figures here are counted locally from session records, so they are an
         estimate rather than a bill. They stay hidden unless you ask for them: set{" "}
         <code className="type-data text-ink">dashboard.show_token_analytics</code> to true on the{" "}
-        <Link to="/config" className="text-ink underline">
+        <Link to="/config" className="text-accent underline">
           Config
         </Link>{" "}
         page.

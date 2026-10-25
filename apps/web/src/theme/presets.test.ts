@@ -1,7 +1,17 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { BRAND_COLORS } from "@indus/ui";
 import { describe, expect, it } from "vitest";
-import { DARK_DEFAULT, initialPreset, LIGHT_DEFAULT, PRESETS, presetCss } from "./presets.ts";
+import {
+  accentOf,
+  DARK_DEFAULT,
+  initialPreset,
+  LIGHT_DEFAULT,
+  onAccentOf,
+  PRESETS,
+  presetById,
+  presetCss,
+} from "./presets.ts";
 
 describe("theme presets", () => {
   it("keeps a stored preset", () => {
@@ -31,6 +41,50 @@ describe("theme presets", () => {
       expect(css).toContain(`:root[data-preset="${p.id}"]`);
       expect(css).toContain(`--indus-canvas: ${p.canvas};`);
     }
+  });
+
+  it("starts on the Indus presets (W63)", () => {
+    expect(DARK_DEFAULT).toBe("indus-ember");
+    expect(LIGHT_DEFAULT).toBe("indus-daylight");
+    const ember = presetById("indus-ember");
+    expect(ember).toMatchObject({
+      scheme: "indus-dark",
+      canvas: BRAND_COLORS.black,
+      accent: BRAND_COLORS.ember,
+      onAccent: BRAND_COLORS.black,
+      rootPx: 16,
+    });
+    expect(presetById("indus-ember-large")).toMatchObject({
+      ...{ canvas: ember?.canvas, ink: ember?.ink, accent: ember?.accent },
+      rootPx: 18,
+    });
+    expect(presetById("indus-daylight")).toMatchObject({
+      scheme: "indus-light",
+      ink: BRAND_COLORS.black,
+      onAccent: BRAND_COLORS.white,
+    });
+  });
+
+  it("gives every preset an accent pair, the ink and canvas when it names none", () => {
+    const css = presetCss();
+    for (const p of PRESETS) {
+      const rule = css.split("\n").find((line) => line.includes(`"${p.id}"`)) ?? "";
+      expect(rule).toContain(`--indus-accent: ${accentOf(p)};`);
+      expect(rule).toContain(`--indus-on-accent: ${onAccentOf(p)};`);
+      if (p.accent) {
+        expect(rule).toContain(`--indus-brand-accent: ${p.accent};`);
+      } else {
+        // The presets from before the rebrand paint exactly as they did.
+        expect(accentOf(p)).toBe(p.ink);
+        expect(onAccentOf(p)).toBe(p.canvas);
+        expect(rule).not.toContain("--indus-brand-accent");
+      }
+    }
+  });
+
+  it("keeps the earlier presets selectable", () => {
+    for (const id of ["deep-teal", "deep-teal-large", "clear-blue", "graphite", "sandstone"])
+      expect(initialPreset(id, true).id).toBe(id);
   });
 });
 
@@ -75,6 +129,8 @@ function inkShare(name: string): number {
 }
 
 const AA_TEXT = 4.5;
+/** Non-text contrast for controls, focus indicators and graphics (WCAG 1.4.11). */
+const AA_UI = 3;
 /** Body text: the ink and its muted and soft mixes. */
 const TEXT_TOKENS = {
   ink: 1,
@@ -110,10 +166,15 @@ function shortfalls(preset: (typeof PRESETS)[number]): string[] {
 }
 
 describe("preset contrast", () => {
-  it("offers eight presets, four light and four dark", () => {
-    expect(PRESETS).toHaveLength(8);
-    expect(PRESETS.filter((p) => p.scheme === "indus-light")).toHaveLength(4);
-    expect(PRESETS.filter((p) => p.scheme === "indus-dark")).toHaveLength(4);
+  it("offers eleven presets: the three Indus ones and the eight before them", () => {
+    expect(PRESETS).toHaveLength(11);
+    expect(PRESETS.filter((p) => p.scheme === "indus-light")).toHaveLength(5);
+    expect(PRESETS.filter((p) => p.scheme === "indus-dark")).toHaveLength(6);
+    expect(PRESETS.filter((p) => p.accent).map((p) => p.id)).toEqual([
+      "indus-ember",
+      "indus-ember-large",
+      "indus-daylight",
+    ]);
   });
 
   it("measures black on white as 21:1 and equal colours as 1:1", () => {
@@ -140,5 +201,40 @@ describe("preset contrast", () => {
   it("filled controls (canvas text on ink) clear AA in every preset", () => {
     for (const preset of PRESETS)
       expect(contrast(hexRgb(preset.canvas), hexRgb(preset.ink))).toBeGreaterThanOrEqual(AA_TEXT);
+  });
+
+  // The accent (W63) paints marks, rules, focus rings and picked controls (WCAG 1.4.11: 3:1
+  // against what sits next to it) and is also link and badge text (1.4.3: 4.5:1 on the page).
+  it.each(PRESETS.map((p) => [p.id, p] as const))(
+    "%s: the accent clears 3:1 as UI on every ground and AA as text on the canvas",
+    (_id, preset) => {
+      const ink = hexRgb(preset.ink);
+      const canvas = hexRgb(preset.canvas);
+      const accent = hexRgb(accentOf(preset));
+      for (const share of [...Object.values(GROUNDS), ...Object.values(ROW_GROUNDS)])
+        expect(contrast(accent, mix(ink, canvas, share))).toBeGreaterThanOrEqual(AA_UI);
+      expect(contrast(accent, canvas)).toBeGreaterThanOrEqual(AA_TEXT);
+    },
+  );
+
+  it.each(PRESETS.map((p) => [p.id, p] as const))(
+    "%s: text on the accent (filled buttons, picked tabs) clears AA",
+    (_id, preset) => {
+      expect(contrast(hexRgb(onAccentOf(preset)), hexRgb(accentOf(preset)))).toBeGreaterThanOrEqual(
+        AA_TEXT,
+      );
+    },
+  );
+
+  it("measures the Indus presets' accents (W63)", () => {
+    const ember = presetById("indus-ember");
+    const daylight = presetById("indus-daylight");
+    if (!ember || !daylight) throw new Error("no Indus presets");
+    // White on the mark's ember falls short of AA, which is why the lockup black sits on it.
+    expect(contrast(hexRgb(BRAND_COLORS.white), hexRgb(BRAND_COLORS.ember))).toBeLessThan(AA_TEXT);
+    expect(contrast(hexRgb(accentOf(ember)), hexRgb(ember.canvas))).toBeCloseTo(5.19, 1);
+    expect(contrast(hexRgb(onAccentOf(ember)), hexRgb(accentOf(ember)))).toBeCloseTo(5.19, 1);
+    expect(contrast(hexRgb(accentOf(daylight)), hexRgb(daylight.canvas))).toBeCloseTo(5.17, 1);
+    expect(contrast(hexRgb(onAccentOf(daylight)), hexRgb(accentOf(daylight)))).toBeCloseTo(5.57, 1);
   });
 });

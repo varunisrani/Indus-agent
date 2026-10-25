@@ -3,13 +3,26 @@
 // in index.css, so a preset only has to name its pair (plus its light/dark side, which the chat
 // terminal and the status colours follow).
 //
-// Eight presets, four on each side (W56-G2-1). The four added in wave 56 are our own pairs, chosen
+// A preset may add a third colour, its accent (W63, the Indus AGI rebrand): the brand moments (the
+// logo mark, filled buttons, the active nav marker, focus rings, links, picked tabs and toggles,
+// the chart's input series) paint in it, with `onAccent` for text set on it. Body text stays ink.
+// Without an accent those moments keep using the ink (and the canvas on it), so the presets from
+// before the rebrand look exactly as they did.
+//
+// Eight presets, four on each side, before the rebrand (W56-G2-1). The four added in wave 56 are our own pairs, chosen
 // so ink and the muted and soft ink mixes all clear WCAG AA (4.5:1) on the canvas and the raised
 // surface; presets.test.ts measures every preset against the mixes in index.css.
+//
+// The three Indus presets (W63) come first and are the defaults: the dark lockup's black with the
+// mark's ember, the same with larger type, and a light paper one with a deeper ember that keeps
+// AA as text on it. The brand's colours come from @indus/ui.
 
-import type { ThemeName } from "@indus/ui";
+import { BRAND_COLORS, type ThemeName } from "@indus/ui";
 
 export type PresetId =
+  | "indus-ember"
+  | "indus-ember-large"
+  | "indus-daylight"
   | "deep-teal"
   | "deep-teal-large"
   | "clear-blue"
@@ -27,11 +40,55 @@ export interface Preset {
   scheme: ThemeName;
   canvas: string;
   ink: string;
+  /** Brand colour for marks, filled controls, focus and links; the ink when absent. */
+  accent?: string;
+  /** Text and icons on the accent; the canvas when absent. */
+  onAccent?: string;
   /** Root font size in px; the large preset scales every rem-based size up. */
   rootPx: number;
 }
 
+/** Warm white ink for the dark Indus presets (17.6:1 on the lockup black). */
+const EMBER_INK = "#f5f1eb";
+/** Warm paper canvas and deeper ember for the light Indus preset (ember text on it: 5.17:1). */
+const DAYLIGHT_CANVAS = "#faf6ef";
+const DAYLIGHT_ACCENT = "#c23300";
+
 export const PRESETS: readonly Preset[] = [
+  {
+    id: "indus-ember",
+    label: "Indus Ember",
+    description: "The Indus AGI lockup: ember on black with warm white ink",
+    scheme: "indus-dark",
+    canvas: BRAND_COLORS.black,
+    ink: EMBER_INK,
+    accent: BRAND_COLORS.ember,
+    // White on ember is only 3.8:1; the lockup black on it is 5.2:1.
+    onAccent: BRAND_COLORS.black,
+    rootPx: 16,
+  },
+  {
+    id: "indus-ember-large",
+    label: "Indus Ember Large",
+    description: "The same lockup colours with bigger type and more room",
+    scheme: "indus-dark",
+    canvas: BRAND_COLORS.black,
+    ink: EMBER_INK,
+    accent: BRAND_COLORS.ember,
+    onAccent: BRAND_COLORS.black,
+    rootPx: 18,
+  },
+  {
+    id: "indus-daylight",
+    label: "Indus Daylight",
+    description: "Light mode: black ink and deep ember on warm paper",
+    scheme: "indus-light",
+    canvas: DAYLIGHT_CANVAS,
+    ink: BRAND_COLORS.black,
+    accent: DAYLIGHT_ACCENT,
+    onAccent: BRAND_COLORS.white,
+    rootPx: 16,
+  },
   {
     id: "deep-teal",
     label: "Deep Teal",
@@ -106,8 +163,8 @@ export const PRESETS: readonly Preset[] = [
   },
 ];
 
-export const DARK_DEFAULT: PresetId = "deep-teal";
-export const LIGHT_DEFAULT: PresetId = "clear-blue";
+export const DARK_DEFAULT: PresetId = "indus-ember";
+export const LIGHT_DEFAULT: PresetId = "indus-daylight";
 
 export function presetById(id: string | null | undefined): Preset | undefined {
   return PRESETS.find((preset) => preset.id === id);
@@ -123,12 +180,27 @@ export function initialPreset(stored: string | null, prefersDark: boolean): Pres
   return presetById(prefersDark ? DARK_DEFAULT : LIGHT_DEFAULT) as Preset;
 }
 
-/** One rule per preset, keyed on `data-preset`, setting the pair the derived tokens mix from. */
+/** The accent a preset paints its brand moments in (its ink when it names none). */
+export function accentOf(preset: Preset): string {
+  return preset.accent ?? preset.ink;
+}
+
+/** The colour of text set on the accent (the canvas when the preset names none). */
+export function onAccentOf(preset: Preset): string {
+  return preset.onAccent ?? preset.canvas;
+}
+
+/**
+ * One rule per preset, keyed on `data-preset`, setting the pair the derived tokens mix from and
+ * the accent pair. A preset that names its own accent also sets `--indus-brand-accent`, which the
+ * few places that kept a fixed colour before the accent existed (the light chart series, the chat
+ * cursor) switch to.
+ */
 export function presetCss(presets: readonly Preset[] = PRESETS): string {
   return presets
-    .map(
-      (p) =>
-        `:root[data-preset="${p.id}"] { --indus-canvas: ${p.canvas}; --indus-ink: ${p.ink}; font-size: ${p.rootPx}px; color-scheme: ${p.scheme === "indus-dark" ? "dark" : "light"}; }`,
-    )
+    .map((p) => {
+      const brand = p.accent ? ` --indus-brand-accent: ${p.accent};` : "";
+      return `:root[data-preset="${p.id}"] { --indus-canvas: ${p.canvas}; --indus-ink: ${p.ink}; --indus-accent: ${accentOf(p)}; --indus-on-accent: ${onAccentOf(p)};${brand} font-size: ${p.rootPx}px; color-scheme: ${p.scheme === "indus-dark" ? "dark" : "light"}; }`;
+    })
     .join("\n");
 }

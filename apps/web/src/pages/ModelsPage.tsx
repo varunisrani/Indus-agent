@@ -209,7 +209,7 @@ export function DeviceLogin({
                 href={grant.verification_url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 self-start break-all text-[0.8125rem] text-ink underline"
+                className="inline-flex items-center gap-1 self-start break-all text-[0.8125rem] text-accent underline"
               >
                 <ExternalLink aria-hidden="true" className="size-3.5 shrink-0" />
                 {grant.verification_url}
@@ -661,7 +661,7 @@ function UsageFigures({ days }: { days: Period }) {
               Token and cost figures are hidden. Turn on{" "}
               <code className="type-data text-[0.75rem]">dashboard.show_token_analytics</code> on
               the{" "}
-              <Link to="/config" className="underline">
+              <Link to="/config" className="text-accent underline">
                 Config
               </Link>{" "}
               page to show them.
@@ -687,7 +687,7 @@ function ModelUsageCard({
   return (
     <li
       data-testid={`model-usage-${row.model}`}
-      className={cx("flex flex-col border border-line", main && "ring-1 ring-ink/40")}
+      className={cx("flex flex-col border border-line", main && "ring-1 ring-accent/40")}
     >
       <div className="flex items-start gap-3 px-4 pt-4 pb-3">
         <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -696,7 +696,7 @@ function ModelUsageCard({
             {row.model}
           </h3>
           {main ? (
-            <span className="inline-flex shrink-0 items-center gap-1 bg-ink/15 px-1.5 py-0.5 font-mono text-[0.6875rem] text-ink">
+            <span className="inline-flex shrink-0 items-center gap-1 bg-accent/15 px-1.5 py-0.5 font-mono text-[0.6875rem] text-ink">
               <Star aria-hidden="true" className="size-2.5" />
               main
             </span>
@@ -773,7 +773,7 @@ function ProviderCard({
   return (
     <li
       data-testid={`provider-${provider.name}`}
-      className={cx("flex flex-col border border-line", main && "ring-1 ring-ink/40")}
+      className={cx("flex flex-col border border-line", main && "ring-1 ring-accent/40")}
     >
       <div className="flex items-start gap-3 border-b border-line px-4 pt-4 pb-3">
         <div className="min-w-0 flex-1">
@@ -782,7 +782,7 @@ function ProviderCard({
               {provider.label}
             </h3>
             {main ? (
-              <span className="inline-flex shrink-0 items-center gap-1 bg-ink/15 px-1.5 py-0.5 font-mono text-[0.6875rem] text-ink">
+              <span className="inline-flex shrink-0 items-center gap-1 bg-accent/15 px-1.5 py-0.5 font-mono text-[0.6875rem] text-ink">
                 <Star aria-hidden="true" className="size-2.5" />
                 main
               </span>

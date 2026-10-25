@@ -1,6 +1,7 @@
 // System page: Host (machine numbers, our version and the update check in the card's footer) and
 // the Daemon row (state on the left, START / RESTART / STOP on the right).
 
+import { BRAND_NAME, BRAND_SHORT } from "@indus/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Cpu,
@@ -44,7 +45,7 @@ function hostTiles(stats: HostStats | undefined, info: UpdateInfo | undefined): 
   if (info) {
     const badge = updateBadge(info);
     tiles.push({
-      label: "Indus",
+      label: BRAND_SHORT,
       value: (
         <span className="flex items-center gap-2">
           v{info.current_version}
@@ -151,7 +152,7 @@ export function HostSection() {
       </Card>
       <ConfirmDialog
         open={asking}
-        title="Update Indus Agent?"
+        title={`Update ${BRAND_NAME}?`}
         description="This pulls the new commits into the git checkout (fast-forward only). Restart the dashboard and the daemon afterwards to run the new version."
         confirmLabel="Update"
         onConfirm={() => {

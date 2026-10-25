@@ -79,7 +79,7 @@ function HeaderSearch({ value, onChange }: { value: string; onChange: (next: str
         placeholder="Search..."
         value={value}
         onChange={(e) => onChange(e.currentTarget.value)}
-        className="type-data h-[30px] w-full border border-line bg-transparent pr-8 pl-8 text-[0.75rem] text-ink outline-none placeholder:text-ink-faint focus:border-ink [&::-webkit-search-cancel-button]:hidden"
+        className="type-data h-[30px] w-full border border-line bg-transparent pr-8 pl-8 text-[0.75rem] text-ink outline-none placeholder:text-ink-faint focus:border-accent [&::-webkit-search-cancel-button]:hidden"
       />
       {value ? (
         <button

@@ -1,3 +1,4 @@
+import { BRAND_NAME } from "@indus/ui";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockApi, type MockApi } from "../testing/mockApi.ts";
@@ -39,7 +40,7 @@ describe("status strip", () => {
     );
     expect(strip().getByTestId("status-sessions").textContent).toBe("Active sessions: 2");
     expect(strip().getByTestId("status-platforms").textContent).toBe("Channels: 2/3 connected");
-    expect(screen.getByTestId("sidebar-version").textContent).toBe("v0.1.0Indus Agent");
+    expect(screen.getByTestId("sidebar-version").textContent).toBe(`v0.1.0${BRAND_NAME}`);
   });
 
   it("refreshes every 5 s", async () => {

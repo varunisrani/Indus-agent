@@ -3,12 +3,17 @@
 /* Dashboard tokens (W51-a). A preset (src/theme/presets.ts) sets two colours on <html>:
    --indus-canvas (the page) and --indus-ink (text, rules, filled controls). Everything below is
    mixed from that pair, so a new preset needs nothing else. The full list, with the utility each
-   token becomes, is in docs/notes/ui-parity/web-foundation.md. */
+   token becomes, is in docs/notes/ui-parity/web-foundation.md.
+   Since the rebrand (W63) a preset also sets --indus-accent (the brand moments: mark, filled
+   controls, focus, links, picked tabs) and --indus-on-accent (text on it); a preset without its
+   own accent sets them to its ink and canvas. */
 
 :root {
-  /* Fallback pair before the provider runs (Deep Teal). */
-  --indus-canvas: #041c1c;
-  --indus-ink: #ffe6cb;
+  /* Fallback colours before the provider runs (Indus Ember). */
+  --indus-canvas: #0a0a0a;
+  --indus-ink: #f5f1eb;
+  --indus-accent: #f24001;
+  --indus-on-accent: #0a0a0a;
 
   --indus-mix-surface: color-mix(in srgb, var(--indus-ink) 4%, var(--indus-canvas));
   --indus-mix-wash: color-mix(in srgb, var(--indus-ink) 6%, var(--indus-canvas));
@@ -24,7 +29,7 @@
   --indus-status-warning: #ffbd38;
   --indus-status-danger: #fb2c36;
   --indus-status-info: #60a5fa;
-  --indus-series-input: var(--indus-ink);
+  --indus-series-input: var(--indus-accent);
   --indus-series-output: #34d399;
   /* Dialog scrim: a neutral grey veil in both themes, never a tint of the canvas (W54-W1-4). */
   --indus-overlay: rgb(0 0 0 / 0.6);
@@ -39,7 +44,8 @@
   --indus-status-warning: #ffbd38;
   --indus-status-danger: #e11d2a;
   --indus-status-info: #0053fd;
-  --indus-series-input: #001934;
+  /* Navy on the presets from before the rebrand; a preset with its own accent uses it. */
+  --indus-series-input: var(--indus-brand-accent, #001934);
   --indus-series-output: var(--indus-ink);
   --indus-terminal-bg: #f5f8fc;
   --indus-terminal-fg: #170d02;
@@ -59,6 +65,9 @@
   --color-ink-soft: var(--indus-mix-ink-soft);
   --color-ink-faint: var(--indus-mix-ink-faint);
   --color-on-ink: var(--indus-canvas);
+  /* Brand accent (W63): marks, filled controls, focus, links, picked tabs and toggles. */
+  --color-accent: var(--indus-accent);
+  --color-on-accent: var(--indus-on-accent);
   /* Rules */
   --color-line: var(--indus-mix-line);
   --color-line-strong: var(--indus-mix-line-strong);
@@ -81,12 +90,11 @@
   --color-raised: var(--indus-canvas);
   --color-fg: var(--indus-ink);
   --color-muted: var(--indus-mix-ink-soft);
-  --color-accent: var(--indus-ink);
-  --color-accent-fg: var(--indus-canvas);
+  --color-accent-fg: var(--indus-on-accent);
   --color-ok: var(--indus-status-success);
   --color-warn: var(--indus-status-warning);
   --color-code: var(--indus-mix-wash);
-  --color-focus: var(--indus-ink);
+  --color-focus: var(--indus-accent);
 
   /* Type stacks */
   --font-sans:
@@ -229,7 +237,7 @@ samp {
    frame, such as the sessions search box) wins over it (W54-W1-5). */
 @layer base {
   :focus-visible {
-    outline: 1px solid var(--indus-ink);
+    outline: 1px solid var(--indus-accent);
     outline-offset: 2px;
   }
 }

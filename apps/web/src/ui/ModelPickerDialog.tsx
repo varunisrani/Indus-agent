@@ -333,7 +333,7 @@ export function ModelPickerDialog({
                 <input
                   aria-label="Model id"
                   placeholder="model id"
-                  className="type-data h-7 min-w-0 flex-1 border border-line bg-transparent px-2 text-[0.75rem] text-ink outline-none placeholder:text-ink-faint focus:border-ink"
+                  className="type-data h-7 min-w-0 flex-1 border border-line bg-transparent px-2 text-[0.75rem] text-ink outline-none placeholder:text-ink-faint focus:border-accent"
                   value={typed}
                   onChange={(event) => {
                     setTyped(event.currentTarget.value);

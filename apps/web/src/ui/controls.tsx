@@ -1,4 +1,5 @@
-// Shared dashboard controls (W51-a). Square corners, one ink colour, the type roles from index.css.
+// Shared dashboard controls (W51-a). Square corners, one ink colour, the type roles from index.css;
+// filled and picked states use the preset's accent (W63), which is the ink unless the preset names one.
 // docs/notes/ui-parity/web-foundation.md lists every component with its props and when to use it.
 
 import { AlertCircle, ChevronDown, Inbox, LoaderCircle, RefreshCw, RotateCcw } from "lucide-react";
@@ -19,7 +20,7 @@ type Size = "sm" | "md" | "lg";
 
 const toneClass: Record<Tone, string> = {
   default: "border-ink text-ink bg-transparent hover:bg-hover",
-  primary: "border-ink bg-ink text-on-ink hover:opacity-90",
+  primary: "border-accent bg-accent text-on-accent hover:opacity-90",
   danger: "border-danger bg-danger text-white hover:opacity-90",
   ghost: "border-transparent text-ink bg-transparent hover:bg-hover",
   /** Outlined in red: a destructive action that still asks first (Keys "Clear"); W52-d. */
@@ -110,7 +111,7 @@ const badgeClass: Record<BadgeTone, string> = {
   ok: "border-success/50 bg-success-wash text-success",
   warn: "border-warning/50 bg-warning-wash text-warning",
   danger: "border-danger/50 bg-danger-wash text-danger",
-  accent: "border-ink text-ink",
+  accent: "border-accent text-accent",
 };
 
 /** Small condensed tag: a source, a state, a count. */
@@ -218,7 +219,7 @@ export function Segmented<T extends string | number>({
             className={cx(
               "type-serif h-[1.875rem] px-3 text-[0.75rem] tracking-[0.08em] transition-colors",
               i > 0 && "border-l border-line",
-              option.value === value ? "bg-ink text-on-ink" : "text-ink-muted hover:bg-hover",
+              option.value === value ? "bg-accent text-on-accent" : "text-ink-muted hover:bg-hover",
             )}
           >
             {option.label}
@@ -253,7 +254,7 @@ export function Tabs<T extends string>({
           className={cx(
             "type-serif h-[1.875rem] px-3 text-[0.75rem] tracking-[0.08em] transition-colors",
             i > 0 && "border-l border-line",
-            tab.value === value ? "bg-ink text-on-ink" : "text-ink-muted hover:bg-hover",
+            tab.value === value ? "bg-accent text-on-accent" : "text-ink-muted hover:bg-hover",
           )}
         >
           {tab.label}
@@ -289,7 +290,7 @@ export function Field({
 
 /** Class for a text input, select or textarea when a page builds its own element. */
 export const inputClass =
-  "min-h-8 border border-line bg-transparent px-3 py-1 type-data text-ink placeholder:text-ink-faint outline-none transition-colors focus:border-ink disabled:opacity-50";
+  "min-h-8 border border-line bg-transparent px-3 py-1 type-data text-ink placeholder:text-ink-faint outline-none transition-colors focus:border-accent disabled:opacity-50";
 
 export function Input({ className = "", ...rest }: InputHTMLAttributes<HTMLInputElement>) {
   return <input className={cx(inputClass, className)} {...rest} />;
@@ -355,7 +356,7 @@ export function Checkbox({
     <input
       type="checkbox"
       className={cx(
-        "size-3.5 shrink-0 cursor-pointer appearance-none border border-line-strong bg-transparent checked:border-ink checked:bg-ink",
+        "size-3.5 shrink-0 cursor-pointer appearance-none border border-line-strong bg-transparent checked:border-accent checked:bg-accent",
         className,
       )}
       {...rest}
@@ -720,9 +721,11 @@ export function PeriodButtons<T extends number | string>({
           aria-pressed={option.value === value}
           onClick={() => onChange(option.value)}
           className={cx(
-            "type-button h-7 min-w-[2.375rem] border border-ink px-2.5 text-[0.6875rem] transition-colors",
+            "type-button h-7 min-w-[2.375rem] border px-2.5 text-[0.6875rem] transition-colors",
             upper && "uppercase",
-            option.value === value ? "bg-ink text-on-ink" : "text-ink hover:bg-hover",
+            option.value === value
+              ? "border-accent bg-accent text-on-accent"
+              : "border-ink text-ink hover:bg-hover",
           )}
         >
           {option.label}

@@ -288,8 +288,7 @@ export function ChatHost({ active, deps = {} }: ChatHostFullProps) {
   const stored = useQuery({
     queryKey: ["chat", "session-title", liveId, feed.lastAnswer],
     queryFn: () => api.sessions.one(liveId ?? ""),
-    enabled:
-      active && !!liveId && !feed.live?.title && (!!feed.lastAnswer || liveId === resumeId),
+    enabled: active && !!liveId && !feed.live?.title && (!!feed.lastAnswer || liveId === resumeId),
     retry: false,
     staleTime: 30_000,
   });
