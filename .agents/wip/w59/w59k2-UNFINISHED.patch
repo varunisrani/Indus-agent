@@ -1,0 +1,1107 @@
+diff --git a/apps/tui/e2e/demo2.e2e.test.ts b/apps/tui/e2e/demo2.e2e.test.ts
+index d7fe6a1..15fe59a 100644
+--- a/apps/tui/e2e/demo2.e2e.test.ts
++++ b/apps/tui/e2e/demo2.e2e.test.ts
+@@ -90,17 +90,43 @@ function userRows(home: Home, sessionId: string, text: string): number {
+     .length;
+ }
+ 
++/**
++ * The banner box's tool names (from the "Tools (N)" heading's column down to the first blank
++ * cell there) become one fixed token: the list grows whenever a tool is added.
++ */
++function maskToolNames(lines: string[]): string[] {
++  let column = -1;
++  return lines.map((line) => {
++    const heading = line.indexOf("Tools (");
++    if (heading >= 0) {
++      column = heading;
++      return line;
++    }
++    if (column < 0) return line;
++    const end = line.lastIndexOf("│");
++    const cell = line.slice(column, end > column ? end : undefined);
++    if (cell.trim() === "") {
++      column = -1;
++      return line;
++    }
++    return `${line.slice(0, column)}<tool names>${end > column ? ` ${line.slice(end)}` : ""}`;
++  });
++}
++
+ /** The screen with what differs between machines and runs replaced by fixed tokens. */
+ function masked(tui: Tui, home: Home): string {
+-  const text = tui
+-    .lines()
++  const text = maskToolNames(tui.lines())
+     .map((line) =>
+       line
+         .replaceAll(home.work, "<work>")
+         .replace(new RegExp(SESSION_ID.source, "g"), "<session>")
+         .replace(/\b\d+(?:\.\d+)?s\b/g, "<t>")
+         .replace(/tools(\s+)\d+ available/, "tools$1<n> available")
+-        .replace(/─{2,}/g, "──"),
++        .replace(/(Tools|Skills) \(\d+\)/g, "$1 (<n>)")
++        .replace(/\d+ tools? · (?:\d+ skills? · )?/, "<n> tools · <skills> · ")
++        .replace(/ +│$/, " │")
++        .replace(/─{2,}/g, "──")
++        .trimEnd(),
+     )
+     .join("\n");
+   return `${text.replace(/\n+$/, "")}\n`;
+diff --git a/apps/tui/e2e/goldens/demo2-120x40.txt b/apps/tui/e2e/goldens/demo2-120x40.txt
+index bc076db..448fb54 100644
+--- a/apps/tui/e2e/goldens/demo2-120x40.txt
++++ b/apps/tui/e2e/goldens/demo2-120x40.txt
+@@ -1,11 +1,19 @@
+-╷ ┌╮╷ ┌─╮ ╷ ╷ ╭─╴
+-│ │││ │ │ │ │ ╰─╮  indus agent
+-╵ ╵╰┘ └─╯ ╰─╯ ╶─╯
+-
+-model    fake-model · custom
+-folder   <work>
+-tools    <n> available
+-session  <session>
++═╦═ ╦╗  ╦ ╦══╗  ╦   ╦ ╔═══╗   ╔═══╗ ╔═══╗ ╔════ ╦╗  ╦ ══╦══
++ ║  ║╚╗ ║ ║  ╚╗ ║   ║ ║       ║   ║ ║     ║     ║╚╗ ║   ║
++ ║  ║ ╚╗║ ║   ║ ║   ║ ╚═══╗   ╠═══╣ ║ ══╗ ╠═══  ║ ╚╗║   ║
++ ║  ║  ╚╣ ║  ╔╝ ║   ║     ║   ║   ║ ║   ║ ║     ║  ╚╣   ║
++═╩═ ╩   ╩ ╩══╝  ╚═══╝ ╚═══╝   ╩   ╩ ╚═══╝ ╚════ ╩   ╩   ╩
++
++╭──╮
++│ model    fake-model · custom                       Tools (<n>) │
++│ folder   <work>             <tool names> │
++│ session  <session>                    <tool names> │
++│                                                    <tool names> │
++│                                                    <tool names> │
++│ │
++│                                                    Skills (<n>) │
++│                                                    <n> tools · <skills> · /help for commands │
++╰──╯
+ 
+ › make a counter script and run it
+ 
+@@ -28,13 +36,5 @@ session  <session>
+ 
+ 
+ 
+-
+-
+-
+-
+-
+-
+-
+-
+ ─ ready │ fake-model │ 290/256k 0% │ ▱▱▱▱▱▱▱▱▱▱ │ cache 0% ── <work>
+ › Ask anything · / for commands · Ctrl+X sessions · Ctrl+O model
+diff --git a/apps/tui/e2e/goldens/demo2-80x40.txt b/apps/tui/e2e/goldens/demo2-80x40.txt
+index f8f644a..b3955ca 100644
+--- a/apps/tui/e2e/goldens/demo2-80x40.txt
++++ b/apps/tui/e2e/goldens/demo2-80x40.txt
+@@ -1,11 +1,22 @@
+-╷ ┌╮╷ ┌─╮ ╷ ╷ ╭─╴
+-│ │││ │ │ │ │ ╰─╮  indus agent
+-╵ ╵╰┘ └─╯ ╰─╯ ╶─╯
+-
+-model    fake-model · custom
+-folder   <work>
+-tools    <n> available
+-session  <session>
++═╦═ ╦╗  ╦ ╦══╗  ╦   ╦ ╔═══╗   ╔═══╗ ╔═══╗ ╔════ ╦╗  ╦ ══╦══
++ ║  ║╚╗ ║ ║  ╚╗ ║   ║ ║       ║   ║ ║     ║     ║╚╗ ║   ║
++ ║  ║ ╚╗║ ║   ║ ║   ║ ╚═══╗   ╠═══╣ ║ ══╗ ╠═══  ║ ╚╗║   ║
++ ║  ║  ╚╣ ║  ╔╝ ║   ║     ║   ║   ║ ║   ║ ║     ║  ╚╣   ║
++═╩═ ╩   ╩ ╩══╝  ╚═══╝ ╚═══╝   ╩   ╩ ╚═══╝ ╚════ ╩   ╩   ╩
++
++╭──╮
++│ model    fake-model · custom │
++│ folder   <work> │
++│ session  <session> │
++│ │
++│ Tools (<n>) │
++│ <tool names> │
++│ <tool names> │
++│ <tool names> │
++│ │
++│ Skills (<n>) │
++│ <n> tools · <skills> · /help for commands │
++╰──╯
+ 
+ › make a counter script and run it
+ 
+@@ -25,16 +36,5 @@ session  <session>
+ 
+ 
+ 
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+ ─ ready │ fake-model │ 290/256k 0% │ ▱▱▱▱▱▱▱▱▱▱ ── <work>
+ › Ask anything · / for commands · Ctrl+X sessions · Ctrl+O model
+diff --git a/apps/tui/src/app/App.tsx b/apps/tui/src/app/App.tsx
+index 54a2804..331a983 100644
+--- a/apps/tui/src/app/App.tsx
++++ b/apps/tui/src/app/App.tsx
+@@ -94,6 +94,7 @@ export function App({ runtime, hyperlinks = false, size }: AppProps): ReactNode
+   const { columns, rows } = useTerminalSize(size);
+   const messages = useTranscript((s) => s.messages);
+   const info = useUi((s) => s.info);
++  const skillCount = useUi((s) => s.skillCount);
+   const sid = useUi((s) => s.sid);
+   const card = useOverlay((s) => s.card);
+   const queued = useQueueItems(runtime.queue);
+@@ -102,10 +103,11 @@ export function App({ runtime, hyperlinks = false, size }: AppProps): ReactNode
+   const list = useMemo(() => {
+     const out = messages.map(toItem);
+     if (info !== null) {
+-      out.unshift({ id: `banner:${sid ?? ""}`, role: "banner", text: "", info });
++      const facts = skillCount === null ? info : { ...info, skills: skillCount };
++      out.unshift({ id: `banner:${sid ?? ""}`, role: "banner", text: "", info: facts });
+     }
+     return out;
+-  }, [messages, info, sid]);
++  }, [messages, info, skillCount, sid]);
+ 
+   const promptHeight = cardHeight(card, rows);
+   useKeyRouter({
+diff --git a/apps/tui/src/app/appRuntime.test.ts b/apps/tui/src/app/appRuntime.test.ts
+index 8a5707f..bc35c92 100644
+--- a/apps/tui/src/app/appRuntime.test.ts
++++ b/apps/tui/src/app/appRuntime.test.ts
+@@ -262,3 +262,28 @@ describe("wiring", () => {
+     expect(keys).toContain("mtime");
+   });
+ });
++
++describe("banner skill count", () => {
++  it("counts the catalogue's skill entries once it loads", async () => {
++    const entry = (name: string, kind: string) => ({
++      name,
++      description: name,
++      category: kind === "skill" ? "custom" : "session",
++      kind,
++      runs: "server",
++    });
++    const r = use(
++      runtimeRig({
++        handlers: {
++          "commands.catalog": () => ({
++            commands: [entry("new", "builtin"), entry("deploy", "skill"), entry("review", "skill")],
++          }),
++        },
++      }),
++    );
++    expect(uiStore.getState().skillCount).toBeNull();
++    await r.ready();
++    await settle();
++    expect(uiStore.getState().skillCount).toBe(2);
++  });
++});
+diff --git a/apps/tui/src/app/appRuntime.ts b/apps/tui/src/app/appRuntime.ts
+index f8b8520..b1e4176 100644
+--- a/apps/tui/src/app/appRuntime.ts
++++ b/apps/tui/src/app/appRuntime.ts
+@@ -352,6 +352,12 @@ export class AppRuntime {
+         sid === null ? {} : { session_id: sid },
+       )) as CommandsCatalogResult | null;
+       this.catalog = result?.commands ?? null;
++      uiStore.getState().patch({
++        skillCount:
++          this.catalog === null
++            ? null
++            : this.catalog.filter((entry) => entry.kind === "skill").length,
++      });
+     } catch {
+       // slash dispatch falls back to the bridge for unknown names
+     }
+diff --git a/apps/tui/src/components/MessageRow.tsx b/apps/tui/src/components/MessageRow.tsx
+index eade3c8..0b382e9 100644
+--- a/apps/tui/src/components/MessageRow.tsx
++++ b/apps/tui/src/components/MessageRow.tsx
+@@ -20,6 +20,7 @@ import {
+ import { colour, type ToneName } from "../render/tones.ts";
+ import type { Theme } from "../theme/theme.ts";
+ import { useTheme } from "../theme/theme.ts";
++import { bannerLines } from "./banner.ts";
+ import type { ResolvedSections } from "./details.ts";
+ import { layoutToolTrail, type TrailRow } from "./ToolTrail.tsx";
+ 
+@@ -119,51 +120,6 @@ function diffLines(text: string, width: number, theme: Theme): StyledLine[] {
+     });
+ }
+ 
+-// "INDUS" in three rows of box-drawing strokes.
+-const LETTERS = [
+-  ["╷", "│", "╵"],
+-  ["┌╮╷", "│││", "╵╰┘"],
+-  ["┌─╮", "│ │", "└─╯"],
+-  ["╷ ╷", "│ │", "╰─╯"],
+-  ["╭─╴", "╰─╮", "╶─╯"],
+-];
+-const WORDMARK = [0, 1, 2].map((row) => LETTERS.map((letter) => letter[row]).join(" "));
+-
+-function bannerLines(item: TranscriptItem, width: number, ctx: RowContext): StyledLine[] {
+-  const { theme } = ctx;
+-  const out: StyledLine[] = [];
+-  if (width >= 32) {
+-    for (const row of WORDMARK) out.push([{ ...colour(theme, "accent"), text: row }]);
+-    out[1]?.push({ ...colour(theme, "text"), bold: true, text: "  indus agent" });
+-  } else {
+-    out.push([{ ...colour(theme, "accent"), bold: true, text: "indus agent" }]);
+-  }
+-  const info = item.info ?? {};
+-  const facts: [string, string][] = [];
+-  const model = typeof info.model === "string" ? info.model : "";
+-  const provider = typeof info.provider === "string" ? info.provider : "";
+-  if (model) facts.push(["model", provider ? `${model} · ${provider}` : model]);
+-  if (typeof info.cwd === "string" && info.cwd) facts.push(["folder", info.cwd]);
+-  if (Array.isArray(info.tools)) facts.push(["tools", `${info.tools.length} available`]);
+-  if (typeof info.title === "string" && info.title) facts.push(["title", info.title]);
+-  if (ctx.sid) facts.push(["session", ctx.sid]);
+-  if (facts.length > 0) out.push([]);
+-  for (const [label, value] of facts) {
+-    out.push(
+-      ...wrapSpans([{ ...colour(theme, "text"), text: value }], width, {
+-        first: [{ ...colour(theme, "muted"), text: label.padEnd(9, " ") }],
+-        rest: [{ text: " ".repeat(9) }],
+-        mode: "char",
+-      }),
+-    );
+-  }
+-  if (item.text.trim()) {
+-    out.push([]);
+-    out.push(...wrapSpans([{ ...colour(theme, "muted"), dim: true, text: item.text }], width));
+-  }
+-  return out.map((line) => truncateLine(line, width));
+-}
+-
+ function textBody(
+   text: string,
+   width: number,
+@@ -179,7 +135,7 @@ export function layoutMessage(item: TranscriptItem, width: number, ctx: RowConte
+   const { theme } = ctx;
+   const cols = Math.max(GUTTER + 1, Math.floor(width));
+   const body = cols - GUTTER;
+-  if (item.role === "banner") return bannerLines(item, cols, ctx);
++  if (item.role === "banner") return bannerLines(item.info, item.text, cols, theme, ctx.sid);
+ 
+   const out: StyledLine[] = [];
+   if (item.role === "user" && ctx.turnRule) out.push([{ ...colour(theme, "border"), text: "───" }]);
+diff --git a/apps/tui/src/components/Transcript.test.tsx b/apps/tui/src/components/Transcript.test.tsx
+index b2e75ee..d4382c0 100644
+--- a/apps/tui/src/components/Transcript.test.tsx
++++ b/apps/tui/src/components/Transcript.test.tsx
+@@ -100,10 +100,14 @@ describe("virtual transcript", () => {
+       info: { model: "m-large", provider: "acme", cwd: "/work", tools: ["a", "b"] },
+     };
+     const out = draw([banner, ...many(2)], 80, 30).join("\n");
+-    expect(out).toContain("indus agent");
++    expect(out).toContain("═╦═ ╦╗  ╦");
+     expect(out).toContain("m-large · acme");
+-    expect(out).toContain("2 available");
++    expect(out).toContain("Tools (2)");
++    expect(out).toContain("a, b");
+     expect(out).toContain("s-123");
++    const narrow = draw([banner, ...many(2)], 40, 30).join("\n");
++    expect(narrow).toContain("indus agent");
++    expect(narrow).toContain("2 available");
+     uiStore.getState().patch({ sid: null });
+   });
+ 
+diff --git a/apps/tui/src/components/banner.test.ts b/apps/tui/src/components/banner.test.ts
+new file mode 100644
+index 0000000..b944471
+--- /dev/null
++++ b/apps/tui/src/components/banner.test.ts
+@@ -0,0 +1,151 @@
++import { describe, expect, it } from "vitest";
++import { cellWidth, lineText } from "../render/styled.tsx";
++import { testTheme } from "../render/testTheme.ts";
++import {
++  BIG_ART_COLS,
++  BIG_ART_WIDTH,
++  BOX_COLS,
++  bannerFacts,
++  bannerLines,
++  bigWord,
++  SMALL_ART_COLS,
++  TWO_COLUMN_COLS,
++  toolNameLines,
++} from "./banner.ts";
++
++const theme = testTheme({ accent: "cyan" });
++
++const TOOLS = [
++  "clarify",
++  "delegate_task",
++  "execute_code",
++  "memory",
++  "patch",
++  "read_file",
++  "search_files",
++  "skill_view",
++  "skills_list",
++  "terminal",
++  "todo",
++  "web_extract",
++  "web_search",
++  "write_file",
++  "vision_analyze",
++  "session_search",
++];
++
++const INFO = {
++  model: "m-large",
++  provider: "acme",
++  cwd: "/work/project",
++  tools: TOOLS,
++  skills: 7,
++};
++
++function draw(width: number, info: Record<string, unknown> = INFO, sid = "s-123"): string[] {
++  return bannerLines(info, "", width, theme, sid).map(lineText);
++}
++
++describe("banner art", () => {
++  it("spells INDUS and AGENT in five even rows of our own letters", () => {
++    for (const word of ["indus", "agent"]) {
++      const rows = bigWord(word);
++      expect(rows).toHaveLength(5);
++      expect(new Set(rows.map((row) => cellWidth(row))).size).toBe(1);
++    }
++    expect(BIG_ART_WIDTH).toBeLessThanOrEqual(BIG_ART_COLS);
++  });
++
++  it("draws the big banner when it fits, the small wordmark below that, then plain text", () => {
++    const wide = draw(120);
++    expect(cellWidth(wide[0] ?? "")).toBe(BIG_ART_WIDTH);
++    expect(wide.slice(0, 5).every((row) => cellWidth(row) <= BIG_ART_WIDTH)).toBe(true);
++    expect(wide[0]).toContain("═╦═");
++    const mid = draw(BIG_ART_COLS - 1);
++    expect(mid[1]).toContain("indus agent");
++    expect(mid[0]).toContain("╷ ┌╮╷");
++    const narrow = draw(SMALL_ART_COLS - 1);
++    expect(narrow[0]).toBe("indus agent");
++  });
++
++  it("never draws a line wider than the terminal", () => {
++    for (const width of [20, 31, 32, 43, 44, 59, 60, 80, 89, 90, 100, 120, 200]) {
++      for (const line of draw(width)) expect(cellWidth(line)).toBeLessThanOrEqual(width);
++    }
++  });
++});
++
++describe("session box", () => {
++  it("puts the facts beside the tools and skills summary on a wide terminal", () => {
++    const out = draw(TWO_COLUMN_COLS + 10).join("\n");
++    expect(out).toMatch(/╭─+╮/);
++    expect(out).toMatch(/╰─+╯/);
++    const modelRow = draw(TWO_COLUMN_COLS + 10).find((line) => line.includes("m-large · acme"));
++    expect(modelRow).toContain(`Tools (${TOOLS.length})`);
++    expect(out).toContain("Skills (7)");
++    expect(out).toContain(`${TOOLS.length} tools · 7 skills · /help for commands`);
++    expect(out).toContain("s-123");
++    expect(out).toContain("/work/project");
++  });
++
++  it("stacks the facts over the summary inside the box below the two-column width", () => {
++    const lines = draw(80);
++    const model = lines.findIndex((line) => line.includes("m-large · acme"));
++    const tools = lines.findIndex((line) => line.includes(`Tools (${TOOLS.length})`));
++    expect(model).toBeGreaterThan(0);
++    expect(tools).toBeGreaterThan(model);
++    expect(lines.every((line) => !line.startsWith("│") || cellWidth(line) === 80)).toBe(true);
++  });
++
++  it("falls back to the plain fact list below the box width", () => {
++    const out = draw(BOX_COLS - 1).join("\n");
++    expect(out).not.toMatch(/╭─+╮/);
++    expect(out).toContain(`tools    ${TOOLS.length} available`);
++    expect(out).toContain("session  s-123");
++  });
++
++  it("leaves the skills out until the catalogue has loaded", () => {
++    const out = draw(100, { ...INFO, skills: undefined }).join("\n");
++    expect(out).not.toContain("Skills");
++    expect(out).toContain(`${TOOLS.length} tools · /help for commands`);
++  });
++
++  it("says when the session offers no tools", () => {
++    const out = draw(100, { model: "m", provider: "p", tools: [] }).join("\n");
++    expect(out).toContain("Tools (0)");
++    expect(out).toContain("none offered to this session");
++  });
++});
++
++describe("bannerFacts", () => {
++  it("reads only well-formed fields", () => {
++    expect(bannerFacts({ model: 3, tools: ["a", 2, ""], skills: -1 })).toEqual({
++      model: "",
++      provider: "",
++      cwd: "",
++      title: "",
++      tools: ["a"],
++      skills: null,
++    });
++    expect(bannerFacts(null).tools).toEqual([]);
++  });
++});
++
++describe("toolNameLines", () => {
++  it("keeps every name when they fit", () => {
++    expect(toolNameLines(["a", "b", "c"], 40, 3)).toEqual(["a, b, c"]);
++  });
++
++  it("wraps at commas and counts what it leaves out", () => {
++    const lines = toolNameLines(TOOLS, 30, 2);
++    expect(lines).toHaveLength(2);
++    for (const line of lines) expect(line.length).toBeLessThanOrEqual(30);
++    const shown = lines
++      .join(" ")
++      .split(/,\s*/)
++      .filter((name) => TOOLS.includes(name.trim()));
++    const more = /… and (\d+) more$/.exec(lines[1] ?? "");
++    expect(more).not.toBeNull();
++    expect(shown.length + Number(more?.[1])).toBe(TOOLS.length);
++  });
++});
+diff --git a/apps/tui/src/components/banner.ts b/apps/tui/src/components/banner.ts
+new file mode 100644
+index 0000000..194bbd0
+--- /dev/null
++++ b/apps/tui/src/components/banner.ts
+@@ -0,0 +1,274 @@
++/**
++ * The transcript's first row: the INDUS AGENT banner and the session box.
++ *
++ * Width tiers, widest first:
++ * - `BIG_ART_COLS` and up: "INDUS AGENT" in five rows of double-line strokes;
++ * - `SMALL_ART_COLS` and up: the three-row "INDUS" wordmark with the name beside it;
++ * - narrower: the name as plain text.
++ *
++ * Under the art, from `BOX_COLS` up, a rounded box holds the session facts (model, folder,
++ * session, title) and a summary of what the agent can use: the tool names `session.info` sends
++ * (a few lines, then "… and N more"), the count of skills the command catalogue offers (once it
++ * has loaded) and a pointer to `/help`. From `TWO_COLUMN_COLS` up the facts and the summary sit
++ * side by side. Below `BOX_COLS` the facts are a plain label/value list.
++ */
++import { padLine, type StyledLine, truncateLine, wrapSpans } from "../render/styled.tsx";
++import { colour } from "../render/tones.ts";
++import type { Theme } from "../theme/theme.ts";
++
++export const BIG_ART_COLS = 60;
++export const SMALL_ART_COLS = 32;
++export const BOX_COLS = 44;
++export const TWO_COLUMN_COLS = 90;
++/** Tool-name lines in the box before "… and N more". */
++export const TOOL_LINES_WIDE = 4;
++export const TOOL_LINES_NARROW = 3;
++
++// Five-row letters of our own, drawn with double-line box strokes. Every row of a letter has
++// the same width.
++const BIG_LETTERS: Record<string, readonly string[]> = {
++  I: ["═╦═", " ║ ", " ║ ", " ║ ", "═╩═"],
++  N: ["╦╗  ╦", "║╚╗ ║", "║ ╚╗║", "║  ╚╣", "╩   ╩"],
++  D: ["╦══╗ ", "║  ╚╗", "║   ║", "║  ╔╝", "╩══╝ "],
++  U: ["╦   ╦", "║   ║", "║   ║", "║   ║", "╚═══╝"],
++  S: ["╔═══╗", "║    ", "╚═══╗", "    ║", "╚═══╝"],
++  A: ["╔═══╗", "║   ║", "╠═══╣", "║   ║", "╩   ╩"],
++  G: ["╔═══╗", "║    ", "║ ══╗", "║   ║", "╚═══╝"],
++  E: ["╔════", "║    ", "╠═══ ", "║    ", "╚════"],
++  T: ["══╦══", "  ║  ", "  ║  ", "  ║  ", "  ╩  "],
++};
++
++/** One word in the big letters: five rows, letters one cell apart. */
++export function bigWord(word: string): string[] {
++  return [0, 1, 2, 3, 4].map((row) =>
++    [...word.toUpperCase()].map((ch) => BIG_LETTERS[ch]?.[row] ?? "").join(" "),
++  );
++}
++
++const BIG_FIRST = bigWord("indus");
++const BIG_SECOND = bigWord("agent");
++const BIG_GAP = "   ";
++/** Cells the one-line big banner needs. */
++export const BIG_ART_WIDTH =
++  (BIG_FIRST[0]?.length ?? 0) + BIG_GAP.length + (BIG_SECOND[0]?.length ?? 0);
++
++// "INDUS" in three rows of light box strokes (the narrow wordmark).
++const SMALL_LETTERS = [
++  ["╷", "│", "╵"],
++  ["┌╮╷", "│││", "╵╰┘"],
++  ["┌─╮", "│ │", "└─╯"],
++  ["╷ ╷", "│ │", "╰─╯"],
++  ["╭─╴", "╰─╮", "╶─╯"],
++];
++const WORDMARK = [0, 1, 2].map((row) => SMALL_LETTERS.map((letter) => letter[row]).join(" "));
++
++/** What the banner shows, read from the `session.info` payload (plus the catalogue's skills). */
++export interface BannerFacts {
++  model: string;
++  provider: string;
++  cwd: string;
++  title: string;
++  tools: string[];
++  /** Skills the command catalogue offers; null until it has loaded. */
++  skills: number | null;
++}
++
++export function bannerFacts(
++  info: Readonly<Record<string, unknown>> | null | undefined,
++): BannerFacts {
++  const source = info ?? {};
++  const text = (key: string): string => {
++    const value = source[key];
++    return typeof value === "string" ? value : "";
++  };
++  const tools = Array.isArray(source.tools)
++    ? source.tools.filter((name): name is string => typeof name === "string" && name !== "")
++    : [];
++  const skills = source.skills;
++  return {
++    model: text("model"),
++    provider: text("provider"),
++    cwd: text("cwd"),
++    title: text("title"),
++    tools,
++    skills: typeof skills === "number" && Number.isFinite(skills) && skills >= 0 ? skills : null,
++  };
++}
++
++function artLines(width: number, theme: Theme): StyledLine[] {
++  if (width >= BIG_ART_COLS && width >= BIG_ART_WIDTH) {
++    return BIG_FIRST.map((first, row) => [
++      { ...colour(theme, "accent"), bold: true, text: first },
++      { text: BIG_GAP },
++      { ...colour(theme, "text"), text: (BIG_SECOND[row] ?? "").trimEnd() },
++    ]);
++  }
++  if (width >= SMALL_ART_COLS) {
++    const out: StyledLine[] = WORDMARK.map((row) => [{ ...colour(theme, "accent"), text: row }]);
++    out[1]?.push({ ...colour(theme, "text"), bold: true, text: "  indus agent" });
++    return out;
++  }
++  return [[{ ...colour(theme, "accent"), bold: true, text: "indus agent" }]];
++}
++
++function factRows(facts: BannerFacts, sid: string | null | undefined): [string, string][] {
++  const rows: [string, string][] = [];
++  if (facts.model) {
++    rows.push(["model", facts.provider ? `${facts.model} · ${facts.provider}` : facts.model]);
++  }
++  if (facts.cwd) rows.push(["folder", facts.cwd]);
++  if (facts.title) rows.push(["title", facts.title]);
++  if (sid) rows.push(["session", sid]);
++  return rows;
++}
++
++const LABEL_COLS = 9;
++
++function factLines(rows: [string, string][], width: number, theme: Theme): StyledLine[] {
++  return rows.flatMap(([label, value]) =>
++    wrapSpans([{ ...colour(theme, "text"), text: value }], width, {
++      first: [{ ...colour(theme, "muted"), text: label.padEnd(LABEL_COLS, " ") }],
++      rest: [{ text: " ".repeat(LABEL_COLS) }],
++      mode: "char",
++    }),
++  );
++}
++
++/**
++ * The tool names as comma-separated lines of at most `width` cells, cut to `maxLines`; when
++ * names are left out the last line ends with "… and N more" (N counts every name not shown).
++ */
++export function toolNameLines(names: readonly string[], width: number, maxLines: number): string[] {
++  const room = Math.max(1, width);
++  const lines: string[] = [];
++  let current: string[] = [];
++  let shown = 0;
++  for (const name of names) {
++    const next = [...current, name].join(", ");
++    if (current.length > 0 && next.length + 1 > room) {
++      if (lines.length + 1 >= maxLines) break;
++      lines.push(`${current.join(", ")},`);
++      current = [name];
++    } else {
++      current.push(name);
++    }
++    shown += 1;
++  }
++  let left = names.length - shown;
++  if (left > 0) {
++    const tail = (): string => `… and ${left} more`;
++    while (current.length > 0 && [...current, tail()].join(", ").length > room) {
++      current.pop();
++      left += 1;
++    }
++    current.push(tail());
++  }
++  if (current.length > 0 && lines.length < maxLines) lines.push(current.join(", "));
++  return lines;
++}
++
++function summaryLine(facts: BannerFacts): string {
++  const parts = [`${facts.tools.length} ${facts.tools.length === 1 ? "tool" : "tools"}`];
++  if (facts.skills !== null)
++    parts.push(`${facts.skills} ${facts.skills === 1 ? "skill" : "skills"}`);
++  parts.push("/help for commands");
++  return parts.join(" · ");
++}
++
++function capsLines(
++  facts: BannerFacts,
++  width: number,
++  maxLines: number,
++  theme: Theme,
++): StyledLine[] {
++  const out: StyledLine[] = [];
++  out.push([
++    { ...colour(theme, "accent"), bold: true, text: "Tools" },
++    { ...colour(theme, "muted"), text: ` (${facts.tools.length})` },
++  ]);
++  if (facts.tools.length === 0) {
++    out.push([{ ...colour(theme, "muted"), text: "none offered to this session" }]);
++  } else {
++    for (const line of toolNameLines(facts.tools, width, maxLines)) {
++      out.push([{ ...colour(theme, "text"), text: line }]);
++    }
++  }
++  if (facts.skills !== null) {
++    out.push([]);
++    out.push([
++      { ...colour(theme, "accent"), bold: true, text: "Skills" },
++      { ...colour(theme, "muted"), text: ` (${facts.skills})` },
++    ]);
++  }
++  out.push(...wrapSpans([{ ...colour(theme, "muted"), text: summaryLine(facts) }], width));
++  return out.map((line) => truncateLine(line, width));
++}
++
++function boxed(body: StyledLine[], width: number, theme: Theme): StyledLine[] {
++  const inner = width - 4;
++  const edge = colour(theme, "border");
++  const out: StyledLine[] = [[{ ...edge, text: `╭${"─".repeat(width - 2)}╮` }]];
++  for (const line of body) {
++    out.push([
++      { ...edge, text: "│ " },
++      ...padLine(truncateLine(line, inner), inner),
++      { ...edge, text: " │" },
++    ]);
++  }
++  out.push([{ ...edge, text: `╰${"─".repeat(width - 2)}╯` }]);
++  return out;
++}
++
++function sideBySide(
++  left: StyledLine[],
++  right: StyledLine[],
++  leftWidth: number,
++  gap: number,
++): StyledLine[] {
++  const rows = Math.max(left.length, right.length);
++  const out: StyledLine[] = [];
++  for (let i = 0; i < rows; i += 1) {
++    const l = padLine(left[i] ?? [], leftWidth);
++    out.push([...l, { text: " ".repeat(gap) }, ...(right[i] ?? [])]);
++  }
++  return out;
++}
++
++/** The banner row's lines at `width` cells (no gutter). */
++export function bannerLines(
++  info: Readonly<Record<string, unknown>> | null | undefined,
++  note: string,
++  width: number,
++  theme: Theme,
++  sid: string | null | undefined,
++): StyledLine[] {
++  const facts = bannerFacts(info);
++  const rows = factRows(facts, sid);
++  const out: StyledLine[] = artLines(width, theme);
++  out.push([]);
++  if (width >= TWO_COLUMN_COLS) {
++    const inner = width - 4;
++    const leftWidth = Math.min(48, Math.floor(inner * 0.45));
++    const gap = 3;
++    const left = factLines(rows, leftWidth, theme);
++    const right = capsLines(facts, inner - leftWidth - gap, TOOL_LINES_WIDE, theme);
++    out.push(...boxed(sideBySide(left, right, leftWidth, gap), width, theme));
++  } else if (width >= BOX_COLS) {
++    const inner = width - 4;
++    const body = factLines(rows, inner, theme);
++    if (body.length > 0) body.push([]);
++    body.push(...capsLines(facts, inner, TOOL_LINES_NARROW, theme));
++    out.push(...boxed(body, width, theme));
++  } else {
++    // Narrow: the plain list, with the tool count after the folder.
++    const list = rows.filter(([label]) => label === "model" || label === "folder");
++    list.push(["tools", `${facts.tools.length} available`]);
++    list.push(...rows.filter(([label]) => label === "title" || label === "session"));
++    out.push(...factLines(list, width, theme));
++  }
++  if (note.trim()) {
++    out.push([]);
++    out.push(...wrapSpans([{ ...colour(theme, "muted"), dim: true, text: note }], width));
++  }
++  return out.map((line) => truncateLine(line, width));
++}
+diff --git a/apps/tui/src/state/uiStore.ts b/apps/tui/src/state/uiStore.ts
+index b9dc3df..4a0d714 100644
+--- a/apps/tui/src/state/uiStore.ts
++++ b/apps/tui/src/state/uiStore.ts
+@@ -23,6 +23,8 @@ export interface UiState {
+   revision: number;
+   /** The latest `session.info` payload. */
+   info: Record<string, unknown> | null;
++  /** Skills the `commands.catalog` reply offers (the banner's count); null until it loads. */
++  skillCount: number | null;
+   busy: boolean;
+   statusText: string;
+   busyInputMode: BusyInputMode;
+@@ -60,6 +62,7 @@ export function uiDefaults(): UiData {
+     storedSid: null,
+     revision: 0,
+     info: null,
++    skillCount: null,
+     busy: false,
+     statusText: STATUS_STARTING,
+     busyInputMode: "queue",
+diff --git a/apps/web/src/lib/format.test.ts b/apps/web/src/lib/format.test.ts
+index 467f264..15f7f05 100644
+--- a/apps/web/src/lib/format.test.ts
++++ b/apps/web/src/lib/format.test.ts
+@@ -1,5 +1,5 @@
+ import { describe, expect, it } from "vitest";
+-import { formatShortDay, formatTokens } from "./format.ts";
++import { formatShortDay, formatTokens, formatUptime } from "./format.ts";
+ 
+ describe("formatTokens", () => {
+   it("keeps small figures and shortens large ones", () => {
+@@ -23,3 +23,18 @@ describe("formatShortDay", () => {
+     expect(formatShortDay("2026-13-01")).toBe("2026-13-01");
+   });
+ });
++
++describe("formatUptime", () => {
++  it("shows the two largest units", () => {
++    expect(formatUptime(30)).toBe("<1m");
++    expect(formatUptime(12 * 60 + 5)).toBe("12m");
++    expect(formatUptime(81 * 60)).toBe("1h 21m");
++    expect(formatUptime(3 * 86_400 + 4 * 3_600 + 59)).toBe("3d 4h");
++  });
++
++  it("says - when the host does not tell", () => {
++    expect(formatUptime(null)).toBe("-");
++    expect(formatUptime(undefined)).toBe("-");
++    expect(formatUptime(-1)).toBe("-");
++  });
++});
+diff --git a/apps/web/src/lib/format.ts b/apps/web/src/lib/format.ts
+index 74cfb54..d5f48a7 100644
+--- a/apps/web/src/lib/format.ts
++++ b/apps/web/src/lib/format.ts
+@@ -105,3 +105,17 @@ export function formatDateTime(seconds: number | null): string {
+   if (seconds === null || !Number.isFinite(seconds)) return "-";
+   return DATE_TIME.format(new Date(seconds * 1000));
+ }
++
++/** "3d 4h", "1h 21m", "12m" or "<1m" for an elapsed time in seconds; "-" when unknown. */
++export function formatUptime(seconds: number | null | undefined): string {
++  if (seconds === null || seconds === undefined || !Number.isFinite(seconds) || seconds < 0) {
++    return "-";
++  }
++  const minutes = Math.floor(seconds / 60);
++  const hours = Math.floor(minutes / 60);
++  const days = Math.floor(hours / 24);
++  if (days > 0) return `${days}d ${hours % 24}h`;
++  if (hours > 0) return `${hours}h ${minutes % 60}m`;
++  if (minutes > 0) return `${minutes}m`;
++  return "<1m";
++}
+diff --git a/apps/web/src/lib/restTypes.ts b/apps/web/src/lib/restTypes.ts
+index 7706aed..92275cd 100644
+--- a/apps/web/src/lib/restTypes.ts
++++ b/apps/web/src/lib/restTypes.ts
+@@ -295,6 +295,14 @@ export interface LoginStarted extends LoginSessionInfo {
+ // -- system -----------------------------------------------------------------------------------
+ 
+ export interface HostStats {
++  /** "Linux 6.1.0": OS name and kernel release. */
++  os?: string | null;
++  /** Machine architecture, e.g. "x86_64". */
++  arch?: string | null;
++  /** The Python running Indus, e.g. "CPython 3.13.2". */
++  python?: string | null;
++  /** Seconds since the host booted. */
++  uptime_seconds?: number | null;
+   cpu_count: number | null;
+   load: number[] | null;
+   cpu_percent?: number;
+diff --git a/apps/web/src/pages/SystemPage.test.tsx b/apps/web/src/pages/SystemPage.test.tsx
+index 087cb40..7f06638 100644
+--- a/apps/web/src/pages/SystemPage.test.tsx
++++ b/apps/web/src/pages/SystemPage.test.tsx
+@@ -42,9 +42,11 @@ async function ready() {
+ 
+ describe("system page", () => {
+   it("shows host numbers in tiles and leaves out the ones we do not have", async () => {
++    mock.state.hostStats = { ...mock.state.hostStats, uptime_seconds: null, arch: null };
+     renderPage(<SystemPage />, "/system");
+     await ready();
+     const host = section("Host");
++    expect(host.queryByText("Arch")).toBeNull();
+     expect(host.getByText("4 cores")).toBeTruthy();
+     expect(host.getByText("0.50 / 0.40 / 0.30")).toBeTruthy();
+     expect(host.getByText("4.0 GB / 8.0 GB (50.0%)")).toBeTruthy();
+@@ -54,6 +56,19 @@ describe("system page", () => {
+     expect(host.getByText("Up to date.")).toBeTruthy();
+   });
+ 
++  it("names the machine: OS, arch, Python and uptime", async () => {
++    renderPage(<SystemPage />, "/system");
++    await ready();
++    const host = section("Host");
++    const labels = host.getAllByRole("term").map((term) => term.textContent);
++    expect(labels.slice(0, 4)).toEqual(["OS", "Arch", "Python", "Indus"]);
++    expect(labels).toContain("Uptime");
++    expect(host.getByText("Linux 6.1.0")).toBeTruthy();
++    expect(host.getByText("x86_64")).toBeTruthy();
++    expect(host.getByText("CPython 3.13.2")).toBeTruthy();
++    expect(host.getByText("1h 21m")).toBeTruthy();
++  });
++
+   it("shows one section's load failure with a Retry that refetches", async () => {
+     mock.failNext("GET", "/api/memory", {
+       status: 500,
+diff --git a/apps/web/src/pages/system/MachineSections.tsx b/apps/web/src/pages/system/MachineSections.tsx
+index 7fef577..7fdb19b 100644
+--- a/apps/web/src/pages/system/MachineSections.tsx
++++ b/apps/web/src/pages/system/MachineSections.tsx
+@@ -1,5 +1,5 @@
+-// System page: Host (machine numbers, our version and the update check in the card's footer) and
+-// the Daemon row (state on the left, START / RESTART / STOP on the right).
++// System page: Host (what the machine is, its numbers, our version and the update check in the
++// card's footer) and the Daemon row (state on the left, START / RESTART / STOP on the right).
+ 
+ import { useQuery, useQueryClient } from "@tanstack/react-query";
+ import {
+@@ -14,7 +14,7 @@ import {
+ } from "lucide-react";
+ import { type ReactNode, useState } from "react";
+ import { api } from "../../lib/api.ts";
+-import { formatSize } from "../../lib/format.ts";
++import { formatSize, formatUptime } from "../../lib/format.ts";
+ import type { HostStats, UpdateInfo } from "../../lib/restTypes.ts";
+ import { Badge, Button, Card, QueryState } from "../../ui/controls.tsx";
+ import { ConfirmDialog } from "../../ui/Dialog.tsx";
+@@ -41,6 +41,9 @@ export function updateBadge(info: UpdateInfo): string {
+ 
+ function hostTiles(stats: HostStats | undefined, info: UpdateInfo | undefined): Tile[] {
+   const tiles: Tile[] = [];
++  if (stats?.os) tiles.push({ label: "OS", value: stats.os });
++  if (stats?.arch) tiles.push({ label: "Arch", value: stats.arch });
++  if (stats?.python) tiles.push({ label: "Python", value: stats.python });
+   if (info) {
+     const badge = updateBadge(info);
+     tiles.push({
+@@ -75,6 +78,9 @@ function hostTiles(stats: HostStats | undefined, info: UpdateInfo | undefined):
+       value: usage(stats.disk.used, stats.disk.total),
+     });
+   }
++  if (typeof stats.uptime_seconds === "number") {
++    tiles.push({ label: "Uptime", value: formatUptime(stats.uptime_seconds) });
++  }
+   if (stats.load) {
+     tiles.push({ label: "Load avg", value: stats.load.map((n) => n.toFixed(2)).join(" / ") });
+   }
+diff --git a/apps/web/src/testing/mockApi.ts b/apps/web/src/testing/mockApi.ts
+index 4b45b6c..586f496 100644
+--- a/apps/web/src/testing/mockApi.ts
++++ b/apps/web/src/testing/mockApi.ts
+@@ -326,6 +326,10 @@ export function defaultMockState(): MockState {
+     deviceGrant: null,
+     loginPolls: ["pending"],
+     hostStats: {
++      os: "Linux 6.1.0",
++      arch: "x86_64",
++      python: "CPython 3.13.2",
++      uptime_seconds: 81 * 60,
+       cpu_count: 4,
+       load: [0.5, 0.4, 0.3],
+       memory: { total: 8 * 1024 ** 3, available: 4 * 1024 ** 3 },
+diff --git a/docs/notes/ui-parity/w59-k2-host-facts-tui-banner.md b/docs/notes/ui-parity/w59-k2-host-facts-tui-banner.md
+new file mode 100644
+index 0000000..8d5c5d2
+--- /dev/null
++++ b/docs/notes/ui-parity/w59-k2-host-facts-tui-banner.md
+@@ -0,0 +1,52 @@
++# Task: Host card facts, our own INDUS AGENT banner, curator card check (W59-K2) Phase: ui-parity Owner: builder w59k2
++
++Status: Built (2026-10-25, wave 59 builder K2, base main 65120c2). Uncommitted, for the integrator.
++
++Read: the wave 59 and wave 54 briefs, the second compare's gap list (web system, chat,
++chat-sidebar-closed lines), the reference and Indus captures `system--{light,dark}.png` and
++`chat--dark.png` (looked at for layout only: which facts the Host card lists, that the chat banner
++is large art over a facts/tools box). Our own sources: `src/indus/web/routes/{system,learning}.py`,
++`src/indus/service/{session_header,picker_reads}.py`, `src/indus/protocol/events.py`
++(`SessionInfo`), `apps/web/src/pages/system/MachineSections.tsx`, `apps/tui/src/components/
++{MessageRow,Transcript}.tsx`, `apps/tui/src/app/{App,appRuntime}.tsx`, `apps/tui/e2e/demo2.e2e.test.ts`.
++No reference code, art or assets opened. Evidence ids: none.
++
++What it does (own words):
++
++- Host facts. `GET /api/system/stats` also answers `os` ("Linux 6.1.0": OS name and kernel
++  release), `arch` (machine architecture), `python` ("CPython 3.13.2") and `uptime_seconds` (host
++  uptime from `psutil.boot_time()` when psutil is there, else `/proc/uptime`; null when neither
++  says). Read-only, no host name, user name or path. The web Host card shows OS, Arch and Python
++  first, then Indus, CPU, Memory, Disk, Uptime ("1h 21m", "3d 4h", "<1m") and Load avg; a fact
++  the server does not send (older server) or sends as null has no tile.
++- TUI banner. Our own five-row "INDUS AGENT" in double-line box strokes (letters designed here:
++  I N D U S A G E T), INDUS in the accent tone and AGENT in the text tone, one line wide (59
++  cells). Under it a rounded box: from 90 columns the session facts (model · provider, folder,
++  title, session) on the left and on the right "Tools (N)" with the tool names `session.info`
++  sends (four lines, then "… and N more"), "Skills (N)" and "N tools · N skills · /help for
++  commands"; from 44 columns the same stacked in one column (three lines of names); below 44 the
++  old plain label list. The art degrades to the old three-row wordmark below 60 columns and to the
++  plain name below 32. The skills count is the number of `kind: "skill"` entries in the
++  `commands.catalog` reply the TUI already loads (`uiStore.skillCount`, null until it loads, and
++  then the Skills line is left out).
++- Goldens. The demo e2e masks the tool-name lines (they change whenever a tool is added) and the
++  counts; goldens re-recorded with `INDUS_E2E_UPDATE=1` and reviewed.
++- Skill curator card: not added. No web or gateway route exposes the curator's state; it is
++  only reachable through `indus curator status` and the `/curator` slash command. A card would
++  need a new read route over `learning.curator.state`, which this wave does not invent.
++
++Decisions: W59-K2-1 the stats route carries `os`, `arch`, `python`, `uptime_seconds` (host uptime,
++not process uptime), never a host name. W59-K2-2 the banner art is our own double-line letter set;
++width tiers 60 / 32 for the art, 90 / 44 for the box. W59-K2-3 the skills count comes from the
++catalogue's skill entries (slash-invocable skills), not a new request. W59-K2-4 no Skill curator
++card on the web System page: the backend serves no curator status to the web.
++
++Follow-ups: a read-only `GET /api/learning/curator` (state, interval, last run, paused) would let
++the web System page and the desktop command centre show the curator card the reference has; the
++banner could group tools by toolset if `session.info` sent the toolset of each tool.
++
++Compare checklist:
++- [x] Written from our own sources; no reference code, CSS, art or assets; banner letters ours.
++- [x] Only data our backend already serves, plus four read-only host facts on an existing route.
++- [x] Narrow terminals degrade (art tiers and box tiers), never wider than the terminal (tested).
++- [x] Goldens updated deliberately; tool names and counts masked.
+diff --git a/src/indus/web/routes/system.py b/src/indus/web/routes/system.py
+index c97f67d..8a0df4e 100644
+--- a/src/indus/web/routes/system.py
++++ b/src/indus/web/routes/system.py
+@@ -3,7 +3,10 @@ operations, action status and shell hooks. Everything is per profile (``read_sco
+ ``write_scope``).
+ 
+ - ``GET /api/system/stats``: CPU count and load, memory and disk of the profile's home (``psutil``
+-  when installed, else ``/proc`` and ``os``); coarse numbers only.
++  when installed, else ``/proc`` and ``os``); coarse numbers only. Also the host's facts for the
++  Host card: OS name and kernel release, machine architecture, the Python running Indus and the
++  host's uptime in whole seconds (``None`` where this host does not say). Never a host name, user
++  name or path.
+ - ``GET /api/system/update?force=``: install method, version and, for a git checkout, how many
+   commits it is behind its upstream; the answer is cached 24 h in ``<home>/cache/update_check.json``
+   and ``force=1`` checks again. ``POST /api/system/update`` pulls (``git pull --ff-only``) as a
+@@ -36,6 +39,7 @@ import importlib.util
+ import json
+ import logging
+ import os
++import platform
+ import re
+ import shutil
+ import subprocess
+@@ -195,14 +199,35 @@ def _meminfo() -> dict[str, int]:
+     return found
+ 
+ 
++def _uptime_seconds(psutil: Any) -> int | None:
++    """Seconds since the host booted: ``psutil`` when given, else ``/proc/uptime``."""
++    if psutil is not None:
++        with contextlib.suppress(Exception):
++            return max(0, int(time.time() - float(psutil.boot_time())))
++    with contextlib.suppress(OSError, ValueError, IndexError):
++        return max(0, int(float(Path("/proc/uptime").read_text(encoding="ascii").split()[0])))
++    return None
++
++
++def host_facts() -> dict[str, Any]:
++    """What the machine is: OS + release, architecture, Python. Empty parts become ``None``."""
++    system = platform.system().strip()
++    release = platform.release().strip()
++    os_name = " ".join(part for part in (system, release) if part) or None
++    python = f"{platform.python_implementation()} {platform.python_version()}".strip()
++    return {"os": os_name, "arch": platform.machine().strip() or None, "python": python or None}
++
++
+ def host_stats(home: Path) -> dict[str, Any]:
+-    """CPU, memory and disk numbers (``None`` where this host does not say)."""
++    """CPU, memory and disk numbers plus the host facts (``None`` where this host does not say)."""
+     stats: dict[str, Any] = {"cpu_count": os.cpu_count(), "load": None, "memory": None}
++    stats.update(host_facts())
++    psutil: Any = None
+     with contextlib.suppress(OSError, AttributeError):
+         stats["load"] = [round(v, 2) for v in os.getloadavg()]
+     if importlib.util.find_spec("psutil") is not None:
+         with contextlib.suppress(Exception):
+-            psutil: Any = importlib.import_module("psutil")
++            psutil = importlib.import_module("psutil")
+             vm = psutil.virtual_memory()
+             stats["memory"] = {"total": int(vm.total), "available": int(vm.available)}
+             stats["cpu_percent"] = float(psutil.cpu_percent(interval=None))
+@@ -210,6 +235,7 @@ def host_stats(home: Path) -> dict[str, Any]:
+         info = _meminfo()
+         if "MemTotal" in info:
+             stats["memory"] = {"total": info["MemTotal"], "available": info.get("MemAvailable")}
++    stats["uptime_seconds"] = _uptime_seconds(psutil)
+     try:
+         usage = shutil.disk_usage(home)
+         stats["disk"] = {"total": usage.total, "free": usage.free, "used": usage.used}
+diff --git a/tests/contract/web/test_files_system_routes.py b/tests/contract/web/test_files_system_routes.py
+index f23ee65..0bfe6b4 100644
+--- a/tests/contract/web/test_files_system_routes.py
++++ b/tests/contract/web/test_files_system_routes.py
+@@ -4,6 +4,7 @@ from __future__ import annotations
+ 
+ import logging
+ import os
++import platform
+ import secrets
+ import sys
+ import time
+@@ -525,3 +526,26 @@ def test_host_stats(rest: RestApp) -> None:
+     got = rest.client.get("/api/system/stats", params=WRITE).json()
+     assert got["cpu_count"] == os.cpu_count()
+     assert got["disk"]["total"] > 0
++
++
++def test_host_stats_carry_the_host_facts(rest: RestApp, scope: Scope) -> None:
++    got = rest.client.get("/api/system/stats", params=WRITE).json()
++    assert got["os"] == f"{platform.system()} {platform.release()}"
++    assert got["arch"] == platform.machine()
++    assert got["python"] == f"{platform.python_implementation()} {platform.python_version()}"
++    assert isinstance(got["uptime_seconds"], int) and got["uptime_seconds"] >= 0
++    # Read-only facts only: no host name, no paths (the profile's home included).
++    text = rest.client.get("/api/system/stats", params=WRITE).text
++    assert platform.node() not in text or not platform.node()
++    assert str(scope.home) not in text
++
++
++def test_host_facts_say_none_for_what_the_host_hides(monkeypatch: pytest.MonkeyPatch) -> None:
++    monkeypatch.setattr(system.platform, "system", lambda: "")
++    monkeypatch.setattr(system.platform, "release", lambda: "")
++    monkeypatch.setattr(system.platform, "machine", lambda: "")
++    facts = system.host_facts()
++    assert facts["os"] is None and facts["arch"] is None
++    assert facts["python"]
++    uptime = system._uptime_seconds(None)  # noqa: SLF001
++    assert uptime is None or uptime >= 0

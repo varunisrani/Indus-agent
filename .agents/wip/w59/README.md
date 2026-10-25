@@ -13,3 +13,10 @@
 
 ## Lead gate on main a8e5a07 + K1 (land5)
 static all ok; vitest 304 / 3317; Electron 43 / 2 skipped; web Playwright 17/17; pytest 18796 passed / 0 failed; perf 18 / 1 skipped.
+
+## w59k2-UNFINISHED.patch — web host facts + our own TUI ASCII banner (K2), base main — STOPPED, not landed
+- The builder was stopped (owner interruption) before reporting. Its own gate at 06:57: biome + tsc clean; TUI vitest
+  55 / 806; web vitest 41 / 390; web Playwright 15; TUI e2e 2 failed (demo2 80/120 columns: the banner golden differs —
+  most likely the deliberate new banner, goldens not yet regenerated and reviewed); pytest log ended 07:51 unseen.
+- Saved so nothing is lost. To finish: apply on main, regenerate the TUI goldens deliberately (INDUS_E2E_UPDATE=1),
+  review, re-run TUI e2e, full gate, land. Relaunch only on the owner's request.
