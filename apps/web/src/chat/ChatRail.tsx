@@ -1,5 +1,6 @@
-// The chat's right rail (P18-27): model badge, session switcher, workspace and reasoning pickers,
-// copy-last-answer and image upload, next to the terminal.
+// The chat's side panel (P18-27, look rebuilt W52-a): model card with the feed's connection badge
+// and the model picker, reasoning effort, the session list with New chat, and the workspace for new
+// chats, next to the terminal. (Copy-last-answer and the image paste/drop live on the terminal card.)
 //
 // Its only live source is the chat's event feed (`eventsFeed.ts`). The rail never runs a second
 // chat: changes it makes go into the terminal as the TUI's own slash commands (`/reasoning`,
@@ -7,13 +8,23 @@
 // here is best-effort: the host wraps the rail in an error boundary and nothing here can stop or
 // block the terminal (R09.1).
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  ChevronDown,
+  FolderGit2,
+  LoaderCircle,
+  MessageSquarePlus,
+  RefreshCw,
+  X,
+} from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useId, useState } from "react";
 import { api, joinPath, request } from "../lib/api.ts";
 import { relativeTime } from "../lib/format.ts";
 import type { SessionInfo } from "../lib/restTypes.ts";
 import { AUTOMATION_SOURCES } from "../pages/sessions/sources.ts";
-import { Badge, Button, inputClass, Notice } from "../ui/controls.tsx";
+import { Badge, type BadgeTone, Button, IconButton, inputClass } from "../ui/controls.tsx";
+import { cx } from "../ui/cx.ts";
+import { type ModelChoice, ModelPickerDialog } from "../ui/ModelPickerDialog.tsx";
 import {
   browserFeedDeps,
   EventsFeed,
@@ -23,7 +34,7 @@ import {
 } from "./eventsFeed.ts";
 
 export interface ChatRailProps {
-  /** The host's channel id: the feed listens to the same channel as the PTY child publishes on. */
+  /** The host's channel id (the feed it was handed listens on it). */
   channel: string;
   /** Active profile ("" = the backend's own). */
   profile: string;
@@ -35,7 +46,10 @@ export interface ChatRailProps {
   onNewChat(): void;
   /** Type `text` into the terminal as if the person did; false when not connected. */
   typeIntoChat(text: string): boolean;
-  feedDeps?: FeedDeps;
+  /** The chat's event feed; the host owns it (W52-sc-5) so the card and header can read it too. */
+  feed: FeedState;
+  /** Hide the panel (wide screens); absent in the narrow-screen drawer, which has its own close. */
+  onCollapse?: () => void;
 }
 
 // -- live state from the feed ------------------------------------------------------------------
@@ -213,7 +227,7 @@ export function firstImage(files: FileList | readonly File[] | null | undefined)
   return null;
 }
 
-// -- the rail ----------------------------------------------------------------------------------
+// -- the panel ---------------------------------------------------------------------------------
 
 export const EFFORTS: ReadonlyArray<{ value: string; label: string }> = [
   { value: "minimal", label: "Minimal" },
@@ -230,45 +244,74 @@ interface ModelInfo {
 }
 
 function sessionLabel(session: SessionInfo): string {
-  return session.title?.trim() || session.preview?.trim() || session.id;
+  return session.title?.trim() || session.preview?.trim() || "Untitled session";
 }
 
-function ModelBadge({ live }: { live: LiveSession | null }) {
+const capsLabel = "type-heading whitespace-nowrap text-[0.75rem] text-ink-soft uppercase";
+
+/** The connection badge: what the feed is doing, never what the model is doing. */
+export function feedBadge(status: FeedStatus): { text: string; tone: BadgeTone } {
+  switch (status.phase) {
+    case "live":
+      return { text: "live", tone: "ok" };
+    case "connecting":
+      return { text: "connecting", tone: "warn" };
+    case "retrying":
+      return { text: "retrying", tone: "warn" };
+    default:
+      return status.notice
+        ? { text: "error", tone: "danger" }
+        : { text: "closed", tone: "neutral" };
+  }
+}
+
+function ModelCard({
+  live,
+  status,
+  onPick,
+}: {
+  live: LiveSession | null;
+  status: FeedStatus;
+  onPick(): void;
+}) {
   const configured = useQuery({
     queryKey: ["chat", "model-info"],
     queryFn: () => request<ModelInfo>("/api/model/info"),
     staleTime: 60_000,
   });
-  if (live?.model) {
-    return (
-      <div data-testid="chat-model" data-source="live" className="flex flex-col gap-1">
-        <span className="truncate font-mono text-sm" title={live.model}>
-          {live.model}
-        </span>
-        <span className="flex items-center gap-1 text-xs text-muted">
-          <Badge tone="ok">answering</Badge>
-          {live.provider ? <span className="truncate">{live.provider}</span> : null}
-        </span>
-      </div>
-    );
-  }
-  const model = configured.data?.model;
+  const source = live?.model ? "live" : "configured";
+  const model = live?.model ?? configured.data?.model;
+  const provider = live?.model ? live.provider : configured.data?.provider;
+  const name = model ?? (configured.isLoading ? "…" : "No model configured");
+  const badge = feedBadge(status);
   return (
-    <div data-testid="chat-model" data-source="configured" className="flex flex-col gap-1">
-      <span className="truncate font-mono text-sm">
-        {model ?? (configured.isLoading ? "…" : "No model configured")}
-      </span>
-      {model ? (
-        <span className="flex items-center gap-1 text-xs text-muted">
-          <Badge>configured</Badge>
-          {configured.data?.provider ? <span>{configured.data.provider}</span> : null}
-        </span>
-      ) : null}
-    </div>
+    <section
+      aria-label="Model"
+      data-testid="chat-model"
+      data-source={source}
+      className="flex items-center gap-2 border border-line px-3 py-2"
+    >
+      <div className="flex min-w-0 flex-1 flex-col">
+        <h2 className={cx(capsLabel, "m-0")}>Model</h2>
+        <button
+          type="button"
+          onClick={onPick}
+          title={provider ? `${name} · ${provider}` : name}
+          aria-label={`${name}: switch model`}
+          className="flex min-w-0 items-center gap-1 text-left font-mono text-[0.875rem] font-medium text-ink hover:underline"
+        >
+          <span className="truncate">{name}</span>
+          <ChevronDown aria-hidden="true" className="size-3.5 shrink-0 text-ink-muted" />
+        </button>
+      </div>
+      <Badge tone={badge.tone} className="h-[1.375rem] text-[0.75rem]">
+        <span data-testid="chat-feed-phase">{badge.text}</span>
+      </Badge>
+    </section>
   );
 }
 
-function SessionSwitcher({
+function SessionList({
   profile,
   current,
   onResume,
@@ -287,54 +330,70 @@ function SessionSwitcher({
   });
   const rows = sessions.data?.sessions ?? [];
   return (
-    <section aria-labelledby="chat-rail-sessions" className="flex min-h-0 flex-col gap-2">
-      <div className="flex items-center gap-2">
-        <h2 id="chat-rail-sessions" className="flex-1 text-xs font-semibold uppercase text-muted">
-          Sessions
-        </h2>
-        <Button
-          tone="ghost"
-          className="px-2 py-0.5 text-xs"
-          onClick={() => void sessions.refetch()}
-          aria-label="Refresh sessions"
-        >
-          Refresh
-        </Button>
-        <Button tone="primary" className="px-2 py-0.5 text-xs" onClick={onNewChat}>
-          New chat
-        </Button>
-      </div>
-      {sessions.isError ? (
-        <Notice tone="warn">The session list could not be loaded.</Notice>
-      ) : rows.length === 0 ? (
-        <p className="text-xs text-muted">{sessions.isLoading ? "Loading…" : "No sessions yet."}</p>
-      ) : (
-        <ul className="flex flex-col gap-1 overflow-auto">
-          {rows.map((session) => (
-            <li key={session.id}>
-              <button
-                type="button"
-                data-session-id={session.id}
-                aria-current={session.id === current ? "true" : undefined}
-                className={`w-full rounded-md border px-2 py-1.5 text-left text-sm hover:bg-code ${
-                  session.id === current ? "border-accent" : "border-transparent"
-                }`}
-                onClick={() => onResume(session.id)}
-              >
-                <span className="block truncate">{sessionLabel(session)}</span>
-                <span className="flex gap-2 text-xs text-muted">
-                  <span>{relativeTime(session.last_active)}</span>
-                  <span>
-                    {session.message_count} {session.message_count === 1 ? "message" : "messages"}
-                  </span>
-                  {session.source ? <span>{session.source}</span> : null}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
+    <>
+      <Button
+        icon={<MessageSquarePlus />}
+        className="h-7 w-full shrink-0 text-[0.75rem]"
+        onClick={onNewChat}
+      >
+        New chat
+      </Button>
+      <section aria-label="Sessions" className="flex min-h-0 flex-1 flex-col">
+        {sessions.isError ? (
+          <div className="flex flex-col items-start gap-2 px-2 py-2">
+            <p className="m-0 text-[0.75rem] text-danger">The session list could not be loaded.</p>
+            <Button size="sm" onClick={() => void sessions.refetch()}>
+              Retry
+            </Button>
+          </div>
+        ) : rows.length === 0 ? (
+          <p className="m-0 flex items-center justify-center gap-2 py-4 text-[0.75rem] text-ink-soft">
+            {sessions.isLoading ? (
+              <>
+                <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin" />
+                Loading…
+              </>
+            ) : (
+              "No sessions yet"
+            )}
+          </p>
+        ) : (
+          <ul className="m-0 flex list-none flex-col overflow-y-auto p-0">
+            {rows.map((session) => {
+              const here = session.id === current;
+              const meta = [
+                relativeTime(session.last_active),
+                ...(session.message_count > 0 ? [`${session.message_count} msgs`] : []),
+                ...(session.source && session.source !== "cli" ? [session.source] : []),
+              ];
+              return (
+                <li key={session.id}>
+                  <button
+                    type="button"
+                    data-session-id={session.id}
+                    aria-current={here ? "true" : undefined}
+                    className={cx(
+                      "flex w-full flex-col gap-0.5 rounded-[4px] border-l-2 px-2 py-1.5 text-left",
+                      here
+                        ? "border-ink bg-ink/10 text-ink"
+                        : "border-transparent text-ink-muted hover:bg-hover hover:text-ink",
+                    )}
+                    onClick={() => onResume(session.id)}
+                  >
+                    <span className="truncate font-mono text-[0.875rem] font-medium">
+                      {sessionLabel(session)}
+                    </span>
+                    <span className="truncate font-mono text-[0.6875rem] text-ink-soft">
+                      {meta.join(" · ")}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+    </>
   );
 }
 
@@ -348,10 +407,11 @@ function WorkspacePicker({ profile, liveCwd }: { profile: string; liveCwd: strin
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const reload = useCallback(() => {
     setSelected(storedWorkspace(profile));
     setOptions(workspaceOptions(profile, liveCwd));
   }, [profile, liveCwd]);
+  useEffect(reload, [reload]);
 
   const pick = (path: string) => {
     chooseWorkspace(profile, path);
@@ -359,9 +419,13 @@ function WorkspacePicker({ profile, liveCwd }: { profile: string; liveCwd: strin
     setOptions(workspaceOptions(profile, liveCwd));
   };
 
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
+  const submit = (event?: FormEvent) => {
+    event?.preventDefault();
     const path = draft.trim();
+    if (!path) {
+      setTyping(false);
+      return;
+    }
     if (!isAbsolutePath(path)) {
       setError("Enter a full path, starting at the root of the disk.");
       return;
@@ -373,48 +437,70 @@ function WorkspacePicker({ profile, liveCwd }: { profile: string; liveCwd: strin
   };
 
   return (
-    <section className="flex flex-col gap-1">
-      <label htmlFor={id} className="text-xs font-semibold uppercase text-muted">
-        Workspace for new chats
-      </label>
-      <select
-        id={id}
-        className={inputClass}
-        value={typing ? OTHER : selected}
-        onChange={(event) => {
-          const value = event.target.value;
-          if (value === OTHER) {
-            setTyping(true);
-            return;
-          }
-          setTyping(false);
-          pick(value);
-        }}
-      >
-        <option value="">Default folder</option>
-        {options.map((path) => (
-          <option key={path} value={path}>
-            {path}
-          </option>
-        ))}
-        <option value={OTHER}>Other path…</option>
-      </select>
+    <section className="flex flex-col gap-1.5">
+      <div className="flex items-center gap-1.5">
+        <FolderGit2 aria-hidden="true" className="size-3.5 text-ink-soft" />
+        <label htmlFor={id} className={cx(capsLabel, "flex-1")}>
+          Workspace
+        </label>
+        <IconButton label="Refresh workspaces" className="size-6 [&_svg]:size-3.5" onClick={reload}>
+          <RefreshCw />
+        </IconButton>
+      </div>
+      <span className="relative flex">
+        <select
+          id={id}
+          title="Used when you start a new chat"
+          className={cx(
+            inputClass,
+            "h-[2.125rem] w-full appearance-none truncate pr-8 text-[0.875rem]",
+          )}
+          value={typing ? OTHER : selected}
+          onChange={(event) => {
+            const value = event.target.value;
+            if (value === OTHER) {
+              setTyping(true);
+              return;
+            }
+            setTyping(false);
+            pick(value);
+          }}
+        >
+          <option value="">Default{liveCwd && !selected ? ` · ${liveCwd}` : ""}</option>
+          {options.map((path) => (
+            <option key={path} value={path}>
+              {path}
+            </option>
+          ))}
+          <option value={OTHER}>Custom…</option>
+        </select>
+        <ChevronDown
+          aria-hidden="true"
+          className="pointer-events-none absolute top-1/2 right-2.5 size-3.5 -translate-y-1/2 text-ink-soft"
+        />
+      </span>
       {typing ? (
-        <form className="flex gap-1" onSubmit={submit}>
+        <form onSubmit={submit}>
           <input
             aria-label="Workspace path"
-            className={`${inputClass} min-w-0 flex-1`}
+            // biome-ignore lint/a11y/noAutofocus: the field appears because the person picked Custom…
+            autoFocus
+            className={cx(inputClass, "h-8 w-full text-[0.8125rem]")}
             placeholder="/path/to/project"
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
+            onBlur={() => submit()}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                setTyping(false);
+                setDraft("");
+                setError(null);
+              }
+            }}
           />
-          <Button type="submit" className="px-2 py-1 text-xs">
-            Use
-          </Button>
         </form>
       ) : null}
-      {error ? <p className="text-xs text-danger">{error}</p> : null}
-      <p className="text-xs text-muted">Used when you start a new chat.</p>
+      {error ? <p className="m-0 text-[0.75rem] text-danger">{error}</p> : null}
     </section>
   );
 }
@@ -430,124 +516,124 @@ function ReasoningPicker({
   const [chosen, setChosen] = useState(current ?? "");
   useEffect(() => setChosen(current ?? ""), [current]);
   return (
-    <section className="flex flex-col gap-1">
-      <label htmlFor={id} className="text-xs font-semibold uppercase text-muted">
+    <section className="flex items-center gap-2 border border-line px-3 py-2">
+      <label htmlFor={id} className={cx(capsLabel, "flex-1")}>
         Reasoning effort
       </label>
-      <select
-        id={id}
-        className={inputClass}
-        value={chosen}
-        onChange={(event) => {
-          const value = event.target.value;
-          if (!value) return;
-          setChosen(value);
-          onPick(value);
-        }}
-      >
-        <option value="">{current ? "Current" : "Session default"}</option>
-        {EFFORTS.map((effort) => (
-          <option key={effort.value} value={effort.value}>
-            {effort.label}
-          </option>
-        ))}
-      </select>
+      <span className="relative inline-flex">
+        <select
+          id={id}
+          className="type-data h-7 appearance-none border border-line bg-transparent pr-7 pl-2 text-[0.75rem] text-ink outline-none focus:border-ink"
+          value={chosen}
+          onChange={(event) => {
+            const value = event.target.value;
+            if (!value) return;
+            setChosen(value);
+            onPick(value);
+          }}
+        >
+          <option value="">{current ? "Current" : "Default"}</option>
+          {EFFORTS.map((effort) => (
+            <option key={effort.value} value={effort.value}>
+              {effort.label}
+            </option>
+          ))}
+        </select>
+        <ChevronDown
+          aria-hidden="true"
+          className="pointer-events-none absolute top-1/2 right-2 size-3 -translate-y-1/2 text-ink-soft"
+        />
+      </span>
     </section>
   );
 }
 
+function NoticeCard({
+  tone,
+  children,
+  action,
+}: {
+  tone: "warn" | "danger" | "neutral";
+  children: string;
+  action?: { label: string; run(): void };
+}) {
+  return (
+    <div
+      role={tone === "danger" ? "alert" : "status"}
+      className={cx(
+        "flex flex-col items-start gap-2 border px-3 py-2 text-[0.75rem]",
+        tone === "danger"
+          ? "border-danger/50 bg-danger-wash text-danger"
+          : tone === "warn"
+            ? "border-warning/50 bg-warning-wash text-warning"
+            : "border-line text-ink-muted",
+      )}
+    >
+      <p className="m-0">{children}</p>
+      {action ? (
+        <Button size="sm" className="h-6 text-[0.6875rem]" onClick={action.run}>
+          {action.label}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
 export function ChatRail({
-  channel,
   profile,
-  connected,
   resumeId,
   onResume,
   onNewChat,
   typeIntoChat,
-  feedDeps,
+  feed,
+  onCollapse,
 }: ChatRailProps) {
-  const feed = useEventsFeed(channel, feedDeps ?? browserFeedDeps);
   const [message, setMessage] = useState<{ tone: "neutral" | "warn"; text: string } | null>(null);
-  const [dragging, setDragging] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const sessions = useQuery({
+    queryKey: ["chat", "sessions", profile],
+    queryFn: () =>
+      api.sessions.list({ order: "recent", limit: 20, excludeSources: AUTOMATION_SOURCES }),
+    staleTime: 15_000,
+  });
 
   const say = (text: string, tone: "neutral" | "warn" = "neutral") => setMessage({ text, tone });
-
-  const copyLast = async () => {
-    if (!feed.lastAnswer) return;
-    try {
-      await navigator.clipboard.writeText(feed.lastAnswer);
-      say("Last answer copied.");
-    } catch {
-      say("The browser did not allow copying.", "warn");
-    }
-  };
-
-  const upload = async (file: File | null) => {
-    if (!file) {
-      say("Drop or paste an image file.", "warn");
-      return;
-    }
-    say(`Uploading ${file.name}…`);
-    try {
-      await attachImage(file, typeIntoChat);
-      say(`${file.name} goes with your next message.`);
-    } catch (error) {
-      say(error instanceof Error ? error.message : "The image could not be attached.", "warn");
-    }
-  };
-
+  const client = useQueryClient();
+  // The picker saves the main model for the active profile; the live chat keeps its model.
+  const switchModel = useMutation({
+    mutationFn: (pick: ModelChoice) =>
+      api.model.set({ scope: "main", provider: pick.provider, model: pick.model }),
+    onSuccess: (_ok, pick) => {
+      void client.invalidateQueries({ queryKey: ["chat", "model-info"] });
+      void client.invalidateQueries({ queryKey: ["models"] });
+      say(`Model set to ${pick.model}. Start a new chat to use it.`, "warn");
+      setPicking(false);
+    },
+  });
   const current = feed.live?.sessionId ?? resumeId;
+  const refetchSessions = sessions.refetch;
+  // A new or retitled session, or a finished answer: the list's titles and counts moved.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the feed values are the triggers
+  useEffect(() => {
+    if (feed.live?.sessionId || feed.lastAnswer) void refetchSessions();
+  }, [feed.live?.sessionId, feed.live?.title, feed.lastAnswer, refetchSessions]);
+  const feedNotice = feed.status.notice;
 
   return (
     <section
       aria-label="Chat tools"
       data-testid="chat-rail"
-      className={`flex h-full min-h-0 flex-col gap-4 overflow-auto p-3 text-sm ${
-        dragging ? "outline outline-2 outline-accent" : ""
-      }`}
-      onDragOver={(event) => {
-        if (Array.from(event.dataTransfer.types).includes("Files")) {
-          event.preventDefault();
-          setDragging(true);
-        }
-      }}
-      onDragLeave={() => setDragging(false)}
-      onDrop={(event) => {
-        event.preventDefault();
-        setDragging(false);
-        void upload(firstImage(event.dataTransfer.files));
-      }}
+      className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto"
     >
-      <section aria-label="Model" className="flex flex-col gap-1">
-        <h2 className="text-xs font-semibold uppercase text-muted">Model</h2>
-        <ModelBadge live={feed.live} />
-      </section>
-
-      {feed.status.notice ? (
-        <div className="flex flex-col gap-1" data-testid="chat-feed-notice">
-          <Notice tone="warn">{feed.status.notice}</Notice>
-          {feed.status.phase === "stopped" ? (
-            feed.status.reload ? (
-              <Button className="self-start text-xs" onClick={() => window.location.reload()}>
-                Reload page
-              </Button>
-            ) : (
-              <Button className="self-start text-xs" onClick={feed.reconnect}>
-                Reconnect
-              </Button>
-            )
-          ) : null}
+      {onCollapse ? (
+        <div className="flex h-8 shrink-0 items-center justify-end">
+          <IconButton label="Collapse side panel" className="[&_svg]:size-3.5" onClick={onCollapse}>
+            <X />
+          </IconButton>
         </div>
       ) : null}
 
-      <SessionSwitcher
-        profile={profile}
-        current={current}
-        onResume={onResume}
-        onNewChat={onNewChat}
-      />
-
-      <WorkspacePicker profile={profile} liveCwd={feed.live?.cwd ?? null} />
+      <ModelCard live={feed.live} status={feed.status} onPick={() => setPicking(true)} />
 
       <ReasoningPicker
         current={feed.live?.reasoning}
@@ -558,37 +644,53 @@ export function ChatRail({
         }}
       />
 
-      <section className="flex flex-col gap-2">
-        <Button
-          disabled={!feed.lastAnswer}
-          onClick={() => void copyLast()}
-          title={feed.lastAnswer ? undefined : "No answer in this chat yet"}
-        >
-          Copy last answer
-        </Button>
-        <label className="flex cursor-pointer flex-col gap-1 rounded-md border border-dashed border-line p-2 text-xs text-muted">
-          <span>Drop or paste an image to attach it to your next message, or pick one.</span>
-          <input
-            type="file"
-            accept="image/*"
-            className="text-xs"
-            disabled={!connected}
-            onChange={(event) => {
-              void upload(firstImage(event.target.files));
-              event.target.value = "";
-            }}
-          />
-        </label>
-      </section>
+      {feedNotice ? (
+        <div data-testid="chat-feed-notice">
+          <NoticeCard
+            tone={feed.status.phase === "stopped" ? "danger" : "warn"}
+            {...(feed.status.phase === "stopped"
+              ? {
+                  action: feed.status.reload
+                    ? { label: "Reload page", run: () => window.location.reload() }
+                    : { label: "Reconnect", run: feed.reconnect },
+                }
+              : {})}
+          >
+            {feedNotice}
+          </NoticeCard>
+        </div>
+      ) : null}
 
       {message ? (
-        <p
-          role="status"
-          className={`text-xs ${message.tone === "warn" ? "text-warn" : "text-muted"}`}
-        >
-          {message.text}
-        </p>
+        <NoticeCard tone={message.tone === "warn" ? "warn" : "neutral"}>{message.text}</NoticeCard>
       ) : null}
+
+      <div className="flex h-5 shrink-0 items-center gap-2">
+        <h2 className={cx(capsLabel, "m-0 flex-1")}>Sessions</h2>
+        <IconButton
+          label="Refresh sessions"
+          className="size-6 [&_svg]:size-3.5"
+          onClick={() => void sessions.refetch()}
+        >
+          <RefreshCw className={sessions.isFetching ? "animate-spin" : ""} />
+        </IconButton>
+      </div>
+
+      <WorkspacePicker profile={profile} liveCwd={feed.live?.cwd ?? null} />
+
+      <SessionList profile={profile} current={current} onResume={onResume} onNewChat={onNewChat} />
+
+      <ModelPickerDialog
+        open={picking}
+        onOpenChange={(next) => {
+          if (next) switchModel.reset();
+          setPicking(next);
+        }}
+        busy={switchModel.isPending}
+        error={switchModel.error}
+        note="Saved to config; new chats use it."
+        onApply={(choice) => switchModel.mutate(choice)}
+      />
     </section>
   );
 }

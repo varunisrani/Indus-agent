@@ -1106,6 +1106,42 @@
           "source": "metadata"
         }
       },
+      "@fontsource-variable/archivo": {
+        "5.3.0": {
+          "licence": "OFL-1.1",
+          "source": "metadata"
+        }
+      },
+      "@fontsource-variable/eb-garamond": {
+        "5.3.0": {
+          "licence": "OFL-1.1",
+          "source": "metadata"
+        }
+      },
+      "@fontsource-variable/jetbrains-mono": {
+        "5.3.0": {
+          "licence": "OFL-1.1",
+          "source": "metadata"
+        }
+      },
+      "@fontsource/abril-fatface": {
+        "5.3.0": {
+          "licence": "OFL-1.1",
+          "source": "metadata"
+        }
+      },
+      "@fontsource/courier-prime": {
+        "5.3.0": {
+          "licence": "OFL-1.1",
+          "source": "metadata"
+        }
+      },
+      "@fontsource/inter": {
+        "5.3.0": {
+          "licence": "OFL-1.1",
+          "source": "metadata"
+        }
+      },
       "@iconify/types": {
         "2.0.0": {
           "licence": "MIT",

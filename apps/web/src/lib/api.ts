@@ -11,6 +11,7 @@ import type {
   ConfigObject,
   ConfigSchema,
   CredentialPoolResponse,
+  CronBlueprint,
   CronJob,
   CronJobInput,
   DaemonInfo,
@@ -48,6 +49,7 @@ import type {
   PlatformUpdate,
   PlatformUpdateResponse,
   PluginInstallRequest,
+  PluginInstallResponse,
   PluginsResponse,
   PoolAddRequest,
   ProfileCommandResponse,
@@ -514,6 +516,8 @@ export interface LogsQuery {
 export const api = {
   profiles: () => request<ProfilesResponse>("/api/profiles"),
   status: () => request<StatusResponse>("/api/status"),
+  /** The status of one named profile (a profile card's daemon line). */
+  statusOf: (profile: string) => request<StatusResponse>(forProfile("/api/status", profile)),
 
   profile: {
     create: (body: ProfileCreate) =>
@@ -720,6 +724,8 @@ export const api = {
     put: (config: ConfigObject) =>
       request<OkResponse>("/api/config", { method: "PUT", json: { config } }),
     schema: () => request<ConfigSchema>("/api/config/schema"),
+    /** The built-in defaults as a config tree (public, never per profile). */
+    defaults: () => request<ConfigObject>("/api/config/defaults"),
     effective: () => request<EffectiveConfig>("/api/config/effective"),
   },
 
@@ -759,19 +765,33 @@ export const api = {
   },
 
   cron: {
-    jobs: () => request<{ jobs: CronJob[] }>("/api/cron/jobs"),
-    targets: () => request<{ targets: DeliveryTarget[] }>("/api/cron/delivery-targets"),
-    create: (input: CronJobInput) => request<CronJob>("/api/cron/jobs", { json: input }),
-    update: (id: string, input: CronJobInput) =>
-      request<CronJob>(`/api/cron/jobs/${segment(id)}`, { method: "PUT", json: input }),
-    pause: (id: string) =>
-      request<CronJob>(`/api/cron/jobs/${segment(id)}/pause`, { method: "POST" }),
-    resume: (id: string) =>
-      request<CronJob>(`/api/cron/jobs/${segment(id)}/resume`, { method: "POST" }),
-    trigger: (id: string) =>
-      request<CronJob>(`/api/cron/jobs/${segment(id)}/trigger`, { method: "POST" }),
-    remove: (id: string) =>
-      request<OkResponse>(`/api/cron/jobs/${segment(id)}`, { method: "DELETE" }),
+    jobs: (profile?: string) => request<{ jobs: CronJob[] }>(forProfile("/api/cron/jobs", profile)),
+    targets: (profile?: string) =>
+      request<{ targets: DeliveryTarget[] }>(forProfile("/api/cron/delivery-targets", profile)),
+    blueprints: () => request<{ blueprints: CronBlueprint[] }>("/api/cron/blueprints"),
+    create: (input: CronJobInput, profile?: string) =>
+      request<CronJob>(forProfile("/api/cron/jobs", profile), { json: input }),
+    update: (id: string, input: CronJobInput, profile?: string) =>
+      request<CronJob>(forProfile(`/api/cron/jobs/${segment(id)}`, profile), {
+        method: "PUT",
+        json: input,
+      }),
+    pause: (id: string, profile?: string) =>
+      request<CronJob>(forProfile(`/api/cron/jobs/${segment(id)}/pause`, profile), {
+        method: "POST",
+      }),
+    resume: (id: string, profile?: string) =>
+      request<CronJob>(forProfile(`/api/cron/jobs/${segment(id)}/resume`, profile), {
+        method: "POST",
+      }),
+    trigger: (id: string, profile?: string) =>
+      request<CronJob>(forProfile(`/api/cron/jobs/${segment(id)}/trigger`, profile), {
+        method: "POST",
+      }),
+    remove: (id: string, profile?: string) =>
+      request<OkResponse>(forProfile(`/api/cron/jobs/${segment(id)}`, profile), {
+        method: "DELETE",
+      }),
   },
 
   skills: {
@@ -784,8 +804,10 @@ export const api = {
     toolsets: () => request<{ toolsets: ToolsetInfo[] }>("/api/tools/toolsets"),
     hubSearch: (q: string) =>
       request<HubSearchResponse>(withQuery("/api/skills/hub/search", { q })),
-    hubInstall: (identifier: string) =>
-      request<OkResponse>("/api/skills/hub/install", { json: { identifier } }),
+    hubInstall: (identifier: string, profile?: string) =>
+      request<OkResponse>(forProfile("/api/skills/hub/install", profile), {
+        json: { identifier },
+      }),
     hubUpdate: (name: string) => request<OkResponse>("/api/skills/hub/update", { json: { name } }),
     hubUninstall: (name: string) =>
       request<OkResponse>("/api/skills/hub/uninstall", { json: { name } }),
@@ -798,7 +820,7 @@ export const api = {
         method: "POST",
       }),
     install: (body: PluginInstallRequest) =>
-      request<OkResponse>("/api/plugins/install", { json: body }),
+      request<PluginInstallResponse>("/api/plugins/install", { json: body }),
   },
 
   mcp: {

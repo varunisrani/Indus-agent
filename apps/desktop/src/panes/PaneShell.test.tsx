@@ -45,6 +45,7 @@ function setup() {
   registry.register({ id: "files", stateful: false, render: () => <p>file tree</p> });
   registry.register({ id: "review", stateful: false, render: () => <p>diffs</p> });
   const store = new LayoutStore({ storage: memory(), available: () => registry.ids() });
+  store.applyPreset("default"); // the window starts on the chat alone; these cases need every pane
   const view = render(
     <PaneRegistryProvider registry={registry}>
       <PaneShell store={store} chat={<p>the chat</p>} sessionId="s1" profile="default" />
@@ -246,5 +247,33 @@ describe("shortcuts hook", () => {
     expect(onAction).toHaveBeenCalledWith("jump");
     expect(screen.getByTestId("slots").textContent).toBe("none");
     fireEvent.keyUp(window, { key: "Control" });
+  });
+});
+
+describe("layout editor (W52-l)", () => {
+  it("opens from the band or Ctrl+Shift+\\, applies a template and the mode, and closes", () => {
+    const { store } = setup();
+    fireEvent.click(screen.getByRole("button", { name: "Edit layout" }));
+    const card = screen.getByRole("dialog", { name: "Layouts" });
+    expect(document.querySelector(".pane-shell")?.getAttribute("data-layout-editing")).toBe("true");
+    const templates = within(card).getByRole("radiogroup", { name: "Templates" });
+    expect(within(templates).getAllByRole("radio")).toHaveLength(5);
+    fireEvent.click(within(templates).getByRole("radio", { name: "Quad" }));
+    expect(store.getSnapshot().preset).toBe("quad");
+    expect(
+      within(templates).getByRole("radio", { name: "Quad" }).getAttribute("aria-checked"),
+    ).toBe("true");
+    // the custom actions are placeholders until saved templates exist
+    expect(
+      (within(card).getByText("New grid layout").closest("button") as HTMLButtonElement).disabled,
+    ).toBe(true);
+    fireEvent.click(within(card).getByRole("radio", { name: /^Simple/ }));
+    expect(store.mode()).toBe("simple");
+    fireEvent.click(within(card).getByRole("button", { name: "Done" }));
+    expect(screen.queryByRole("dialog", { name: "Layouts" })).toBeNull();
+    fireEvent.keyDown(window, { key: "\\", code: "Backslash", ctrlKey: true, shiftKey: true });
+    expect(screen.getByRole("dialog", { name: "Layouts" })).toBeTruthy();
+    fireEvent.keyDown(window, { key: "\\", code: "Backslash", ctrlKey: true, shiftKey: true });
+    expect(screen.queryByRole("dialog", { name: "Layouts" })).toBeNull();
   });
 });

@@ -10,6 +10,7 @@
 // - a vanished session hands its unsent text to the fresh draft once, with an undoable strip.
 
 import type { TodoItem } from "@indus/protocol";
+import { ArrowUp, History, Square } from "lucide-react";
 import {
   type ChangeEvent,
   type ClipboardEvent,
@@ -23,6 +24,8 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { desktopBridge, launchFacts } from "../../app/bridge.ts";
+import { useSessionFacts } from "../../app/StatusBar.tsx";
 import type { ChatConnection } from "../../gateway/connectionStore.ts";
 import { useGatewayConnection } from "../../gateway/react.tsx";
 import { useT } from "../../i18n/index.tsx";
@@ -40,6 +43,7 @@ import { errorMessage, isUncertain } from "../rpcErrors.ts";
 import { helpLines, isSlashLine, type LocalCommandName, runSlash } from "../slash.ts";
 import type { VoicePort } from "../voice/dictation.ts";
 import { VoiceButtons } from "../voice/VoiceButtons.tsx";
+import { AttachMenu, type PickMode } from "./AttachMenu.tsx";
 import {
   type Attachment,
   AttachmentError,
@@ -54,6 +58,8 @@ import {
   stageAttachment,
   withFileReferences,
 } from "./attachments.ts";
+import { CompletionDrawer } from "./CompletionDrawer.tsx";
+import { ComposerHelp } from "./ComposerHelp.tsx";
 import {
   applyCompletion,
   CompletionSource,
@@ -61,6 +67,7 @@ import {
   EMPTY_COMPLETION,
   PromptHistory,
 } from "./completion.ts";
+import "./composerMenus.css";
 import {
   adoptGoneDraft,
   type DraftStore,
@@ -72,6 +79,7 @@ import {
   verifySessionGone,
   windowDrafts,
 } from "./goneSession.ts";
+import { NoticeStrip } from "./NoticeStrip.tsx";
 
 export interface ComposerProps {
   /** The session written to, or null for the window's fresh draft. */
@@ -101,18 +109,17 @@ export interface ComposerProps {
   onReasoningDisplay?(show: boolean): void;
   /** A system line in the conversation (slash output, notices). */
   onSystemLine?(text: string): void;
-  /** The native file picker; resolves with chosen paths. */
-  pickFiles?(): Promise<string[]>;
+  /** The native picker (files, a folder or images); resolves with chosen paths. */
+  pickFiles?(mode?: PickMode): Promise<string[]>;
   attachmentDeps?: Partial<Pick<StageDeps, "guardLocalPath" | "readLocalBytes" | "uploadBytes">>;
   completionDebounceMs?: number;
+  /** "Edit models…" in the model menu: open the model settings. */
+  onEditModels?(): void;
   /** The daemon's voice methods (P24-35); the mic and talk buttons show only with one. */
   voice?: VoicePort | null;
 }
 
 const history = new PromptHistory();
-const BUTTON =
-  "rounded px-3 py-1 text-sm border border-line hover:bg-raised disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-focus";
-
 function newKey(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
@@ -221,12 +228,13 @@ export function Composer(props: ComposerProps) {
       new CompletionSource({
         request,
         sessionId: props.sessionId,
+        cwd: props.cwd ?? props.newSessionCwd ?? null,
         onChange: setCompletion,
         ...(props.completionDebounceMs === undefined
           ? {}
           : { debounceMs: props.completionDebounceMs }),
       }),
-    [request, props.sessionId, props.completionDebounceMs],
+    [request, props.sessionId, props.cwd, props.newSessionCwd, props.completionDebounceMs],
   );
   useEffect(() => () => source.dispose(), [source]);
 
@@ -305,10 +313,20 @@ export function Composer(props: ComposerProps) {
     addFiles(event.clipboardData.files);
   };
 
-  const pick = async () => {
-    if (props.pickFiles === undefined) return;
-    const paths = await props.pickFiles();
+  const picker = props.pickFiles ?? bridgePicker();
+  const attachPaths = (paths: string[]) =>
     setAttachments((now) => [...now, ...paths.map((path) => attachmentFromPath(path))]);
+  /** Insert `text` at the caret as its own word. */
+  const insertAtCaret = (insert: string) => {
+    const box = textarea.current;
+    const at = box?.selectionStart ?? text.length;
+    const before = text.slice(0, at);
+    const after = text.slice(at);
+    const lead = before === "" || /\s$/.test(before) ? "" : " ";
+    const tail = after.startsWith(" ") ? "" : " ";
+    const next = `${before}${lead}${insert}${tail}${after}`;
+    write(next, before.length + lead.length + insert.length + tail.length);
+    box?.focus();
   };
 
   // -- sending ------------------------------------------------------------------------------------
@@ -455,6 +473,16 @@ export function Composer(props: ComposerProps) {
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.nativeEvent.isComposing || composing.current) return;
+    if (completion.trigger !== null && completion.items.length === 0 && event.key === "Escape") {
+      event.preventDefault();
+      source.close();
+      return;
+    }
+    if (showHelp && event.key === "Escape") {
+      event.preventDefault();
+      write("");
+      return;
+    }
     if (completion.trigger !== null && completion.items.length > 0) {
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         event.preventDefault();
@@ -507,6 +535,17 @@ export function Composer(props: ComposerProps) {
   };
 
   const restored = drafts.restored;
+  const showHelp = text === "?" && attachments.length === 0 && completion.trigger === null;
+  const facts = useSessionFacts(connection, props.sessionId);
+  const info = facts.info;
+  const current =
+    info !== null && typeof info.model === "string" && info.model !== ""
+      ? {
+          provider: typeof info.provider === "string" ? info.provider : "",
+          model: info.model,
+          effort: typeof info.reasoning_effort === "string" ? info.reasoning_effort : null,
+        }
+      : null;
   const hasStack =
     todos.length > 0 ||
     busy.queue.length + busy.held.length > 0 ||
@@ -516,7 +555,7 @@ export function Composer(props: ComposerProps) {
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: the drop zone wraps the editor
     <div
-      className="border-t border-line bg-bg"
+      className="composer"
       data-testid="composer"
       onDragOver={(event) => {
         if (event.dataTransfer.types.includes("Files")) event.preventDefault();
@@ -542,27 +581,20 @@ export function Composer(props: ComposerProps) {
       ) : null}
 
       {restored !== null && props.sessionId === null ? (
-        <div role="status" className="flex items-center gap-2 px-3 py-1 text-xs bg-raised">
-          <span className="flex-1">
-            {restored.adopted ? t("composer.restored") : t("composer.restoredNotUsed")}
-          </span>
-          {restored.adopted ? (
-            <button type="button" className="underline" onClick={() => store.update(undoRestore)}>
-              {t("composer.undo")}
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="underline"
-              onClick={() => void navigator.clipboard?.writeText(restored.text)}
-            >
-              {t("composer.copy")}
-            </button>
-          )}
-          <button type="button" className="underline" onClick={() => store.update(dismissRestore)}>
-            {t("composer.dismiss")}
-          </button>
-        </div>
+        // the composer's notice strip (W52-g)
+        <NoticeStrip
+          icon={<History aria-hidden="true" size={12} />}
+          lead={restored.adopted ? t("composer.restored") : t("composer.restoredNotUsed")}
+          actions={[
+            restored.adopted
+              ? { label: t("composer.undo"), run: () => store.update(undoRestore) }
+              : {
+                  label: t("composer.copy"),
+                  run: () => void navigator.clipboard?.writeText(restored.text),
+                },
+            { label: t("composer.dismiss"), run: () => store.update(dismissRestore), quiet: true },
+          ]}
+        />
       ) : null}
 
       {imageDraft !== null ? (
@@ -616,135 +648,140 @@ export function Composer(props: ComposerProps) {
         </ul>
       ) : null}
 
-      <div className="relative px-3 py-2">
-        {completion.trigger !== null && completion.items.length > 0 ? (
-          <div
-            role="listbox"
-            id={listId}
-            aria-label={t("composer.completions")}
-            className="absolute bottom-full left-3 z-20 mb-1 max-h-60 w-96 overflow-auto rounded border border-line bg-raised shadow p-1"
-          >
-            {completion.items.map((item, index) => (
-              <div
-                key={`${item.text}\u0000${item.display}`}
-                id={`${listId}-${index}`}
-                role="option"
-                tabIndex={-1}
-                aria-selected={index === completion.selected}
-                className={`flex gap-2 rounded px-2 py-0.5 text-sm ${
-                  index === completion.selected ? "bg-accent text-accent-fg" : ""
-                }`}
-                onMouseDown={(event) => {
-                  event.preventDefault();
-                  if (completion.trigger === null) return;
-                  const applied = applyCompletion(text, completion.trigger, item);
-                  source.close();
-                  write(applied.text, applied.caret);
-                }}
-              >
-                <span className="font-mono">{item.display}</span>
-                {item.meta ? (
-                  // the highlighted row sits on the accent fill: its note takes the accent's ink
-                  // (muted grey on the accent is unreadable)
-                  <span
-                    className={`truncate ${
-                      index === completion.selected ? "text-accent-fg" : "text-muted"
-                    }`}
-                  >
-                    {item.meta}
-                  </span>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        ) : null}
-        <textarea
-          ref={textarea}
-          aria-label={t("composer.label")}
-          aria-autocomplete="list"
-          aria-controls={completion.items.length > 0 ? listId : undefined}
-          aria-activedescendant={
-            completion.items.length > 0 ? `${listId}-${completion.selected}` : undefined
-          }
-          placeholder={t(busy.running ? "composer.placeholderBusy" : "composer.placeholder")}
-          rows={3}
-          className="w-full resize-none rounded border border-line bg-bg px-2 py-1 text-sm"
-          value={text}
-          onChange={onChange}
-          onKeyDown={onKeyDown}
-          onPaste={onPaste}
-          onCompositionStart={() => {
-            composing.current = true;
-          }}
-          onCompositionEnd={() => {
-            composing.current = false;
-          }}
-        />
-        {problem !== null ? (
-          <p role="alert" className="text-xs text-danger">
-            {problem}
-          </p>
-        ) : null}
-        <div className="mt-1 flex items-center gap-2">
-          <ModelPicker
-            sessionId={props.sessionId}
-            profile={props.profile ?? null}
-            connection={connection}
-            prefs={prefs}
-            open={pickerOpen}
-            onOpenChange={setPickerOpen}
+      <div className="composer-main">
+        {completion.trigger !== null ? (
+          <CompletionDrawer
+            state={completion}
+            listId={listId}
+            onPick={(item) => {
+              if (completion.trigger === null) return;
+              const applied = applyCompletion(text, completion.trigger, item);
+              source.close();
+              write(applied.text, applied.caret);
+            }}
           />
-          {props.pickFiles !== undefined ? (
-            <button type="button" className={BUTTON} onClick={() => void pick()}>
-              {t("composer.attach")}
-            </button>
-          ) : null}
-          {props.voice ? (
-            <VoiceButtons
-              port={props.voice}
-              store={store}
+        ) : null}
+        {showHelp ? <ComposerHelp mac={isMacPlatform()} /> : null}
+        <div className="composer-box">
+          <AttachMenu
+            pick={picker}
+            onFiles={attachPaths}
+            onInsert={insertAtCaret}
+            cwd={props.cwd ?? props.newSessionCwd ?? null}
+          />
+          <textarea
+            ref={textarea}
+            aria-label={t("composer.label")}
+            aria-autocomplete="list"
+            aria-controls={completion.items.length > 0 ? listId : undefined}
+            aria-activedescendant={
+              completion.items.length > 0 ? `${listId}-${completion.selected}` : undefined
+            }
+            placeholder={t(busy.running ? "composer.placeholderBusy" : "composer.placeholder")}
+            rows={1}
+            className="composer-input"
+            value={text}
+            onChange={onChange}
+            onKeyDown={onKeyDown}
+            onPaste={onPaste}
+            onCompositionStart={() => {
+              composing.current = true;
+            }}
+            onCompositionEnd={() => {
+              composing.current = false;
+            }}
+          />
+          <div className="composer-tools">
+            <ModelPicker
               sessionId={props.sessionId}
               profile={props.profile ?? null}
               connection={connection}
+              prefs={prefs}
+              current={current}
+              hasHistory={props.sessionId !== null}
+              {...(props.onEditModels === undefined ? {} : { onEditModels: props.onEditModels })}
+              open={pickerOpen}
+              onOpenChange={setPickerOpen}
             />
-          ) : null}
-          <span className="flex-1" />
-          {busy.running ? (
-            <>
-              <button type="button" className={BUTTON} onClick={() => void actions?.stop()}>
-                {t("composer.stop")}
-              </button>
+            {props.voice ? (
+              <VoiceButtons
+                port={props.voice}
+                store={store}
+                sessionId={props.sessionId}
+                profile={props.profile ?? null}
+                connection={connection}
+              />
+            ) : null}
+            {busy.running ? (
+              <>
+                <button
+                  type="button"
+                  className="desk-btn"
+                  data-variant="ghost"
+                  data-size="sm"
+                  disabled={text.trim() === ""}
+                  onClick={() => void steer()}
+                >
+                  {t("composer.steer")}
+                </button>
+                <button
+                  type="button"
+                  className="desk-btn"
+                  data-variant="ghost"
+                  data-size="sm"
+                  disabled={text.trim() === "" || sending}
+                  onClick={() => void submit()}
+                >
+                  {t("composer.queue")}
+                </button>
+                <button
+                  type="button"
+                  className="composer-send"
+                  data-kind="stop"
+                  aria-label={t("composer.stop")}
+                  onClick={() => void actions?.stop()}
+                >
+                  <Square aria-hidden="true" />
+                </button>
+              </>
+            ) : (
               <button
                 type="button"
-                className={BUTTON}
-                disabled={text.trim() === ""}
-                onClick={() => void steer()}
-              >
-                {t("composer.steer")}
-              </button>
-              <button
-                type="button"
-                className={BUTTON}
-                disabled={text.trim() === "" || sending}
+                className="composer-send"
+                aria-label={t("composer.send")}
+                disabled={(text.trim() === "" && attachments.length === 0) || sending}
                 onClick={() => void submit()}
               >
-                {t("composer.queue")}
+                <ArrowUp aria-hidden="true" />
               </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              className={BUTTON}
-              disabled={(text.trim() === "" && attachments.length === 0) || sending}
-              onClick={() => void submit()}
-            >
-              {t("composer.send")}
-            </button>
-          )}
+            )}
+          </div>
         </div>
+        {problem !== null ? (
+          <p role="alert" className="composer-problem">
+            {problem}
+          </p>
+        ) : null}
       </div>
     </div>
   );
+}
+
+/** The native picker through main's bridge, or null in a plain browser preview. */
+function bridgePicker(): ((mode?: PickMode) => Promise<string[]>) | null {
+  const fs = desktopBridge()?.fs;
+  if (fs === undefined) return null;
+  return async (mode = "files") => {
+    const answer = await fs.selectPaths(
+      mode === "folder" ? { mode: "open-dir" } : { mode: "open-file", multiple: true },
+    );
+    return answer.canceled ? [] : answer.paths;
+  };
+}
+
+function isMacPlatform(): boolean {
+  const platform = launchFacts().platform;
+  return platform === "mac" || platform === "darwin";
 }
 
 function isGoneName(name: string | null): boolean {

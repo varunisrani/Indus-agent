@@ -2,12 +2,13 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { PageHeader } from "../shell/PageHeader.tsx";
 import { ProfileScopeProvider } from "../shell/ProfileScope.tsx";
 import { FakePtyServer } from "../testing/fakePtyServer.ts";
 import { createMockApi, type MockApi } from "../testing/mockApi.ts";
 import { testClient } from "../testing/render.tsx";
 import { AttachTokenKeeper } from "./attachToken.ts";
-import { ChatHost, type ChatHostDeps } from "./ChatHost.tsx";
+import { ChatHost, type ChatHostDeps, PANEL_COLLAPSED_KEY } from "./ChatHost.tsx";
 import { attachImage, type ChatRailProps, chooseWorkspace } from "./ChatRail.tsx";
 import { browserFeedDeps, FEED_COPY } from "./eventsFeed.ts";
 import { browserPtyDeps } from "./ptySocket.ts";
@@ -139,7 +140,9 @@ function renderHost(
     <QueryClientProvider client={testClient()}>
       <MemoryRouter initialEntries={[options.path ?? "/chat"]}>
         <ProfileScopeProvider>
-          <ChatHost active deps={deps} />
+          <PageHeader title="Chat">
+            <ChatHost active deps={deps} />
+          </PageHeader>
         </ProfileScopeProvider>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -350,5 +353,72 @@ describe("terminal overlays", () => {
     act(() => h.terminal.type("x"));
     expect(await screen.findByTestId("chat-notice")).toBeTruthy();
     expect(screen.getByText(COPY.reconnecting)).toBeTruthy();
+  });
+});
+
+describe("side panel (W52-a)", () => {
+  it("collapses to a floating panel button and remembers it", async () => {
+    window.localStorage.removeItem(PANEL_COLLAPSED_KEY);
+    const h = renderHost();
+    await connected(h);
+    fireEvent.click(screen.getByRole("button", { name: "Collapse side panel" }));
+    const panel = () => document.querySelector<HTMLElement>('aside[aria-label="Chat details"]');
+    expect(panel()?.hidden).toBe(true);
+    expect(window.localStorage.getItem(PANEL_COLLAPSED_KEY)).toBe("1");
+    fireEvent.click(screen.getByRole("button", { name: "Show side panel" }));
+    expect(panel()?.hidden).toBe(false);
+    expect(window.localStorage.getItem(PANEL_COLLAPSED_KEY)).toBeNull();
+  });
+
+  it("the badge follows the feed's connection, not the model", async () => {
+    const h = renderHost();
+    await connected(h);
+    await waitFor(() => expect(screen.getByTestId("chat-feed-phase").textContent).toBe("live"));
+    act(() => h.server.last("/api/events").serverClose(4403));
+    await waitFor(() => expect(screen.getByTestId("chat-feed-phase").textContent).toBe("error"));
+  });
+
+  it("the model picker saves the main model and says to start a new chat", async () => {
+    const h = renderHost();
+    await connected(h);
+    const card = await screen.findByTestId("chat-model");
+    await waitFor(() => expect(card.textContent).toContain("configured-model"));
+    fireEvent.click(within(card).getByRole("button", { name: /switch model/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Switch model" });
+    await within(dialog).findByRole("button", { name: /Fake provider/ });
+    const switchButton = within(dialog).getByRole("button", {
+      name: "Switch",
+    }) as HTMLButtonElement;
+    expect(switchButton.disabled).toBe(true);
+    fireEvent.change(within(dialog).getByLabelText("Model id"), {
+      target: { value: "bigger-model" },
+    });
+    expect(switchButton.disabled).toBe(false);
+    fireEvent.click(switchButton);
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Switch model" })).toBeNull());
+    expect(h.mock.callsTo("POST", "/api/model/set")[0]?.body).toEqual({
+      scope: "main",
+      provider: "fake",
+      model: "bigger-model",
+    });
+    expect(
+      await screen.findByText("Model set to bigger-model. Start a new chat to use it."),
+    ).toBeTruthy();
+  });
+
+  it("the header shows the session title from the feed", async () => {
+    const h = renderHost();
+    await connected(h);
+    act(() => {
+      h.server.publish(h.channel(), {
+        type: "session.title",
+        session_id: "s1",
+        seq: 4,
+        title: "Cron folder",
+      });
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Cron folder"),
+    );
   });
 });

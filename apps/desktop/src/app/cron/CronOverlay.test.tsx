@@ -55,9 +55,10 @@ describe("CronOverlay", () => {
     expect(await screen.findByText("standup notes")).toBeTruthy();
     expect(screen.queryByText("paper digest")).toBeNull();
     fireEvent.click(screen.getByLabelText("All profiles"));
-    const row = (await screen.findByText("paper digest")).closest("tr") as HTMLElement;
-    expect(row.textContent).toContain("research");
-    fireEvent.click(row.querySelector("button") as HTMLButtonElement); // Pause
+    const row = (await screen.findByText("paper digest")).closest("li") as HTMLElement;
+    expect(row.textContent).toContain("research"); // the owner as the row's meta
+    fireEvent.click(row.querySelector("button") as HTMLButtonElement); // select it
+    fireEvent.click(await screen.findByRole("button", { name: "Pause" }));
     await waitFor(() =>
       expect(api.calls.some((c) => c.path === "/api/cron/jobs/r1/pause")).toBe(true),
     );
@@ -68,11 +69,14 @@ describe("CronOverlay", () => {
   it("a new job can start from a blueprint", async () => {
     const api = backend();
     render(<CronOverlay api={api} profile="work" onClose={() => {}} />);
-    fireEvent.click(await screen.findByText("New job"));
+    await screen.findByText("standup notes");
+    fireEvent.click(screen.getAllByRole("button", { name: "New cron" })[0] as HTMLElement);
     fireEvent.change(await screen.findByLabelText("Start from"), {
       target: { value: "weekly-review" },
     });
-    fireEvent.click(screen.getByText("Save"));
+    // the blueprint's expression is a preset: the summary names it
+    expect(screen.getByText("Every Monday at 9:00 AM")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Create cron" }));
     await waitFor(() =>
       expect(api.calls.some((c) => c.method === "POST" && c.path === "/api/cron/jobs")).toBe(true),
     );
@@ -81,5 +85,34 @@ describe("CronOverlay", () => {
       profile: "work",
       body: { prompt: "Review the week", schedule: "0 9 * * 1", skills: ["weekly-review"] },
     });
+    expect(((created?.body ?? {}) as Record<string, unknown>).model).toBeUndefined();
+  });
+
+  it("a blueprint row opens the dialog pre-set, and delivery targets become checkboxes", async () => {
+    const api = backend();
+    api.route("GET", "/api/cron/delivery-targets", {
+      targets: [
+        { id: "local", label: "Save locally", kind: "local", available: true },
+        { id: "telegram", label: "Telegram", kind: "platform", available: true },
+        { id: "slack", label: "Slack", kind: "platform", available: false },
+      ],
+    });
+    render(<CronOverlay api={api} profile="work" onClose={() => {}} />);
+    fireEvent.click(await screen.findByText("weekly-review"));
+    expect(((await screen.findByLabelText("Start from")) as HTMLSelectElement).value).toBe(
+      "weekly-review",
+    );
+    await waitFor(() => expect(screen.getByLabelText("This computer")).toBeTruthy());
+    expect((screen.getByLabelText(/Slack/) as HTMLInputElement).disabled).toBe(true);
+    fireEvent.click(screen.getByLabelText("This computer"));
+    fireEvent.click(screen.getByLabelText("Telegram"));
+    fireEvent.change(screen.getByLabelText("Frequency"), { target: { value: "custom" } });
+    fireEvent.change(screen.getByLabelText("Cron expression"), { target: { value: "every 2h" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create cron" }));
+    await waitFor(() =>
+      expect(api.calls.some((c) => c.method === "POST" && c.path === "/api/cron/jobs")).toBe(true),
+    );
+    const created = api.calls.find((c) => c.method === "POST" && c.path === "/api/cron/jobs");
+    expect(created?.body).toMatchObject({ schedule: "every 2h", deliver: "local,telegram" });
   });
 });

@@ -2,8 +2,9 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 
-// R09.22 / ACC-L20-1: the dashboard ships no font files and no imagery of its own yet; type comes
-// from system stacks named in @indus/ui, so no vendor brand asset can ride along.
+// R09.22 / ACC-L20-1, amended by the owner's UI-parity decision (W51-a-2): the app's own tree holds
+// no font files and no imagery, so no vendor brand asset can ride along. Type comes from open-licence
+// @fontsource packages imported by src/theme/fonts.ts; stylesheets in src never load fonts directly.
 const APP_ROOT = join(import.meta.dirname, "..", "..");
 const MEDIA = /\.(woff2?|ttf|otf|eot|png|jpe?g|gif|webp|avif|ico|svg)$/i;
 

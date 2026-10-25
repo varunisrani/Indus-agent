@@ -47,31 +47,60 @@ LOGIN_ERRORS: Final[dict[str, str]] = {
 ERROR_ALIASES: Final[dict[str, str]] = {"1": "invalid"}
 """``?error=1`` is what the password route sends for wrong credentials (kept from P18-03)."""
 
-# Our light/dark pair, the @indus/ui semantic token values (bg, bg-raised, fg, fg-muted, border,
-# accent, accent-fg, danger, focus-ring). System font stacks only: no font files (R09.22).
+# One fixed dark amber look in both themes (W52-login-1): a base with a faint amber checkerboard
+# and a glow from the top, a square card with a bevel, amber buttons. System font stacks only: no
+# font files (R09.22), so the look comes from weights, capitals and letter-spacing. The entrance
+# animation is CSS only and is switched off under reduced motion.
 LOGIN_STYLE: Final = (
-    ":root{color-scheme:light dark;--bg:#f8f6f5;--card:#ffffff;--fg:#312d29;--muted:#5d5750;"
-    "--line:#918980;--accent:#007c9a;--accent-fg:#ffffff;--danger:#c23539;--focus:#009abd}"
-    "@media (prefers-color-scheme: dark){:root{--bg:#1d1a17;--card:#312d29;--fg:#f8f6f5;"
-    "--muted:#c6c0b9;--line:#766f67;--accent:#3db6da;--accent-fg:#1d1a17;--danger:#ff7470;"
-    "--focus:#76cfed}}"
+    ":root{color-scheme:dark;--base:#170d02;--amber:#ffac02;--card:#1c1207;--line:#442d05;"
+    "--field:#110a02;--field-line:#644202;--text:#ffffff;--soft:#afaca8;--label:#96928d;"
+    "--form-title:#bbb8b5;--foot:#716c66;--danger:#ff6b6b}"
     "*{box-sizing:border-box}"
-    "html,body{margin:0;min-height:100%;background:var(--bg);color:var(--fg);"
-    "font:15px/1.5 system-ui,-apple-system,'Segoe UI',sans-serif}"
-    "main{max-width:24rem;margin:12vh auto 2rem;padding:0 1rem}"
-    "h1{font-size:1.35rem;margin:0 0 .25rem}"
-    ".lead{color:var(--muted);margin:0 0 1.25rem}"
-    ".card{background:var(--card);border:1px solid var(--line);border-radius:.6rem;"
-    "padding:1.1rem;margin:0 0 .9rem}"
-    "label{display:block;font-size:.85rem;color:var(--muted);margin:.6rem 0 .2rem}"
-    "input{display:block;width:100%;padding:.5rem .6rem;font:inherit;color:var(--fg);"
-    "background:var(--bg);border:1px solid var(--line);border-radius:.4rem}"
-    ".go{display:block;width:100%;margin-top:1rem;padding:.55rem .8rem;font:inherit;"
-    "font-weight:600;text-align:center;text-decoration:none;color:var(--accent-fg);"
-    "background:var(--accent);border:0;border-radius:.4rem;cursor:pointer}"
-    "input:focus-visible,.go:focus-visible{outline:2px solid var(--focus);outline-offset:2px}"
-    ".err{color:var(--danger);border-color:var(--danger)}"
-    ".none{color:var(--muted)}"
+    "html{min-height:100%;background:var(--base)}"
+    "body{margin:0;min-height:100vh;color:var(--text);"
+    "font:15px/1.5 system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;"
+    "background-color:var(--base);"
+    "background-image:"
+    "radial-gradient(ellipse 70% 55% at 50% 0,rgba(255,172,2,.07),transparent 100%),"
+    "repeating-conic-gradient(rgba(255,172,2,.045) 0 25%,transparent 0 50%);"
+    "background-size:100% 100%,6px 6px;background-attachment:fixed}"
+    "main{width:26rem;max-width:calc(100% - 2rem);margin:0 auto;padding:6vh 0 3rem;"
+    "animation:rise .6s ease-out both}"
+    "@keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}"
+    "@media (prefers-reduced-motion:reduce){main{animation:none}}"
+    ".mark{margin:4px 0 36px;text-align:center;color:var(--amber);font-size:17px;font-weight:600;"
+    "letter-spacing:.32em;text-transform:uppercase;line-height:1}"
+    ".mark .sq{display:inline-block;width:6px;height:6px;margin:0 .55em 0 .25em;"
+    "background:var(--amber);vertical-align:.18em}"
+    ".card{background:var(--card);border:1px solid var(--line);padding:36px 32px 32px;"
+    "box-shadow:inset 1px 1px 0 rgba(255,255,255,.04),inset -1px -1px 0 rgba(0,0,0,.35),"
+    "0 24px 60px rgba(0,0,0,.45)}"
+    "h1{margin:0;font-size:30px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;"
+    "line-height:1.2}"
+    ".lead{margin:6px 0 28px;color:var(--soft);font-size:15px}"
+    ".err{margin:0 0 16px;color:var(--danger);font-size:13px}"
+    ".none{margin:0;color:var(--soft)}"
+    ".ways{display:flex;flex-direction:column;gap:12px}"
+    "form{display:flex;flex-direction:column;gap:12px;margin:0}"
+    ".form-title{margin:0;color:var(--form-title);font-size:11.5px;font-weight:600;"
+    "letter-spacing:.18em;text-transform:uppercase}"
+    "label{display:block;margin:0 0 6px;color:var(--label);font-size:11.5px;letter-spacing:.12em;"
+    "text-transform:uppercase}"
+    "input{display:block;width:100%;height:41px;padding:0 12px;font:inherit;font-size:15px;"
+    "color:var(--text);background:var(--field);border:1px solid var(--field-line);border-radius:0;"
+    "outline:none}"
+    "input:focus{border-color:var(--amber);box-shadow:0 0 0 1px var(--amber)}"
+    ".go{display:block;width:100%;padding:15px 16px;font:inherit;font-size:12.5px;font-weight:700;"
+    "line-height:19px;letter-spacing:.2em;text-transform:uppercase;text-align:center;"
+    "text-decoration:none;color:var(--base);background:var(--amber);border:0;border-radius:0;"
+    "cursor:pointer;"
+    "box-shadow:inset 1px 1px 0 rgba(255,255,255,.35),inset -1px -1px 0 rgba(0,0,0,.25)}"
+    ".go:hover{filter:brightness(1.08)}"
+    ".go:active{color:var(--amber);background:var(--base);box-shadow:inset 0 0 0 1px var(--amber)}"
+    ".go:focus-visible{outline:2px solid var(--amber);outline-offset:3px}"
+    "footer{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:28px;"
+    "color:var(--foot);font-size:12px;letter-spacing:.1em;text-transform:uppercase}"
+    "footer::before,footer::after{content:'';width:24px;height:1px;background:rgba(255,172,2,.35)}"
 )
 
 _STYLE_HASH: Final = base64.b64encode(hashlib.sha256(LOGIN_STYLE.encode("utf-8")).digest()).decode(
@@ -110,7 +139,8 @@ def _message(error: str) -> str:
 
 def _password_form(provider: Provider, prefix: str, next_path: str) -> str:
     fields = [
-        f'<form class="card" method="post" action="{_attr(prefix + "/auth/password-login")}">',
+        f'<form method="post" action="{_attr(prefix + "/auth/password-login")}">',
+        f'<p class="form-title">{html.escape(provider.display_name)}</p>',
         f'<input type="hidden" name="provider" value="{_attr(provider.name)}">',
     ]
     if next_path:
@@ -119,14 +149,13 @@ def _password_form(provider: Provider, prefix: str, next_path: str) -> str:
     secret = _attr(f"pass-{provider.name}")
     fields.extend(
         [
-            f'<label for="{ident}">Username</label>',
+            f'<div><label for="{ident}">Username</label>',
             f'<input id="{ident}" name="username" autocomplete="username" '
-            'autocapitalize="none" autocorrect="off" spellcheck="false" required>',
-            f'<label for="{secret}">Password</label>',
+            'autocapitalize="none" autocorrect="off" spellcheck="false" required></div>',
+            f'<div><label for="{secret}">Password</label>',
             f'<input id="{secret}" name="password" type="password" '
-            'autocomplete="current-password" required>',
-            f'<button class="go" type="submit">Sign in with {html.escape(provider.display_name)}'
-            "</button>",
+            'autocomplete="current-password" required></div>',
+            '<button class="go" type="submit">Sign in</button>',
             "</form>",
         ]
     )
@@ -138,8 +167,7 @@ def _redirect_link(provider: Provider, prefix: str, next_path: str) -> str:
     if next_path:
         href += f"&next={quote(next_path, safe='')}"
     return (
-        f'<p class="card"><a class="go" href="{_attr(href)}">'
-        f"Continue with {html.escape(provider.display_name)}</a></p>"
+        f'<a class="go" href="{_attr(href)}">Sign in with {html.escape(provider.display_name)}</a>'
     )
 
 
@@ -162,19 +190,23 @@ def render_login_page(
         "<title>Sign in · Indus Agent</title>",
         f"<style>{LOGIN_STYLE}</style>",
         "</head><body><main>",
-        "<h1>Sign in to Indus Agent</h1>",
-        '<p class="lead">This dashboard is reachable from beyond this computer, so it asks who '
-        "you are first.</p>",
+        '<p class="mark">Indus<span class="sq"></span>Agent</p>',
+        '<div class="card">',
+        "<h1>Sign in</h1>",
+        '<p class="lead">Pick a way to sign in to this Indus Agent dashboard.</p>',
     ]
     message = _message(error)
     if message:
-        parts.append(f'<p class="card err" role="alert">{html.escape(message)}</p>')
+        parts.append(f'<p class="err" role="alert">{html.escape(message)}</p>')
     if not providers:
-        parts.append('<p class="card none">No sign-in method is set up for this dashboard.</p>')
-    for provider in providers:
-        if provider.kind == "password":
-            parts.append(_password_form(provider, prefix, next_path))
-        else:
-            parts.append(_redirect_link(provider, prefix, next_path))
-    parts.append("</main></body></html>")
+        parts.append('<p class="none">No sign-in method is set up for this dashboard.</p>')
+    else:
+        parts.append('<div class="ways">')
+        for provider in providers:
+            if provider.kind == "password":
+                parts.append(_password_form(provider, prefix, next_path))
+            else:
+                parts.append(_redirect_link(provider, prefix, next_path))
+        parts.append("</div>")
+    parts.append("</div><footer>Remote access · Sign-in required</footer></main></body></html>")
     return "".join(parts)

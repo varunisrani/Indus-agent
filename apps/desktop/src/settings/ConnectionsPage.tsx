@@ -5,11 +5,14 @@
 // passwords and access-proxy header values go to main and the keychain; this page never shows or
 // keeps them after the call, and it sees only names and flags back.
 
+import { Globe, Monitor, Plus, SquareTerminal } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { desktopBridge } from "../app/bridge.ts";
 import type { IndusDesktopConnections } from "../global.d.ts";
 import { useT } from "../i18n/index.tsx";
 import "../app/manage/manage.css";
+import { OutlineButton, Pill, SettingRow, Switch, TextButton } from "./primitives.tsx";
+import "./pagesB/pagesB.css";
 
 type View = Awaited<ReturnType<IndusDesktopConnections["list"]>>;
 type Entry = View["connections"][number];
@@ -299,120 +302,121 @@ export function ConnectionsPage(props: { bridge?: IndusDesktopConnections | null
       setNote(error instanceof Error ? error.message : t("manage.failed"));
     }
   };
+  // restyled as quiet rows with pills (W52-j): icon, name, pills, one line; actions on the right
   return (
-    <div className="settings-rows" data-row="connections">
-      <p className="settings-row-note">{t("manage.conn.body")}</p>
-      {view !== null && (
-        <>
-          <label className="manage-inline">
-            <input
-              type="checkbox"
-              checked={view.launchMode === "last-used"}
-              onChange={(e) =>
-                void act(() =>
-                  bridge.setLaunchMode({ mode: e.target.checked ? "last-used" : "primary" }),
-                )
-              }
-            />
-            {t("manage.conn.lastUsed")}
-          </label>
-          {view.quarantined > 0 && (
-            <p className="manage-muted">
-              {t("manage.conn.quarantined", { count: view.quarantined })}
-            </p>
-          )}
-          {view.connections.map((entry) => (
-            <div className="manage-card" key={entry.id} data-connection={entry.id}>
-              <div className="manage-inline">
-                <strong>{entry.label}</strong>
-                {entry.primary && (
-                  <span className="manage-badge" data-tone="ok">
-                    {t("manage.conn.primary")}
-                  </span>
-                )}
-                <span className="manage-muted">
-                  {entry.kind === "local"
-                    ? t("manage.conn.local")
-                    : entry.kind === "ssh"
-                      ? `ssh ${entry.ssh?.user ? `${entry.ssh.user}@` : ""}${entry.ssh?.host ?? ""}`
-                      : entry.url}
-                </span>
-              </div>
-              <div className="manage-inline">
-                {!entry.primary && (
-                  <button
-                    type="button"
-                    className="button button-secondary"
-                    onClick={() => void act(() => bridge.setPrimary({ id: entry.id }))}
-                  >
-                    {t("manage.conn.makePrimary")}
-                  </button>
-                )}
-                {entry.kind !== "local" && (
-                  <>
-                    <button
-                      type="button"
-                      className="button button-secondary"
-                      onClick={() => setEditing(entry)}
-                    >
-                      {t("manage.cron.edit")}
-                    </button>
-                    {entry.authMode === "oauth" &&
-                      (entry.signedIn ? (
-                        <button
-                          type="button"
-                          className="button button-secondary"
-                          onClick={() => void act(() => bridge.signOut({ id: entry.id }))}
-                        >
-                          {t("manage.conn.signOut")}
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          className="button button-primary"
-                          onClick={() =>
-                            void act(async () => {
-                              const answer = await bridge.signIn({ id: entry.id });
-                              if (!answer.ok) throw new Error(answer.message ?? t("manage.failed"));
-                            })
-                          }
-                        >
-                          {t("manage.conn.signIn")}
-                        </button>
-                      ))}
-                    <button
-                      type="button"
-                      className="button button-secondary"
-                      onClick={() => void act(() => bridge.remove({ id: entry.id }))}
-                    >
-                      {t("manage.delete")}
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-          ))}
-        </>
+    <div className="settings-page-body" data-row="connections">
+      <p className="settings-intro">{t("manage.conn.body")}</p>
+      {view !== null && view.quarantined > 0 && (
+        <p className="settings-row-note">
+          {t("manage.conn.quarantined", { count: view.quarantined })}
+        </p>
       )}
+      {(view?.connections ?? []).map((entry) => (
+        <div className="settings-conn" key={entry.id} data-connection={entry.id}>
+          <span className="settings-conn-icon">
+            {entry.kind === "ssh" ? (
+              <SquareTerminal aria-hidden="true" size={14} />
+            ) : entry.kind === "remote" ? (
+              <Globe aria-hidden="true" size={14} />
+            ) : (
+              <Monitor aria-hidden="true" size={14} />
+            )}
+          </span>
+          <span className="settings-conn-text">
+            <span className="settings-conn-name">
+              {entry.label}
+              {entry.primary && <Pill tone="accent">{t("manage.conn.primaryPill")}</Pill>}
+              {entry.lastUsed && <Pill>{t("manage.conn.lastUsedPill")}</Pill>}
+              {entry.kind !== "local" && (
+                <Pill>{entry.kind === "ssh" ? "SSH" : t("manage.conn.remotePill")}</Pill>
+              )}
+            </span>
+            <span className={entry.kind === "remote" ? "sb-mono" : "settings-row-desc"}>
+              {entry.kind === "local"
+                ? t("manage.conn.local")
+                : entry.kind === "ssh"
+                  ? `${entry.ssh?.user ? `${entry.ssh.user}@` : ""}${entry.ssh?.host ?? ""}`
+                  : entry.url}
+            </span>
+          </span>
+          <span className="settings-conn-actions">
+            {!entry.primary && (
+              <TextButton onClick={() => void act(() => bridge.setPrimary({ id: entry.id }))}>
+                {t("manage.conn.makePrimary")}
+              </TextButton>
+            )}
+            {entry.kind !== "local" && (
+              <>
+                <TextButton onClick={() => setEditing(entry)}>{t("manage.cron.edit")}</TextButton>
+                {entry.authMode === "oauth" &&
+                  (entry.signedIn ? (
+                    <TextButton onClick={() => void act(() => bridge.signOut({ id: entry.id }))}>
+                      {t("manage.conn.signOut")}
+                    </TextButton>
+                  ) : (
+                    <OutlineButton
+                      onClick={() =>
+                        void act(async () => {
+                          const answer = await bridge.signIn({ id: entry.id });
+                          if (!answer.ok) throw new Error(answer.message ?? t("manage.failed"));
+                        })
+                      }
+                    >
+                      {t("manage.conn.signIn")}
+                    </OutlineButton>
+                  ))}
+                <TextButton onClick={() => void act(() => bridge.remove({ id: entry.id }))}>
+                  {t("manage.delete")}
+                </TextButton>
+              </>
+            )}
+          </span>
+        </div>
+      ))}
       {note !== "" && (
-        <p className="manage-error" role="alert">
+        <p className="settings-row-error" role="alert">
           {note}
         </p>
       )}
       {editing === null ? (
-        <button type="button" className="button button-primary" onClick={() => setEditing("new")}>
-          {t("manage.conn.add")}
-        </button>
+        <div className="settings-conn-add">
+          <OutlineButton
+            icon={<Plus aria-hidden="true" size={13} />}
+            onClick={() => setEditing("new")}
+          >
+            {t("manage.conn.add")}
+          </OutlineButton>
+        </div>
       ) : (
-        <EntryForm
-          bridge={bridge}
-          entry={editing === "new" ? null : editing}
-          onDone={() => {
-            setEditing(null);
-            load();
-          }}
-          onCancel={() => setEditing(null)}
-        />
+        <div className="sb-form-card">
+          <EntryForm
+            bridge={bridge}
+            entry={editing === "new" ? null : editing}
+            onDone={() => {
+              setEditing(null);
+              load();
+            }}
+            onCancel={() => setEditing(null)}
+          />
+        </div>
+      )}
+      {view !== null && (
+        <div className="settings-conn-launch">
+          <SettingRow
+            rowId="launch-mode"
+            title={t("manage.conn.lastUsedTitle")}
+            description={t("manage.conn.lastUsedBody")}
+            control={
+              <Switch
+                label={t("manage.conn.lastUsedTitle")}
+                checked={view.launchMode === "last-used"}
+                onChange={(on) =>
+                  void act(() => bridge.setLaunchMode({ mode: on ? "last-used" : "primary" }))
+                }
+              />
+            }
+          />
+        </div>
       )}
     </div>
   );

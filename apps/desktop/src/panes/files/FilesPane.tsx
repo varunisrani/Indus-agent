@@ -5,10 +5,10 @@
 // and dragged (as a path) onto the composer. Expanded folders are watched in local mode.
 
 import {
-  ChevronDown,
-  ChevronRight,
+  ChevronsDownUp,
   File,
   Folder,
+  FolderOpen,
   Lock,
   MoreHorizontal,
   RefreshCw,
@@ -24,9 +24,9 @@ import {
   useState,
 } from "react";
 import { desktopBridge } from "../../app/bridge.ts";
-import { Loader } from "../../app/Loader.tsx";
-import type { IndusDesktopBridge } from "../../global.d.ts";
+import type { IndusDesktopBridge, IndusDesktopGit } from "../../global.d.ts";
 import { type MessageKey, useT } from "../../i18n/index.tsx";
+import { PanelLabel } from "../../ui/components.tsx";
 import {
   basenameOf,
   type FileEntry,
@@ -47,6 +47,28 @@ export interface FilesPaneProps {
   /** Overrides the source (tests); defaults from the bridge and the mode. */
   source?: FileSource | null;
   onPreview?(path: string): void;
+  /** Shift-click puts the row's path into the chat's composer. */
+  addToChat?(text: string): void;
+  /** Git status for the change tint (W52-m); defaults to the bridge's in local mode. */
+  git?: Pick<IndusDesktopGit, "status"> | null;
+}
+
+/** How a changed file's name is tinted in the tree. */
+type Tint = "modified" | "added" | "conflict";
+
+function tintOf(index: string, worktree: string): Tint | null {
+  if (index === "U" || worktree === "U" || (index === "A" && worktree === "A")) return "conflict";
+  if (index === "?" || index === "A" || worktree === "A") return "added";
+  if (index !== " " || worktree !== " ") return "modified";
+  return null;
+}
+
+/** The path below `root` with forward slashes, or null outside it. */
+function relativeTo(root: string, path: string): string | null {
+  const norm = (value: string) => value.replaceAll("\\", "/").replace(/\/+$/, "");
+  const base = norm(root);
+  const full = norm(path);
+  return full.startsWith(`${base}/`) ? full.slice(base.length + 1) : null;
 }
 
 type DirState =
@@ -54,8 +76,7 @@ type DirState =
   | { phase: "ready"; listing: Listing }
   | { phase: "error"; message: string };
 
-const ACTION =
-  "rounded border border-line px-2 py-0.5 text-xs hover:bg-raised focus-visible:outline-2 focus-visible:outline-focus";
+const ACTION = "files-action";
 
 function errorText(error: unknown): string {
   const text = error instanceof Error ? error.message : String(error);
@@ -83,8 +104,45 @@ export function FilesPane(props: FilesPaneProps) {
   const [newName, setNewName] = useState("");
   const [confirming, setConfirming] = useState<FileEntry | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [tints, setTints] = useState<{ root: string; byPath: Map<string, Tint> } | null>(null);
+  const [tintKey, setTintKey] = useState(0);
   const watchers = useRef(new Map<string, () => void>());
   const root = props.workspace;
+  const git = useMemo(() => {
+    if (props.git !== undefined) return props.git;
+    if (props.mode === "remote") return null;
+    return (desktopBridge() as IndusDesktopBridge | null)?.git ?? null;
+  }, [props.git, props.mode]);
+
+  // the change tint: git status of the folder, refreshed with the tree; not a repo → no tint
+  // biome-ignore lint/correctness/useExhaustiveDependencies: tintKey asks again after a refresh
+  useEffect(() => {
+    setTints(null);
+    if (git === null || root === null) return;
+    let live = true;
+    git
+      .status({ repo: root })
+      .then((status) => {
+        if (!live) return;
+        const byPath = new Map<string, Tint>();
+        for (const file of status.files) {
+          const tint = tintOf(file.index, file.worktree);
+          if (tint !== null) byPath.set(file.path.replace(/\/$/, ""), tint);
+        }
+        setTints({ root: status.root, byPath });
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [git, root, tintKey]);
+
+  const tintFor = (entry: FileEntry): Tint | undefined => {
+    if (tints === null || entry.isDir) return undefined;
+    const rel = relativeTo(tints.root, entry.path);
+    return rel === null ? undefined : tints.byPath.get(rel);
+  };
 
   const load = useCallback(
     async (dir: string) => {
@@ -213,7 +271,7 @@ export function FilesPane(props: FilesPaneProps) {
   const renderActions = (entry: FileEntry) => {
     if (menuFor !== entry.path) return null;
     return (
-      <div className="flex flex-wrap gap-1 py-1 pl-8">
+      <div className="files-menu">
         {!entry.isDir && !entry.sensitive && props.onPreview !== undefined && !source?.remote ? (
           <button type="button" className={ACTION} onClick={() => props.onPreview?.(entry.path)}>
             {t("files.preview")}
@@ -224,6 +282,7 @@ export function FilesPane(props: FilesPaneProps) {
             type="button"
             className={ACTION}
             onClick={() => {
+              setMenuFor(null);
               setRenaming(entry.path);
               setNewName(entry.name);
             }}
@@ -256,7 +315,10 @@ export function FilesPane(props: FilesPaneProps) {
         <button
           type="button"
           className={ACTION}
-          onClick={() => void navigator.clipboard?.writeText(entry.path).catch(() => {})}
+          onClick={() => {
+            setMenuFor(null);
+            void navigator.clipboard?.writeText(entry.path).catch(() => {});
+          }}
         >
           {t("files.copyPath")}
         </button>
@@ -264,22 +326,34 @@ export function FilesPane(props: FilesPaneProps) {
     );
   };
 
+  const indent = (depth: number) => ({ paddingLeft: `${depth * 10 + 16}px` });
+
   const renderDir = (dir: string, depth: number): ReactNode => {
     const state = dirs[dir];
     if (state === undefined || state.phase === "loading") {
       return (
-        <li className="px-2 py-1" style={{ paddingLeft: `${depth * 12 + 8}px` }}>
-          <Loader size="sm" />
+        <li className="files-skeleton" aria-hidden={depth === 0 ? undefined : "true"}>
+          {depth === 0 ? (
+            [0, 1, 2, 3, 4].map((n) => <span key={n} style={{ width: `${70 - n * 9}%` }} />)
+          ) : (
+            <span style={{ ...indent(depth), width: "50%" }} />
+          )}
         </li>
       );
     }
     if (state.phase === "error") {
-      return (
-        <li
-          role="alert"
-          className="px-2 py-1 text-xs text-danger"
-          style={{ paddingLeft: `${depth * 12 + 8}px` }}
-        >
+      return depth === 0 ? (
+        <li className="files-state">
+          <p className="files-state-title">{t("files.errorTitle")}</p>
+          <p role="alert" className="files-state-body">
+            {t("files.loadFailed", { message: state.message })}
+          </p>
+          <button type="button" className="files-state-retry" onClick={() => void load(dir)}>
+            {t("files.retry")}
+          </button>
+        </li>
+      ) : (
+        <li role="alert" className="files-note files-note-danger" style={indent(depth)}>
           {t("files.loadFailed", { message: state.message })}
         </li>
       );
@@ -288,36 +362,50 @@ export function FilesPane(props: FilesPaneProps) {
     return (
       <>
         {entries.length === 0 ? (
-          <li
-            className="px-2 py-1 text-xs text-muted"
-            style={{ paddingLeft: `${depth * 12 + 8}px` }}
-          >
-            {t("files.empty")}
-          </li>
+          depth === 0 ? (
+            <li className="files-state">
+              <PanelLabel muted>{t("files.noFiles")}</PanelLabel>
+            </li>
+          ) : (
+            <li className="files-note" style={indent(depth)}>
+              {t("files.empty")}
+            </li>
+          )
         ) : null}
         {entries.map((entry) => {
           const open = expanded.has(entry.path);
+          const tint = tintFor(entry);
           return (
-            <li key={entry.path}>
-              {/* biome-ignore lint/a11y/noStaticElementInteractions: dragging is a pointer extra; "Copy path" is the keyboard way */}
+            <li key={entry.path} className="files-item">
+              {/* biome-ignore lint/a11y/noStaticElementInteractions: dragging and the context menu are pointer extras; the actions button is the keyboard way */}
               <div
-                className="group flex items-center gap-1 px-2 py-0.5 text-sm hover:bg-raised"
-                style={{ paddingLeft: `${depth * 12 + 8}px` }}
+                className="files-row"
+                style={indent(depth)}
+                data-selected={selected === entry.path ? "true" : undefined}
+                data-tint={tint}
                 draggable
                 onDragStart={(event) => onDragStart(event, entry)}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  setSelected(entry.path);
+                  setMenuFor(entry.path);
+                }}
               >
                 {renaming === entry.path ? (
                   <form
-                    className="flex flex-1 items-center gap-1"
+                    className="files-rename"
                     onSubmit={(event) => void submitRename(event, entry)}
                   >
                     <input
-                      className="min-w-0 flex-1 rounded border border-line bg-bg px-1 text-sm"
+                      className="files-rename-input"
                       aria-label={t("files.renameTo", { name: entry.name })}
                       value={newName}
                       // biome-ignore lint/a11y/noAutofocus: the person just asked to rename this row
                       autoFocus
                       onChange={(event) => setNewName(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape") setRenaming(null);
+                      }}
                     />
                     <button type="submit" className={ACTION}>
                       {t("files.renameSave")}
@@ -330,72 +418,78 @@ export function FilesPane(props: FilesPaneProps) {
                   <>
                     <button
                       type="button"
-                      className="flex min-w-0 flex-1 items-center gap-1 text-left"
+                      className="files-name"
                       title={entry.sensitive ? t("files.sensitive") : entry.path}
                       aria-expanded={entry.isDir ? open : undefined}
-                      onClick={() => {
+                      onClick={(event) => {
+                        setSelected(entry.path);
+                        if (event.shiftKey && props.addToChat !== undefined) {
+                          props.addToChat(entry.path);
+                          return;
+                        }
                         if (entry.isDir) toggle(entry);
                         else if (!entry.sensitive && !source?.remote) props.onPreview?.(entry.path);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "F2" && source?.rename !== null && source !== null) {
+                          event.preventDefault();
+                          setRenaming(entry.path);
+                          setNewName(entry.name);
+                        }
                       }}
                     >
                       {entry.isDir ? (
                         open ? (
-                          <ChevronDown size={12} aria-hidden="true" />
+                          <FolderOpen size={14} aria-hidden="true" className="files-icon" />
                         ) : (
-                          <ChevronRight size={12} aria-hidden="true" />
+                          <Folder size={14} aria-hidden="true" className="files-icon" />
                         )
                       ) : (
-                        <span className="inline-block w-3" />
+                        <File size={14} aria-hidden="true" className="files-icon" />
                       )}
-                      {entry.isDir ? (
-                        <Folder size={14} aria-hidden="true" />
-                      ) : (
-                        <File size={14} aria-hidden="true" />
-                      )}
-                      <span className="truncate">{entry.name}</span>
+                      <span className="files-label">{entry.name}</span>
                       {entry.sensitive ? (
-                        <Lock size={12} aria-label={t("files.sensitive")} />
+                        <Lock size={12} aria-label={t("files.sensitive")} className="files-lock" />
                       ) : null}
                     </button>
                     <button
                       type="button"
-                      className="rounded p-0.5 text-muted opacity-0 hover:text-fg focus:opacity-100 group-hover:opacity-100"
+                      className="files-more"
                       aria-label={t("files.actions", { name: entry.name })}
                       aria-expanded={menuFor === entry.path}
                       onClick={() => setMenuFor(menuFor === entry.path ? null : entry.path)}
                     >
-                      <MoreHorizontal size={14} aria-hidden="true" />
+                      <MoreHorizontal size={13} aria-hidden="true" />
                     </button>
                   </>
                 )}
               </div>
               {renderActions(entry)}
               {confirming?.path === entry.path ? (
-                <div
-                  role="alertdialog"
-                  aria-label={t("files.delete")}
-                  className="flex items-center gap-2 py-1 pl-8 text-xs"
-                >
-                  <span className="flex-1">{t("files.confirmDelete", { name: entry.name })}</span>
-                  <button type="button" className={ACTION} onClick={() => void remove(entry)}>
-                    {t("files.delete")}
-                  </button>
-                  <button type="button" className={ACTION} onClick={() => setConfirming(null)}>
-                    {t("files.cancel")}
-                  </button>
+                <div role="alertdialog" aria-label={t("files.delete")} className="files-confirm">
+                  <span>{t("files.confirmDelete", { name: entry.name })}</span>
+                  <span className="files-confirm-actions">
+                    <button type="button" className={ACTION} onClick={() => setConfirming(null)}>
+                      {t("files.cancel")}
+                    </button>
+                    <button
+                      type="button"
+                      className={`${ACTION} files-action-danger`}
+                      onClick={() => void remove(entry)}
+                    >
+                      {t("files.delete")}
+                    </button>
+                  </span>
                 </div>
               ) : null}
               {entry.isDir && open ? (
-                <ul className="m-0 list-none p-0">{renderDir(entry.path, depth + 1)}</ul>
+                <ul className="files-list">{renderDir(entry.path, depth + 1)}</ul>
               ) : null}
             </li>
           );
         })}
         {truncated ? (
-          <li
-            className="px-2 py-1 text-xs text-muted"
-            style={{ paddingLeft: `${depth * 12 + 8}px` }}
-          >
+          <li className="files-note" style={indent(depth)}>
             {t("files.truncated", { count: entries.length })}
           </li>
         ) : null}
@@ -403,45 +497,69 @@ export function FilesPane(props: FilesPaneProps) {
     );
   };
 
-  if (root === null) {
-    return <p className="p-3 text-sm text-muted">{t("pane.noWorkspace")}</p>;
+  if (root === null || source === null) {
+    return (
+      <section className="files-pane" aria-label={t("pane.files")} data-testid="files-pane">
+        <div className="files-state files-state-fill">
+          <PanelLabel muted>{t("files.noFolder")}</PanelLabel>
+          <p className="files-state-body">
+            {root === null ? t("pane.noWorkspace") : t("pane.unavailable")}
+          </p>
+        </div>
+      </section>
+    );
   }
-  if (source === null) {
-    return <p className="p-3 text-sm text-muted">{t("pane.unavailable")}</p>;
-  }
+  const folder = basenameOf(root) || root;
   return (
     <section
-      className={`flex h-full min-h-0 flex-col ${props.hidden === true ? "invisible" : ""}`}
+      className="files-pane"
+      data-hidden={props.hidden === true ? "true" : undefined}
       aria-label={t("pane.files")}
       inert={props.hidden === true}
       data-testid="files-pane"
     >
-      <header className="flex items-center gap-2 border-b border-line px-2 py-1 text-xs text-muted">
-        <span className="min-w-0 flex-1 truncate" title={root}>
-          {basenameOf(root) || root}
-          {source.remote ? ` · ${t("files.remote")}` : ""}
+      <header className="side-pane-header">
+        <PanelLabel title={root}>{folder}</PanelLabel>
+        <span className="side-pane-spacer" />
+        <span className="side-pane-actions" data-reveal="true">
+          <button
+            type="button"
+            className="side-pane-btn"
+            aria-label={t("files.refresh")}
+            onClick={() => {
+              void load(root);
+              for (const dir of expanded) void load(dir);
+              setTintKey((key) => key + 1);
+            }}
+          >
+            <RefreshCw
+              size={13}
+              aria-hidden="true"
+              className={dirs[root]?.phase === "loading" ? "side-pane-spin" : undefined}
+            />
+          </button>
         </span>
-        <button
-          type="button"
-          className="rounded p-1 hover:bg-raised"
-          aria-label={t("files.refresh")}
-          onClick={() => {
-            void load(root);
-            for (const dir of expanded) void load(dir);
-          }}
-        >
-          <RefreshCw size={12} aria-hidden="true" />
-        </button>
+        {expanded.size > 0 ? (
+          <button
+            type="button"
+            className="side-pane-btn"
+            aria-label={t("files.collapseAll")}
+            onClick={() => {
+              for (const dir of expanded) unwatch(dir);
+              setExpanded(new Set());
+            }}
+          >
+            <ChevronsDownUp size={13} aria-hidden="true" />
+          </button>
+        ) : null}
       </header>
+      {source.remote ? <p className="files-note files-remote">{t("files.remote")}</p> : null}
       {notice !== null ? (
-        <p role="status" className="border-b border-line px-3 py-1 text-xs text-warn">
+        <p role="status" className="files-note files-note-warn">
           {notice}
         </p>
       ) : null}
-      <ul
-        aria-label={t("files.tree", { folder: basenameOf(root) || root })}
-        className="m-0 min-h-0 flex-1 list-none overflow-auto p-0"
-      >
+      <ul aria-label={t("files.tree", { folder })} className="files-list files-tree">
         {renderDir(root, 0)}
       </ul>
     </section>

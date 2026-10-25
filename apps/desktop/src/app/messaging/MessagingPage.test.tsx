@@ -107,7 +107,7 @@ describe("MessagingPage", () => {
       },
     );
     fireEvent.click(slack.querySelector("input[type='checkbox']") as HTMLInputElement);
-    fireEvent.click(within(slack).getByText("Save"));
+    fireEvent.click(within(slack).getByText("Save changes"));
     await waitFor(() => expect(api.calls.some((c) => c.method === "PUT")).toBe(true));
     const put = api.calls.find((c) => c.method === "PUT");
     expect(put).toMatchObject({
@@ -168,6 +168,8 @@ describe("MessagingPage", () => {
         pollMs={5}
       />,
     );
+    // W52-k: one platform's detail at a time (the first is chosen); pick Telegram in the rail
+    fireEvent.click(await screen.findByRole("button", { name: "Telegram" }));
     fireEvent.click(await screen.findByText("Create a bot in Telegram"));
     expect(opened).toEqual(["https://t.me/BotFather"]);
     fireEvent.change(screen.getByLabelText("Bot token"), { target: { value: BOT_TOKEN } });
@@ -203,6 +205,7 @@ describe("MessagingPage", () => {
     render(
       <MessagingPage api={api} profile={null} instanceId={null} storage={memory()} pollMs={5} />,
     );
+    fireEvent.click(await screen.findByRole("button", { name: "Telegram" }));
     fireEvent.click(await screen.findByText("I already have a token"));
     fireEvent.click(screen.getByText("Save and restart"));
     expect(await screen.findByText("Paste the token BotFather gave you.")).toBeTruthy();

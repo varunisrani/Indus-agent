@@ -21,6 +21,17 @@ beforeEach(() => {
     { name: "web-search", description: "", category: "web", enabled: true },
     { name: "notes", description: "", category: "notes", enabled: true },
   ];
+  mock.state.hub = [
+    {
+      identifier: "hub/papers",
+      name: "papers",
+      description: "Read papers",
+      source: "hub",
+      verdict: null,
+      installed: false,
+      update_available: false,
+    },
+  ];
   restore = mock.install();
   vi.spyOn(console, "warn").mockImplementation(() => {});
 });
@@ -52,8 +63,11 @@ describe("profile builder", () => {
     // A later step cannot be reached through the step list either while the name is bad.
     await typeName("bad name");
     const steps = within(screen.getByRole("list", { name: "Steps" }));
-    expect((steps.getByRole("button", { name: "6. Review" }) as HTMLButtonElement).disabled).toBe(
+    expect((steps.getByRole("button", { name: "5. Review" }) as HTMLButtonElement).disabled).toBe(
       true,
+    );
+    expect((steps.getByRole("button", { name: "1. Identity" }) as HTMLButtonElement).disabled).toBe(
+      false,
     );
   });
 
@@ -63,36 +77,53 @@ describe("profile builder", () => {
     await typeName("research");
     await screen.findByRole("option", { name: "A copy of work's settings" });
     fireEvent.change(screen.getByLabelText("Start from"), { target: { value: "work" } });
-    fireEvent.click(next());
-
-    fireEvent.change(await screen.findByLabelText("Description"), {
+    fireEvent.change(screen.getByLabelText("Description (optional)"), {
       target: { value: "Papers and notes" },
     });
     fireEvent.click(next());
 
-    const provider = await screen.findByLabelText("Provider");
-    await screen.findByRole("option", { name: "Fake provider" });
-    fireEvent.change(provider, { target: { value: "fake" } });
+    const fake = await screen.findByRole("button", { name: /Fake provider/ });
+    fireEvent.click(fake);
+    expect(fake.getAttribute("aria-pressed")).toBe("true");
     expect(next().disabled).toBe(true); // a provider needs a model
     fireEvent.change(screen.getByLabelText("Model"), { target: { value: "fake-large" } });
     fireEvent.click(next());
 
-    const skill = await screen.findByRole("checkbox", { name: "web-search" });
-    fireEvent.click(skill);
-    fireEvent.click(next());
-
-    fireEvent.change(await screen.findByLabelText("Server name"), { target: { value: "papers" } });
-    fireEvent.change(screen.getByLabelText("Transport"), { target: { value: "http" } });
-    fireEvent.change(screen.getByLabelText("URL"), {
-      target: { value: "https://mcp.example.org/papers" },
+    const keepAll = await screen.findByRole("checkbox", {
+      name: "Keep every bundled skill (recommended)",
     });
-    fireEvent.click(screen.getByRole("button", { name: "Add to the list" }));
+    expect(screen.queryByRole("checkbox", { name: "web-search" })).toBeNull();
+    fireEvent.click(keepAll);
+    fireEvent.click(await screen.findByRole("checkbox", { name: "web-search" }));
+    fireEvent.change(screen.getByLabelText("Add from the skills hub"), {
+      target: { value: "pap" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add papers" }));
     expect(
-      within(screen.getByRole("list", { name: "Servers to add" })).getByText(/papers/),
+      within(screen.getByRole("list", { name: "Hub skills to add" })).getByText("papers"),
     ).toBeTruthy();
     fireEvent.click(next());
 
-    expect(screen.getByText("bundled, without web-search")).toBeTruthy();
+    fireEvent.change(await screen.findByLabelText("Server name"), { target: { value: "papers" } });
+    const transport = within(screen.getByRole("group", { name: "Transport" }));
+    fireEvent.click(transport.getByRole("button", { name: "stdio" }));
+    expect(screen.getByLabelText("Command")).toBeTruthy();
+    fireEvent.click(transport.getByRole("button", { name: "HTTP/SSE" }));
+    fireEvent.change(screen.getByLabelText("Server name"), { target: { value: "papers" } });
+    fireEvent.change(screen.getByLabelText("URL"), {
+      target: { value: "https://mcp.example.org/papers" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add server" }));
+    expect(
+      within(screen.getByRole("list", { name: "Servers to add" })).getByText(
+        "https://mcp.example.org/papers",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText("1 configured")).toBeTruthy();
+    fireEvent.click(next());
+
+    expect(screen.getByText("Bundled, without web-search")).toBeTruthy();
     expect(mock.callsTo("POST", "/api/profiles")).toHaveLength(0);
     fireEvent.click(screen.getByRole("button", { name: "Create profile" }));
 
@@ -101,6 +132,7 @@ describe("profile builder", () => {
       "✓ Profile research",
       "✓ Model fake-large",
       "✓ Skill web-search off",
+      "✓ Hub skill papers",
       "✓ MCP server papers",
     ]);
     expect(mock.callsTo("POST", "/api/profiles")[0]?.body).toEqual({
@@ -115,6 +147,9 @@ describe("profile builder", () => {
     const toggle = mock.callsTo("POST", "/api/skills/toggle")[0];
     expect(toggle?.query.get("profile")).toBe("research");
     expect(toggle?.body).toEqual({ name: "web-search", enabled: false });
+    const install = mock.callsTo("POST", "/api/skills/hub/install")[0];
+    expect(install?.query.get("profile")).toBe("research");
+    expect(install?.body).toEqual({ identifier: "hub/papers" });
     const add = mock.callsTo("POST", "/api/mcp/servers")[0];
     expect(add?.query.get("profile")).toBe("research");
     expect(add?.body).toEqual({ name: "papers", url: "https://mcp.example.org/papers" });
@@ -130,10 +165,10 @@ describe("profile builder", () => {
     await typeName("lean");
     fireEvent.click(next());
     fireEvent.click(next());
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Start with no bundled skills" }));
     fireEvent.click(next());
-    fireEvent.click(await screen.findByRole("radio", { name: "Start without bundled skills" }));
     fireEvent.click(next());
-    fireEvent.click(next());
+    expect(screen.getByText("No bundled skills")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Create profile" }));
     const results = within(await screen.findByRole("list", { name: "Create results" }));
     expect(results.getByText(/disk is read-only/)).toBeTruthy();
@@ -153,6 +188,16 @@ describe("profile builder", () => {
     expect(
       mcpBody({ name: "x", transport: "stdio", command: "", args: "", env: "", url: "" }),
     ).toMatch(/command/);
+    const http = { name: "x", transport: "http", command: "", args: "", env: "" } as const;
+    expect(mcpBody({ ...http, url: "https://h.example/mcp", auth: "oauth" })).toEqual({
+      name: "x",
+      url: "https://h.example/mcp",
+      auth: "oauth",
+    });
+    expect(mcpBody({ ...http, url: "https://h.example/mcp", auth: "none" })).toEqual({
+      name: "x",
+      url: "https://h.example/mcp",
+    });
     expect(
       mcpBody({
         name: "x",

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { actionForKey, isModifierKey, type KeyLike } from "./shortcuts.ts";
+import { actionForKey, isModifierKey, type KeyLike, switcherStep } from "./shortcuts.ts";
 
 function key(partial: Partial<KeyLike> & { key: string }): KeyLike {
   return { metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, ...partial };
@@ -20,10 +20,18 @@ describe("tab shortcuts", () => {
     ],
     ["linux", key({ key: "3", code: "Digit3", ctrlKey: true }), { kind: "jump", slot: 3 }],
     ["darwin", key({ key: "9", metaKey: true }), { kind: "jump", slot: 9 }],
-    ["darwin", key({ key: "Tab", ctrlKey: true }), { kind: "cycle", step: 1 }],
-    ["linux", key({ key: "Tab", ctrlKey: true, shiftKey: true }), { kind: "cycle", step: -1 }],
+    ["darwin", key({ key: "PageDown", ctrlKey: true }), { kind: "cycle", step: 1 }],
+    ["linux", key({ key: "PageUp", ctrlKey: true }), { kind: "cycle", step: -1 }],
   ])("%s %j", (platform, event, action) => {
     expect(actionForKey(event, platform)).toEqual(action);
+  });
+
+  it("Ctrl+Tab is the session switcher's step, not a pane action (W52-h-2)", () => {
+    expect(actionForKey(key({ key: "Tab", ctrlKey: true }), "linux")).toBeNull();
+    expect(switcherStep(key({ key: "Tab", ctrlKey: true }))).toBe(1);
+    expect(switcherStep(key({ key: "Tab", ctrlKey: true, shiftKey: true }))).toBe(-1);
+    expect(switcherStep(key({ key: "Tab", metaKey: true }))).toBeNull();
+    expect(switcherStep(key({ key: "Tab" }))).toBeNull();
   });
 
   it("the other platform's modifier does nothing", () => {

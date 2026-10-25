@@ -1,0 +1,59 @@
+// Strings of the transcript look (W52-g): approval card, error card, tool rows, turn activity,
+// toasts and the provider status item. The older `approval.once/session/always/deny` keys stay as
+// they are: the bots room card shares them.
+
+export const TRANSCRIPT_STRINGS = {
+  "approval.run": "Run",
+  "approval.reject": "Reject",
+  "approval.alwaysMenu": "Always allow…",
+  "approval.moreChoices": "More choices",
+  "approval.command": "Command",
+  "approval.commandDetails": "Command details",
+  "approval.running": "Running {command}",
+  "approval.waiting": "Waiting for your answer",
+  "approval.counter": "{index} / {total}",
+  "approval.rejectWithReason": "Reject with reason…",
+  "approval.sendReject": "Reject",
+  "approval.alwaysConfirmTitle": "Always allow this?",
+  "approval.alwaysConfirmBody":
+    "Indus will run requests like this one without asking you again, in every session.",
+  "approval.alwaysConfirmCancel": "Cancel",
+  "approval.alwaysConfirmOk": "Always allow",
+
+  "failure.headline.provider": "The model could not answer",
+  "failure.headline.endpoint": "The model endpoint is out of reach",
+  "failure.headline.streaming": "The reply was cut off",
+  "failure.headline.auth": "The provider refused the sign-in",
+  "failure.headline.daemon": "Indus lost its connection",
+  "failure.headline.runtime": "This reply could not finish",
+  "failure.headline.disk": "Indus could not save to disk",
+  "failure.body.provider": "The provider sent back an error. Try again, or pick another model.",
+  "failure.body.endpoint": "Check the endpoint address in Settings, then try again.",
+  "failure.body.streaming": "The stream stopped halfway. Trying again usually works.",
+  "failure.body.auth": "Sign in again or update the key for this provider.",
+  "failure.body.daemon": "Reconnect to carry on; your conversation is kept.",
+  "failure.body.runtime": "The agent stopped before it was done. Try again, or look at the logs.",
+  "failure.body.disk": "Free some space or check the data folder, then try again.",
+  "failure.details": "Details",
+  "failure.copyDetails": "Copy error details",
+  "failure.dismiss": "Dismiss",
+
+  "tool.dismiss": "Hide this step",
+  "tool.copy": "Copy output",
+  "tool.exit": "exit {code}",
+  "tool.blocked": "Not allowed",
+
+  "transcript.elapsed": "{seconds}s",
+  "transcript.activity": "Working on the reply",
+  "transcript.sentAt": "Sent {time}",
+  "markdown.copyCode": "Copy code",
+
+  "toast.close": "Close",
+  "toast.more": "Show {count} more",
+  "toast.clear": "Clear all",
+  "toast.details": "Details",
+
+  "status.backend": "Backend",
+  "status.needsSetup": "needs setup",
+  "status.setupHint": "Set up a model provider",
+} as const;

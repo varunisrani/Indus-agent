@@ -4,6 +4,7 @@
 // the choice is kept per device.
 
 import type { SessionInfo, UsageNumbers } from "@indus/protocol";
+import { CircleAlert } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { StorageLike } from "../chat/inflightJournal.ts";
 import { errorMessage } from "../chat/rpcErrors.ts";
@@ -12,6 +13,9 @@ import type { ChatConnection, SessionEvent } from "../gateway/connectionStore.ts
 import { useGatewayConnection, useOpenServerRequests } from "../gateway/react.tsx";
 import type { OpenServerRequest } from "../gateway/serverRequests.ts";
 import { type MessageKey, useT } from "../i18n/index.tsx";
+import { requestOnboarding } from "../onboarding/requests.ts";
+import { useProviderReady } from "../onboarding/useProviderReady.ts";
+import type { RestLike } from "../settings/settingsApi.ts";
 
 export const STATUS_ITEMS = [
   "yolo",
@@ -181,6 +185,27 @@ export interface StatusBarProps {
   requests?: readonly OpenServerRequest[];
   storage?: StorageLike | null;
   now?: () => number;
+  /** REST access for the provider check; defaults to the bridge (tests pass a fake). */
+  api?: RestLike | null;
+}
+
+/** "Backend needs setup" while no model provider is configured (W52-g); opens onboarding. */
+function ProviderSetup(props: { api?: RestLike | null | undefined }) {
+  const t = useT();
+  const ready = useProviderReady(props.api);
+  if (ready !== false) return null;
+  return (
+    <button
+      type="button"
+      className="status-setup"
+      aria-label={`${t("status.backend")} ${t("status.needsSetup")}`}
+      onClick={() => requestOnboarding({ reason: "manual" })}
+    >
+      <CircleAlert aria-hidden="true" size={12} />
+      <span className="status-setup-lead">{t("status.backend")}</span>
+      <span className="status-setup-rest">{t("status.needsSetup")}</span>
+    </button>
+  );
 }
 
 const ITEM = "flex items-center gap-1 px-2 whitespace-nowrap";
@@ -267,6 +292,7 @@ export function StatusBar(props: StatusBarProps) {
       aria-label={t("status.label")}
       className="relative flex h-7 items-center border-t border-line bg-raised text-xs text-muted"
     >
+      <ProviderSetup api={props.api} />
       {shown.has("yolo") && hasSession ? (
         <button
           type="button"

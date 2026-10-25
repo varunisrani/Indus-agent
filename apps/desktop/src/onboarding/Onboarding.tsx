@@ -4,7 +4,18 @@
 // brings it back). Every state comes from the backend; keys go to the backend and are dropped from
 // the renderer as soon as the call returns.
 
-import { Copy, ExternalLink, X } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  CircleAlert,
+  Copy,
+  ExternalLink,
+  KeyRound,
+  LoaderCircle,
+  X,
+} from "lucide-react";
 import {
   type FormEvent,
   type ReactNode,
@@ -133,14 +144,15 @@ export function Onboarding(props: OnboardingProps) {
   useEffect(
     () =>
       onOnboardingRequest((request) =>
-        send({ type: "reopen", manual: request.reason === "manual" }),
+        send({ type: "reopen", manual: request.reason === "manual", reason: request.reason }),
       ),
     [send],
   );
   useEffect(() => {
     if (props.events === null || props.events === undefined) return;
     return props.events((event) => {
-      if (isProviderFailure(event)) send({ type: "reopen", manual: false });
+      if (isProviderFailure(event))
+        send({ type: "reopen", manual: false, reason: "provider-error" });
     });
   }, [props.events, send]);
 
@@ -213,7 +225,7 @@ export function Onboarding(props: OnboardingProps) {
     case "checking":
       body = (
         <div className="onboarding-status" role="status">
-          <Loader />
+          <Loader size="sm" />
           <span>{t("onboarding.checking")}</span>
         </div>
       );
@@ -233,7 +245,7 @@ export function Onboarding(props: OnboardingProps) {
     case "device-starting":
       body = (
         <div className="onboarding-status" role="status">
-          <Loader />
+          <Loader size="sm" />
           <span>{t("onboarding.device.starting", { provider: step.provider.label })}</span>
         </div>
       );
@@ -255,6 +267,12 @@ export function Onboarding(props: OnboardingProps) {
       body = (
         <KeyForm
           providers={keyProviders(providers)}
+          manual={state.manual}
+          onLater={() => send({ type: "choose-later" })}
+          onEndpoint={(endpoint) => {
+            send({ type: "back" });
+            send({ type: "pick-endpoint", endpoint });
+          }}
           initial={step.provider}
           busy={step.kind === "saving-key"}
           error={step.kind === "key-form" ? step.error : null}
@@ -287,6 +305,17 @@ export function Onboarding(props: OnboardingProps) {
     case "testing-endpoint":
       body = (
         <EndpointForm
+          providers={keyProviders(providers)}
+          manual={state.manual}
+          onLater={() => send({ type: "choose-later" })}
+          onKey={(provider) => {
+            send({ type: "back" });
+            send({ type: "pick-key", provider });
+          }}
+          onEndpoint={(endpoint) => {
+            send({ type: "back" });
+            send({ type: "pick-endpoint", endpoint });
+          }}
           endpoint={step.endpoint}
           busy={step.kind === "testing-endpoint"}
           error={step.kind === "endpoint-form" ? step.error : null}
@@ -354,18 +383,25 @@ export function Onboarding(props: OnboardingProps) {
     case "error":
       body = (
         <div className="onboarding-error" role="alert">
-          <p>{step.message || t("onboarding.error.default")}</p>
+          <p className="onboarding-error-line">
+            <CircleAlert aria-hidden="true" size={14} />
+            <span>{step.message || t("onboarding.error.default")}</span>
+          </p>
           <div className="onboarding-actions">
             <button
               type="button"
-              className="button button-secondary"
+              className="desk-btn"
+              data-variant="text"
+              data-size="sm"
               onClick={() => send({ type: "back" })}
             >
               {t("onboarding.error.other")}
             </button>
             <button
               type="button"
-              className="button button-secondary"
+              className="desk-btn"
+              data-variant="secondary"
+              data-size="sm"
               onClick={() => send({ type: "pick-key", provider: null })}
             >
               {t("onboarding.error.useKey")}
@@ -373,7 +409,9 @@ export function Onboarding(props: OnboardingProps) {
             {step.provider?.device_login === true && (
               <button
                 type="button"
-                className="button button-primary"
+                className="desk-btn"
+                data-variant="primary"
+                data-size="sm"
                 onClick={() => {
                   if (step.provider !== null) void startDevice(step.provider);
                 }}
@@ -389,6 +427,13 @@ export function Onboarding(props: OnboardingProps) {
       body = null;
   }
 
+  const reason = state.reason ?? "first-run";
+  const notice =
+    state.manual || step.kind === "checking"
+      ? null
+      : reason === "provider-error"
+        ? t("onboarding.notice.providerError")
+        : t("onboarding.notice.firstRun");
   return (
     <div className="onboarding-overlay">
       <section
@@ -396,6 +441,7 @@ export function Onboarding(props: OnboardingProps) {
         tabIndex={-1}
         className="onboarding-card"
         data-ui="onboarding-dialog"
+        data-step={step.kind}
         role="dialog"
         aria-modal="true"
         aria-labelledby="onboarding-title"
@@ -409,19 +455,22 @@ export function Onboarding(props: OnboardingProps) {
       >
         <header className="onboarding-header">
           <h2 id="onboarding-title">{t("onboarding.title")}</h2>
+          <p className="onboarding-lead">{t("onboarding.lead")}</p>
           {state.manual && (
             <button
               type="button"
-              className="icon-button"
+              className="onboarding-close"
               aria-label={t("common.close")}
               onClick={() => send({ type: "close" })}
             >
-              <X aria-hidden="true" size={16} />
+              <X aria-hidden="true" size={14} />
             </button>
           )}
         </header>
-        <p className="onboarding-lead">{t("onboarding.lead")}</p>
-        {body}
+        <div className="onboarding-body">
+          {notice !== null && <p className="onboarding-notice">{notice}</p>}
+          {body}
+        </div>
       </section>
     </div>
   );
@@ -435,6 +484,35 @@ async function defaultCopy(text: string): Promise<void> {
   await navigator.clipboard?.writeText(text);
 }
 
+/** One provider row of the picker: a title, a muted line and a trailing chevron. A featured row
+ * (only when the backend marks one) gets the tinted card with the two-colour edge. */
+function ProviderRow(props: {
+  title: string;
+  hint: string;
+  featured?: boolean;
+  /** Test hook, spelled as the attribute so the parity scenarios find it in the source. */
+  "data-ui"?: string;
+  onClick: () => void;
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        className="onboarding-option"
+        data-featured={props.featured === true ? "true" : undefined}
+        data-ui={props["data-ui"]}
+        onClick={props.onClick}
+      >
+        <span className="onboarding-option-text">
+          <span className="onboarding-option-title">{props.title}</span>
+          {props.hint !== "" && <span className="onboarding-option-hint">{props.hint}</span>}
+        </span>
+        <ChevronRight aria-hidden="true" size={16} className="onboarding-option-chevron" />
+      </button>
+    </li>
+  );
+}
+
 function Picker(props: {
   providers: readonly ProviderOption[];
   manual: boolean;
@@ -444,73 +522,74 @@ function Picker(props: {
   onLater: () => void;
 }) {
   const t = useT();
+  const [more, setMore] = useState(false);
   const device = deviceProviders(props.providers);
+  const keys = keyProviders(props.providers);
+  const hintOf = (provider: ProviderOption, fallback: string) =>
+    provider.description !== undefined && provider.description !== ""
+      ? provider.description
+      : fallback;
   return (
     <div className="onboarding-picker">
-      {device.length > 0 && (
-        <section aria-labelledby="onboarding-device">
-          <h3 id="onboarding-device">{t("onboarding.device.title")}</h3>
-          <ul className="onboarding-list">
-            {device.map((provider) => (
-              <li key={provider.name}>
-                <button
-                  type="button"
-                  className="onboarding-option"
-                  onClick={() => props.onDevice(provider)}
-                >
-                  <span className="onboarding-option-title">{provider.label}</span>
-                  {provider.description !== undefined && provider.description !== "" && (
-                    <span className="onboarding-option-hint">{provider.description}</span>
-                  )}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-      <section aria-labelledby="onboarding-other">
-        <h3 id="onboarding-other">{t("onboarding.other.title")}</h3>
-        <ul className="onboarding-list">
-          <li>
-            <button
-              type="button"
-              className="onboarding-option"
-              onClick={() => props.onKey(keyProviders(props.providers)[0] ?? null)}
-            >
-              <span className="onboarding-option-title">{t("onboarding.key.option")}</span>
-              <span className="onboarding-option-hint">{t("onboarding.key.optionHint")}</span>
-            </button>
-          </li>
-          <li>
-            <button
-              type="button"
-              className="onboarding-option"
-              onClick={() => props.onEndpoint("local")}
-            >
-              <span className="onboarding-option-title">{t("onboarding.local.option")}</span>
-              <span className="onboarding-option-hint">{t("onboarding.local.optionHint")}</span>
-            </button>
-          </li>
-          <li>
-            <button
-              type="button"
-              className="onboarding-option"
-              data-ui="onboarding-custom-option"
-              onClick={() => props.onEndpoint("custom")}
-            >
-              <span className="onboarding-option-title">{t("onboarding.custom.option")}</span>
-              <span className="onboarding-option-hint">{t("onboarding.custom.optionHint")}</span>
-            </button>
-          </li>
-        </ul>
-      </section>
-      {!props.manual && (
-        <div className="onboarding-actions">
-          <button type="button" className="text-button" onClick={props.onLater}>
+      <ul className="onboarding-list">
+        {device.map((provider) => (
+          <ProviderRow
+            key={provider.name}
+            title={provider.label}
+            hint={hintOf(provider, t("onboarding.device.hint"))}
+            featured={provider.featured === true}
+            onClick={() => props.onDevice(provider)}
+          />
+        ))}
+        <ProviderRow
+          title={t("onboarding.local.option")}
+          hint={t("onboarding.local.optionHint")}
+          onClick={() => props.onEndpoint("local")}
+        />
+        {more &&
+          keys.map((provider) => (
+            <ProviderRow
+              key={provider.name}
+              title={provider.label}
+              hint={hintOf(provider, t("onboarding.key.defaultDesc", { provider: provider.label }))}
+              featured={provider.featured === true}
+              onClick={() => props.onKey(provider)}
+            />
+          ))}
+        {more && (
+          <ProviderRow
+            title={t("onboarding.custom.option")}
+            hint={t("onboarding.custom.optionHint")}
+            data-ui="onboarding-custom-option"
+            onClick={() => props.onEndpoint("custom")}
+          />
+        )}
+      </ul>
+      <button
+        type="button"
+        className="onboarding-disclosure"
+        aria-expanded={more}
+        onClick={() => setMore((open) => !open)}
+      >
+        {t(more ? "onboarding.less" : "onboarding.more")}
+        <ChevronDown aria-hidden="true" size={14} data-open={more ? "true" : undefined} />
+      </button>
+      <div className="onboarding-footer">
+        {props.manual ? (
+          <span />
+        ) : (
+          <button type="button" className="onboarding-text-btn" onClick={props.onLater}>
             {t("onboarding.later")}
           </button>
-        </div>
-      )}
+        )}
+        <button
+          type="button"
+          className="onboarding-text-btn"
+          onClick={() => props.onKey(keys[0] ?? null)}
+        >
+          {t("onboarding.key.option")}
+        </button>
+      </div>
     </div>
   );
 }
@@ -527,14 +606,19 @@ function DeviceCode(props: {
   const [copied, setCopied] = useState(false);
   return (
     <div className="onboarding-device">
-      <p>{t("onboarding.device.instructions", { provider: props.provider.label })}</p>
+      <h3 className="onboarding-step-title">{t("onboarding.device.title")}</h3>
+      <p className="onboarding-muted">
+        {t("onboarding.device.instructions", { provider: props.provider.label })}
+      </p>
       <output className="onboarding-code" aria-label={t("onboarding.device.code")}>
         {props.code}
       </output>
       <div className="onboarding-actions">
         <button
           type="button"
-          className="button button-secondary"
+          className="desk-btn"
+          data-variant="secondary"
+          data-size="sm"
           onClick={async () => {
             try {
               await props.onCopy();
@@ -547,19 +631,119 @@ function DeviceCode(props: {
           <Copy aria-hidden="true" size={14} />
           {t(copied ? "onboarding.device.copied" : "onboarding.device.copy")}
         </button>
-        <button type="button" className="button button-primary" onClick={props.onOpen}>
+        <button
+          type="button"
+          className="desk-btn"
+          data-variant="primary"
+          data-size="sm"
+          onClick={props.onOpen}
+        >
           <ExternalLink aria-hidden="true" size={14} />
           {t("onboarding.device.open")}
         </button>
       </div>
       <p className="onboarding-status" role="status">
-        <Loader />
+        <LoaderCircle aria-hidden="true" size={12} className="onboarding-spin" />
         <span>{t("onboarding.device.waiting")}</span>
       </p>
-      <button type="button" className="text-button" onClick={props.onCancel}>
+      <button type="button" className="onboarding-text-btn" onClick={props.onCancel}>
         {t("onboarding.cancel")}
       </button>
     </div>
+  );
+}
+
+/** The tile ids of the key screen besides the providers' own names. */
+const LOCAL_TILE = "@local";
+const CUSTOM_TILE = "@custom";
+const GENERIC_TILE = "";
+
+/** The first clause of a description, for a tile's one short line. */
+function shortLine(text: string | undefined): string {
+  if (text === undefined) return "";
+  const first = text.split(/[.;,(—–]/)[0] ?? "";
+  return first.trim();
+}
+
+/** The two-column provider tiles of the key screen (keys, then the endpoints, then any key). */
+function ProviderTiles(props: {
+  providers: readonly ProviderOption[];
+  selected: string;
+  onPick: (id: string) => void;
+}) {
+  const t = useT();
+  const tiles: Array<{ id: string; label: string; short: string; done: boolean }> = [
+    ...props.providers.map((p) => ({
+      id: p.name,
+      label: p.label,
+      short: shortLine(p.description),
+      done: p.configured,
+    })),
+    {
+      id: LOCAL_TILE,
+      label: t("onboarding.tile.local"),
+      short: t("onboarding.tile.localShort"),
+      done: false,
+    },
+    {
+      id: CUSTOM_TILE,
+      label: t("onboarding.tile.custom"),
+      short: t("onboarding.tile.customShort"),
+      done: false,
+    },
+    {
+      id: GENERIC_TILE,
+      label: t("onboarding.key.genericTile"),
+      short: t("onboarding.key.genericShort"),
+      done: false,
+    },
+  ];
+  return (
+    <ul className="onboarding-tiles" aria-label={t("onboarding.key.provider")}>
+      {tiles.map((tile) => (
+        <li key={tile.id === "" ? "@generic" : tile.id}>
+          <button
+            type="button"
+            className="onboarding-tile"
+            data-provider={tile.id === "" ? "@generic" : tile.id}
+            aria-pressed={props.selected === tile.id}
+            onClick={() => props.onPick(tile.id)}
+          >
+            <span className="onboarding-tile-text">
+              <span className="onboarding-tile-name">{tile.label}</span>
+              {tile.short !== "" && <span className="onboarding-tile-short">{tile.short}</span>}
+            </span>
+            {tile.done && (
+              <Check
+                aria-label={t("onboarding.key.configured")}
+                size={14}
+                className="onboarding-tile-check"
+              />
+            )}
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function BackButton(props: { onBack: () => void }) {
+  const t = useT();
+  return (
+    <button type="button" className="onboarding-text-btn onboarding-back" onClick={props.onBack}>
+      <ChevronLeft aria-hidden="true" size={12} />
+      {t("onboarding.back")}
+    </button>
+  );
+}
+
+function LaterButton(props: { manual: boolean; onLater: () => void }) {
+  const t = useT();
+  if (props.manual) return null;
+  return (
+    <button type="button" className="onboarding-text-btn onboarding-later" onClick={props.onLater}>
+      {t("onboarding.later")}
+    </button>
   );
 }
 
@@ -568,14 +752,17 @@ function KeyForm(props: {
   initial: ProviderOption | null;
   busy: boolean;
   error: string | null;
+  manual: boolean;
   onBack: () => void;
+  onLater: () => void;
+  onEndpoint: (endpoint: EndpointKind) => void;
   onSave: (provider: ProviderOption | null, name: string, value: string) => Promise<boolean>;
 }) {
   const t = useT();
-  const [choice, setChoice] = useState<string>(props.initial?.name ?? "");
+  const [choice, setChoice] = useState<string>(props.initial?.name ?? GENERIC_TILE);
   const [name, setName] = useState("");
   const [value, setValue] = useState("");
-  const selectId = useId();
+  const entryRef = useRef<HTMLDivElement>(null);
   const provider = props.providers.find((p) => p.name === choice) ?? null;
   const generic = provider === null;
   const valid = value.trim() !== "" && (!generic || /^[A-Z][A-Z0-9_]*$/.test(name));
@@ -586,60 +773,82 @@ function KeyForm(props: {
     setValue(""); // the key leaves the renderer either way
     if (saved) setName("");
   };
+  const description = generic
+    ? t("onboarding.key.genericDesc")
+    : provider.description !== undefined && provider.description !== ""
+      ? provider.description
+      : t("onboarding.key.defaultDesc", { provider: provider.label });
   return (
     <form className="onboarding-form" onSubmit={submit}>
-      <label htmlFor={selectId}>{t("onboarding.key.provider")}</label>
-      <select
-        id={selectId}
-        className="settings-input"
-        value={choice}
-        onChange={(event) => setChoice(event.currentTarget.value)}
-      >
-        {props.providers.map((p) => (
-          <option key={p.name} value={p.name}>
-            {p.label}
-          </option>
-        ))}
-        <option value="">{t("onboarding.key.generic")}</option>
-      </select>
-      {generic && (
-        <input
-          className="settings-input"
-          aria-label={t("onboarding.key.name")}
-          placeholder="EXAMPLE_API_KEY"
-          value={name}
-          spellCheck={false}
-          onChange={(event) => setName(event.currentTarget.value.toUpperCase())}
-        />
-      )}
-      <SecretInput
-        label={t("onboarding.key.value")}
-        placeholder={t("onboarding.key.value")}
-        value={value}
-        onChange={setValue}
+      <BackButton onBack={props.onBack} />
+      <ProviderTiles
+        providers={props.providers}
+        selected={choice}
+        onPick={(id) => {
+          if (id === LOCAL_TILE) props.onEndpoint("local");
+          else if (id === CUSTOM_TILE) props.onEndpoint("custom");
+          else {
+            setChoice(id);
+            entryRef.current?.scrollIntoView?.({ block: "nearest" });
+            entryRef.current?.querySelector<HTMLInputElement>("input")?.focus();
+          }
+        }}
       />
-      {props.error !== null && (
-        <p className="settings-row-error" role="alert">
-          {props.error}
-        </p>
-      )}
-      <div className="onboarding-actions">
-        <button type="button" className="text-button" onClick={props.onBack}>
-          {t("onboarding.back")}
-        </button>
-        <button type="submit" className="button button-primary" disabled={!valid || props.busy}>
+      <div className="onboarding-entry" ref={entryRef}>
+        <p className="onboarding-muted">{description}</p>
+        {generic && (
+          <input
+            className="onboarding-input"
+            aria-label={t("onboarding.key.name")}
+            placeholder="EXAMPLE_API_KEY"
+            value={name}
+            spellCheck={false}
+            onChange={(event) => setName(event.currentTarget.value.toUpperCase())}
+          />
+        )}
+        <SecretInput
+          label={t("onboarding.key.value")}
+          placeholder={t("onboarding.key.placeholder")}
+          value={value}
+          onChange={setValue}
+        />
+        {props.error !== null && (
+          <p className="onboarding-error-text" role="alert">
+            {props.error}
+          </p>
+        )}
+      </div>
+      <div className="onboarding-submit">
+        <button
+          type="submit"
+          className="desk-btn onboarding-primary"
+          data-variant="primary"
+          data-size="sm"
+          disabled={!valid || props.busy}
+        >
+          {props.busy ? (
+            <LoaderCircle aria-hidden="true" size={14} className="onboarding-spin" />
+          ) : (
+            <KeyRound aria-hidden="true" size={14} />
+          )}
           {t("onboarding.key.save")}
         </button>
       </div>
+      <LaterButton manual={props.manual} onLater={props.onLater} />
     </form>
   );
 }
 
 function EndpointForm(props: {
+  providers: readonly ProviderOption[];
   endpoint: EndpointKind;
   busy: boolean;
   error: string | null;
+  manual: boolean;
   onBack: () => void;
+  onLater: () => void;
+  onKey: (provider: ProviderOption | null) => void;
+  onEndpoint: (endpoint: EndpointKind) => void;
   onTest: (url: string, key: string) => Promise<void>;
 }) {
   const t = useT();
@@ -657,42 +866,64 @@ function EndpointForm(props: {
         setKey("");
       }}
     >
-      <p>{t(props.endpoint === "local" ? "onboarding.local.body" : "onboarding.custom.body")}</p>
-      <label htmlFor={urlId}>{t("onboarding.endpoint.url")}</label>
-      <input
-        id={urlId}
-        className="settings-input"
-        data-ui="onboarding-endpoint-url"
-        value={url}
-        spellCheck={false}
-        onChange={(event) => setUrl(event.currentTarget.value)}
+      <BackButton onBack={props.onBack} />
+      <ProviderTiles
+        providers={props.providers}
+        selected={props.endpoint === "local" ? LOCAL_TILE : CUSTOM_TILE}
+        onPick={(id) => {
+          if (id === LOCAL_TILE) {
+            if (props.endpoint !== "local") props.onEndpoint("local");
+          } else if (id === CUSTOM_TILE) {
+            if (props.endpoint !== "custom") props.onEndpoint("custom");
+          } else props.onKey(props.providers.find((p) => p.name === id) ?? null);
+        }}
       />
-      {props.endpoint === "custom" && (
-        <SecretInput
-          label={t("onboarding.endpoint.key")}
-          placeholder={t("onboarding.endpoint.key")}
-          value={key}
-          onChange={setKey}
-        />
-      )}
-      {props.error !== null && (
-        <p className="settings-row-error" role="alert">
-          {props.error}
+      <div className="onboarding-entry">
+        <p className="onboarding-muted">
+          {t(props.endpoint === "local" ? "onboarding.local.body" : "onboarding.custom.body")}
         </p>
-      )}
-      <div className="onboarding-actions">
-        <button type="button" className="text-button" onClick={props.onBack}>
-          {t("onboarding.back")}
-        </button>
+        <label htmlFor={urlId} className="sr-only">
+          {t("onboarding.endpoint.url")}
+        </label>
+        <input
+          id={urlId}
+          className="onboarding-input"
+          data-ui="onboarding-endpoint-url"
+          value={url}
+          placeholder={props.endpoint === "local" ? LOCAL_ENDPOINT_HINT : "https://"}
+          spellCheck={false}
+          onChange={(event) => setUrl(event.currentTarget.value)}
+        />
+        {props.endpoint === "custom" && (
+          <SecretInput
+            label={t("onboarding.endpoint.key")}
+            placeholder={t("onboarding.endpoint.key")}
+            value={key}
+            onChange={setKey}
+          />
+        )}
+        {props.error !== null && (
+          <p className="onboarding-error-text" role="alert">
+            {props.error}
+          </p>
+        )}
+      </div>
+      <div className="onboarding-submit">
         <button
           type="submit"
-          className="button button-primary"
+          className="desk-btn onboarding-primary"
+          data-variant="primary"
+          data-size="sm"
           data-ui="onboarding-test-continue"
           disabled={!valid || props.busy}
         >
+          {props.busy ? (
+            <LoaderCircle aria-hidden="true" size={14} className="onboarding-spin" />
+          ) : null}
           {t("onboarding.endpoint.test")}
         </button>
       </div>
+      <LaterButton manual={props.manual} onLater={props.onLater} />
     </form>
   );
 }
@@ -710,17 +941,21 @@ function ConfirmModel(props: {
   const listId = useId();
   return (
     <form
-      className="onboarding-form"
+      className="onboarding-form onboarding-confirm"
       onSubmit={async (event) => {
         event.preventDefault();
         if (model.trim() !== "" && !props.busy) await props.onSave(model.trim());
       }}
     >
-      <p>{t("onboarding.model.body")}</p>
-      <label htmlFor={inputId}>{t("onboarding.model.label")}</label>
+      <p className="onboarding-caption">{t("onboarding.model.caption")}</p>
+      <p className="onboarding-model-name">{model.trim() === "" ? "—" : model.trim()}</p>
+      <p className="onboarding-muted">{t("onboarding.model.body")}</p>
+      <label htmlFor={inputId} className="sr-only">
+        {t("onboarding.model.label")}
+      </label>
       <input
         id={inputId}
-        className="settings-input"
+        className="onboarding-input"
         data-ui="onboarding-model-select"
         list={listId}
         value={model}
@@ -733,20 +968,20 @@ function ConfirmModel(props: {
         ))}
       </datalist>
       {props.error !== null && (
-        <p className="settings-row-error" role="alert">
+        <p className="onboarding-error-text" role="alert">
           {props.error}
         </p>
       )}
-      <div className="onboarding-actions">
-        <button
-          type="submit"
-          className="button button-primary"
-          data-ui="onboarding-start-chatting"
-          disabled={model.trim() === "" || props.busy}
-        >
-          {t("onboarding.model.save")}
-        </button>
-      </div>
+      <button
+        type="submit"
+        className="desk-btn onboarding-primary"
+        data-variant="primary"
+        data-size="sm"
+        data-ui="onboarding-start-chatting"
+        disabled={model.trim() === "" || props.busy}
+      >
+        {t("onboarding.model.save")}
+      </button>
     </form>
   );
 }

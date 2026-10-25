@@ -46,4 +46,24 @@ export const ONBOARDING_STRINGS = {
   "onboarding.error.other": "Choose another way",
   "onboarding.error.useKey": "Paste an API key instead",
   "onboarding.error.retry": "Try again",
+
+  // W52-m: notice box, provider rows, disclosure, key screen tiles
+  "onboarding.notice.firstRun":
+    "No model provider is connected yet. Pick one below; you can also do this later from Settings › Providers.",
+  "onboarding.notice.providerError":
+    "The last reply failed at the provider or with its credentials. Connect it again or choose another provider.",
+  "onboarding.device.hint": "Sign in in your browser; Indus connects by itself.",
+  "onboarding.more": "Other providers",
+  "onboarding.less": "Collapse",
+  "onboarding.key.defaultDesc": "Paste a key from {provider}.",
+  "onboarding.key.genericTile": "Another key",
+  "onboarding.key.genericShort": "any variable name",
+  "onboarding.key.genericDesc": "Store any key under the environment variable name it needs.",
+  "onboarding.key.placeholder": "Paste API key",
+  "onboarding.key.configured": "Already set up",
+  "onboarding.tile.local": "Local model",
+  "onboarding.tile.localShort": "on this computer",
+  "onboarding.tile.custom": "Custom endpoint",
+  "onboarding.tile.customShort": "OpenAI-compatible",
+  "onboarding.model.caption": "Default model",
 } as const satisfies Record<string, string>;

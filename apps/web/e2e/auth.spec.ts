@@ -53,7 +53,8 @@ test("loopback: the token rides a header on every API call, never the URL", asyn
     }
   });
   await page.goto(`${stack.url}/sessions`);
-  await expect(page.getByRole("textbox", { name: "Search sessions" })).toBeVisible();
+  // A fresh stack: the empty state shows once the session list has loaded (W52-a).
+  await expect(page.getByText("No sessions yet")).toBeVisible();
   const token = await page.evaluate(() => window.__INDUS_SESSION_TOKEN__ ?? "");
   expect(token.length).toBeGreaterThan(20);
   expect(calls.length).toBeGreaterThan(0);
@@ -79,7 +80,7 @@ test("a stale token after a dashboard restart reloads the page once and goes on"
 }) => {
   const stack = await launch({ turns: [[{ text: "Hello." }]] });
   await page.goto(`${stack.url}/sessions`);
-  await expect(page.getByRole("textbox", { name: "Search sessions" })).toBeVisible();
+  await expect(page.getByText("No sessions yet")).toBeVisible();
   const before = await page.evaluate(() => window.__INDUS_SESSION_TOKEN__);
 
   const restarted = await stack.ask("dashboard.restart");
@@ -137,7 +138,8 @@ test("gated: login, the loopback token refused, single-use WS tickets, logout", 
   await page.getByLabel("Username").fill("admin");
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: /Sign in/ }).click();
-  await expect(page.getByRole("textbox", { name: "Search sessions" })).toBeVisible();
+  // A fresh stack has no sessions: once the list has loaded, the page shows its empty state (W52-a).
+  await expect(page.getByText("No sessions yet")).toBeVisible();
   expect(new URL(page.url()).pathname).toBe("/sessions");
   expect(await page.evaluate(() => window.__INDUS_SESSION_TOKEN__ ?? null)).toBeNull();
   expect(await page.evaluate(() => window.__INDUS_AUTH_REQUIRED__)).toBe(true);

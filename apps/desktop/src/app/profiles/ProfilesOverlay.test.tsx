@@ -28,9 +28,11 @@ function backend() {
   return api;
 }
 
-async function coderCard(): Promise<HTMLElement> {
+async function selectCoder(): Promise<void> {
   await waitFor(() => expect(document.querySelector("[data-profile='coder']")).not.toBeNull());
-  return document.querySelector("[data-profile='coder']") as HTMLElement;
+  const row = document.querySelector("[data-profile='coder'] button") as HTMLButtonElement;
+  fireEvent.click(row);
+  await waitFor(() => expect(document.querySelector("[data-detail='coder']")).not.toBeNull());
 }
 
 function changes(): ProfileChanges & { runs: string[] } {
@@ -54,19 +56,18 @@ describe("ProfilesOverlay", () => {
   it("export sends no key material and says the archive has none", async () => {
     const api = backend();
     render(<ProfilesOverlay api={api} onClose={() => {}} changes={changes()} />);
-    const card = await coderCard();
-    fireEvent.click(
-      Array.from(card.querySelectorAll("button")).find(
-        (b) => b.textContent === "Export",
-      ) as HTMLButtonElement,
-    );
+    await selectCoder();
+    fireEvent.click(screen.getByRole("button", { name: "Export" }));
     expect(
       await screen.findByText(/Exported to \/h\/coder\/backups\/p\.zip \(no keys/),
     ).toBeTruthy();
     const call = api.calls.find((c) => c.path === "/api/profiles/coder/export");
     expect(call?.body).toBeUndefined(); // the server decides what to leave out; nothing is sent
+    fireEvent.click(screen.getByRole("button", { name: "Import" }));
     expect(
-      screen.getByText("Exported archives never contain keys; add them again after an import."),
+      await screen.findByText(
+        "Exported archives never contain keys; add them again after an import.",
+      ),
     ).toBeTruthy();
   });
 
@@ -74,26 +75,18 @@ describe("ProfilesOverlay", () => {
     const api = backend();
     const fake = changes();
     render(<ProfilesOverlay api={api} onClose={() => {}} changes={fake} />);
-    const card = await coderCard();
-    fireEvent.click(
-      Array.from(card.querySelectorAll("button")).find(
-        (b) => b.textContent === "Delete",
-      ) as HTMLButtonElement,
-    );
-    const confirm = screen.getByText("Delete for good") as HTMLButtonElement;
+    await selectCoder();
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    const confirm = (await screen.findByText("Delete for good")) as HTMLButtonElement;
     expect(confirm.disabled).toBe(true);
     fireEvent.change(
       screen.getByLabelText("Type coder to delete it with its sessions and settings"),
-      {
-        target: { value: "code" },
-      },
+      { target: { value: "code" } },
     );
     expect(confirm.disabled).toBe(true);
     fireEvent.change(
       screen.getByLabelText("Type coder to delete it with its sessions and settings"),
-      {
-        target: { value: "coder" },
-      },
+      { target: { value: "coder" } },
     );
     fireEvent.click(confirm);
     await waitFor(() => expect(fake.runs).toEqual(["delete coder"]));
@@ -105,15 +98,20 @@ describe("ProfilesOverlay", () => {
   it("a missing persona file is explained and created on request", async () => {
     const api = backend();
     render(<ProfilesOverlay api={api} onClose={() => {}} changes={changes()} />);
-    const card = await coderCard();
-    fireEvent.click(
-      Array.from(card.querySelectorAll("button")).find(
-        (b) => b.textContent === "Persona",
-      ) as HTMLButtonElement,
-    );
+    await selectCoder();
     expect(await screen.findByText(/has no persona file yet/)).toBeTruthy();
     fireEvent.click(screen.getByText("Create persona"));
     await waitFor(() => expect(api.calls.some((c) => c.method === "PUT")).toBe(true));
     expect(api.calls.find((c) => c.method === "PUT")?.body).toEqual({ content: "" });
+  });
+
+  it("the default profile shows its pill and no delete", async () => {
+    const api = backend();
+    render(<ProfilesOverlay api={api} onClose={() => {}} changes={changes()} />);
+    await waitFor(() => expect(document.querySelector("[data-profile='default']")).not.toBeNull());
+    fireEvent.click(document.querySelector("[data-profile='default'] button") as HTMLElement);
+    expect(await screen.findByText("Default")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+    expect(screen.getByText("2 profiles")).toBeTruthy();
   });
 });

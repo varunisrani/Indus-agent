@@ -1,0 +1,143 @@
+/* The toast region (W52-g): top centre under the title band, newest toast only, "Show N more" and
+   "Clear all" under it. The card's look is `.toast` in styles.css; here only its inside. */
+
+.toast-region {
+  position: fixed;
+  top: calc(var(--desk-band-height) + 12px);
+  left: 50%;
+  z-index: var(--z-toast);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: min(448px, calc(100% - 32px));
+  transform: translateX(-50%);
+}
+
+.toast-region > .toast {
+  position: static;
+  width: auto;
+  transform: none;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) 16px;
+  align-items: start;
+  gap: 12px;
+  animation: toast-in var(--indus-duration-base, 160ms) ease-out;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+.toast-icon {
+  display: inline-flex;
+  padding-top: 1px;
+  color: var(--desk-accent);
+}
+
+.toast[data-tone="error"] .toast-icon {
+  color: var(--desk-danger);
+}
+
+.toast[data-tone="success"] .toast-icon {
+  color: var(--desk-success);
+}
+
+.toast-title {
+  margin: 0;
+  color: var(--desk-fg-2);
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.toast-message {
+  max-height: calc(4.5 * 18px);
+  margin: 6px 0 0;
+  overflow: auto;
+  color: var(--desk-fg-3);
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.toast-details {
+  margin-top: 8px;
+}
+
+.toast-details summary {
+  width: fit-content;
+  color: var(--desk-fg-3);
+  cursor: pointer;
+}
+
+.toast-details pre {
+  max-height: 160px;
+  margin: 6px 0 0;
+  overflow: auto;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: var(--desk-bg-code);
+  font-family: var(--indus-font-mono);
+  font-size: var(--desk-text-micro);
+  white-space: pre-wrap;
+}
+
+.toast-close {
+  display: inline-flex;
+  justify-content: center;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--desk-fg-3);
+  cursor: pointer;
+}
+
+.toast-close:hover {
+  color: var(--desk-fg-1);
+}
+
+.toast-stack-bar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  font-size: var(--desk-text-small);
+}
+
+.toast-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--desk-fg-3);
+  font: inherit;
+  cursor: pointer;
+}
+
+.toast-link:hover {
+  color: var(--desk-fg-1);
+}
+
+/* the status bar's "Backend needs setup" (W52-g) */
+.status-setup {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--desk-fg-3);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.status-setup > svg,
+.status-setup-lead {
+  color: var(--desk-attention);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast-region > .toast {
+    animation: none;
+  }
+}

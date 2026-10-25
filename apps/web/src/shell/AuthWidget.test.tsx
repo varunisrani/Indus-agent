@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vite
 import { LAST_LOCATION_KEY, setBrowserNavigation, TOKEN_RELOAD_KEY } from "../lib/api.ts";
 import { shortUserId, takeLastLocation } from "../lib/auth.ts";
 import { createMockApi, type MockApi, type MockReply } from "../testing/mockApi.ts";
-import { currentLocation, renderApp } from "../testing/render.tsx";
+import { currentLocation } from "../testing/render.tsx";
+import { renderApp } from "../testing/renderApp.tsx";
 import { AuthWidget } from "./AuthWidget.tsx";
 
 let mock: MockApi;

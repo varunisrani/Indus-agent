@@ -1,7 +1,7 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockApi, type MockApi } from "../testing/mockApi.ts";
-import { renderApp } from "../testing/render.tsx";
+import { renderApp } from "../testing/renderApp.tsx";
 import { STATUS_REFRESH_MS } from "./shellStatus.ts";
 
 let mock: MockApi;
@@ -35,18 +35,18 @@ describe("status strip", () => {
     };
     renderApp("/sessions");
     await waitFor(() =>
-      expect(strip().getByTestId("status-daemon").textContent).toBe("Daemon running"),
+      expect(strip().getByTestId("status-daemon").textContent).toBe("Daemon status: Running"),
     );
-    expect(strip().getByTestId("status-sessions").textContent).toBe("2 active sessions");
-    expect(strip().getByTestId("status-platforms").textContent).toBe("2/3 channels connected");
-    expect(strip().getByText("Indus Agent 0.1.0")).toBeTruthy();
+    expect(strip().getByTestId("status-sessions").textContent).toBe("Active sessions: 2");
+    expect(strip().getByTestId("status-platforms").textContent).toBe("Channels: 2/3 connected");
+    expect(screen.getByTestId("sidebar-version").textContent).toBe("v0.1.0Indus Agent");
   });
 
   it("refreshes every 5 s", async () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     renderApp("/sessions");
     await waitFor(() =>
-      expect(strip().getByTestId("status-daemon").textContent).toBe("Daemon running"),
+      expect(strip().getByTestId("status-daemon").textContent).toBe("Daemon status: Running"),
     );
     const first = mock.callsTo("GET", "/api/status").length;
 
@@ -59,7 +59,9 @@ describe("status strip", () => {
       vi.advanceTimersByTime(1);
     });
     await waitFor(() =>
-      expect(strip().getByTestId("status-daemon").textContent).toBe("Daemon failed to start"),
+      expect(strip().getByTestId("status-daemon").textContent).toBe(
+        "Daemon status: Failed to start",
+      ),
     );
     expect(mock.callsTo("GET", "/api/status")).toHaveLength(first + 1);
   });

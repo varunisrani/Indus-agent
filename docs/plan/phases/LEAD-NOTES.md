@@ -809,3 +809,294 @@ Phase-table status line: P00–P22 done; P23 built 23/23 (P23-15/16 in wave 49; 
 - **Follow-ups.** Daemon per-viewer tool-event projection for a connection's own `verbose` mode (D-16.1151); `indus uninstall` and the dashboard's `_UPDATE_HINTS` for the `apt` kind, `termux.yml` exit-4 annotation, the in-container install / upgrade proof on the first Termux lane run (d); Windows AppUserModelID, the notification centre's app name (`ambient/install.ts`), the `.deb` StartupWMClass (e); the `windows-local` real-child lane (c); `httpx._main` import (~75 ms, third party) and RM25 on a quiet runner; regenerate the config twin after any `schema.py` / `versions.py` edit and the skills twin after a shipped `SKILL.md` edit (the guard names the command); pypdf re-lock on or after 2026-10-27 (RS37); certifi before 2026-11-09 (RM7).
 
 Phase-table status line: unchanged (every planned task built); wave 50 closed D-16.549 (attached `config.set`), served `shell.exec` and quick `exec` on the daemon, kept native-Windows `plan()` in the foreground, added the Termux `apt` update message and repository validation, turned Windows update signature verification on, and added the config-defaults and skill front-matter twins; release still blocked on the 21 open must-fix rows and the §0 decisions.
+
+## Wave 53 landing notes (lead, Agent 2) — UI parity (owner decision 2026-10-24, D-16.1190): web foundation + 6 web page groups, desktop foundation + 7 desktop page groups
+
+- Land order applied on main: w51a, w53-web (w52 a–f), w51b, w53-desk (w52 g/h/m), w53-settings (w53i + w53j), w53-kl
+  (w53k + w53l). Agent 1 built w51a/b and w52 a–h, m; Agent 2 built w52 i/j/k/l as w53i/j/k/l and ran four integrators
+  (web, desktop, settings, k+l), whose notes follow.
+- Generated files regenerated, not merged: pnpm-lock (`pnpm install`), THIRD_PARTY_NOTICES + notices_data
+  (`notices.py refresh`, 439 components). Unions: 16-what-we-change (D-16.1190–1269), desktop i18n spreads (2099 keys, no
+  duplicates). Licence allow-list carries OFL-1.1 globally (w51a) plus w51b's per-package rows (harmless, kept).
+- Root-caused at landing: (1) parity scan `test_browser_locators_use_our_hooks_and_resolve[desktop-onboarding]` failed —
+  w52m passed the `onboarding-custom-option` hook through a `ui` prop, invisible to the static scan; ProviderRow now
+  takes `data-ui`. (2) `pnpm lint` / ruff were red on main since Agent 1 committed capture-kit scripts under `.agents/`;
+  biome and ruff now exclude `.agents` (coordination files, not product code).
+- Final gate on the landing tree 7b59d33 (lead): ruff + format ok; pyright 0; lint-imports kept; codegen --check ok;
+  tooling.checks --require-ref ok; notices --check fresh; biome check + format ok (5 CSS-order warnings); pnpm -r
+  typecheck ok; check-ipc + gen-bridge-types ok; vitest 290 files / 3162 passed / 13 skipped; Electron E2E 43 passed /
+  2 skipped (packaged-build only); web Playwright 15/15; pytest "not perf" 18779 passed / 0 failed / 134 skipped; perf
+  see the commit message.
+- Compare: reference re-captured (42 web + 100 desktop pairs) and Indus captured at 7b59d33 (41 web + 101 desktop);
+  side-by-side PDFs and a per-slug gap list sent to the owner (scratchpad; reference captures never enter the repo).
+  Wave 54 fixes the visual/state gaps (D1 desktop chat + panes, D2 desktop settings states incl. password-manager
+  detection, keychain toggle, voice error; W1 web incl. the analytics chart bug).
+
+### Wave 53 web landing notes (integrator INT-W) — UI parity: w51a foundation + w52 a–f
+
+- Worktree `scratchpad/int-web`, detached at `574689d` (main `5115691` + w51a). Nothing committed; everything is staged
+  in the worktree index (`git diff --cached HEAD` is the whole change): 112 paths vs the base (37 added, 75 modified;
+  `chat/ModelPickerDialog.tsx` from w52a never reaches the base, so its removal is not a path).
+  No package added by any slice (no package.json / lockfile / notices change in a–f).
+- **Apply order** `git apply --3way` w52a, b, c, d, e, f (the patch base `0a7f30a` is not in this clone, so every file
+  fell back to direct application). Conflicts, each resolved by reading both sides:
+  - `ui/Dialog.tsx` (a × c): `description?: ReactNode` (optional, c) rendered only when given, with a's
+    `descriptionClassName` slot; a's other class slots and c's `narrow` size kept.
+  - `ui/controls.tsx` (b+c × d): Badge tone union; one `secondary` (c's comment; e's `bg-hover` variant dropped for
+    `bg-selected`, two of three slices); `CardHeader` (see D-16.1206); `PeriodButtons` + `RefreshButton` (b) kept next to
+    d's `EmptyCard`, `CodeChip`, `Callout`; d's duplicate `SectionHeading` dropped (c's kept, it already takes `id`);
+    b's `PageSpinner` dropped (d's kept, hidden label); import list union (`RefreshCw`, `RotateCcw`).
+  - w52e and w52f each refused once on the unmerged `controls.tsx` (atomic `git apply`); re-applied after staging the
+    resolution: e conflicted on Badge `secondary` (above), f on the lucide import and `lib/format.ts` (b's
+    `formatTokens`/`formatShortDay` and f's `formatSize`/`formatDateTime` kept side by side).
+  - Clean but checked: `e2e/dashboard.spec.ts` (a, e, f), `lib/api.ts` and `testing/mockApi.ts` (c, e), `shell/routes.ts`
+    (e title `Profiles/new`, f `/docs` route), `pages/ModelsPage.tsx` (b rewrite + d's `export function DeviceLogin`, kept).
+- **Merge notes (README):**
+  - One model picker (D-16.1205): `ui/ModelPickerDialog.tsx` = a's look and behaviour (fuzzy filter over providers and
+    models with marked letters, provider in use first, CURRENT tags, double-click applies, no-provider sentence with Keys
+    / Models links, reset on open, spinner in Switch) on b's contract `onApply({provider, model})`, plus `busy`, `error`,
+    `note`; provider meta line keeps b's configured / no key. `chat/ModelPickerDialog.tsx` deleted; `ChatRail` owns the
+    `api.model.set` mutation (same invalidations, same "Model set to … Start a new chat" notice). `ModelsPage.test.tsx`:
+    reads the CURRENT model row instead of a prefilled field; filter label "Filter providers and models".
+  - Dedupes (D-16.1206): Badge `secondary`, `SectionHeading`, `PageSpinner`, `CardHeader` (b's `subtitle` = note after
+    the title; `below` = a node, or a string set as d's serif count line with d's list-card padding — the four Keys
+    cards now pass `below=`), `Modal` props; `DeviceLogin` export kept.
+  - Light warning token → `#ffbd38` (the spec's measured warning, same in both themes) (D-16.1207).
+  - Foundation `Button` uppercase (D-16.1208): the specs measure the reference's sm / primary / outlined buttons in
+    capitals, ghost buttons mixed case, Keys "Show/Hide advanced" mixed case. `caps` prop (default: every tone but
+    `ghost`); `caps={false}` on Show advanced. Accessible names are the DOM text, so no test changed for this
+    (vitest and Playwright both green on the same names).
+- **Web vitest timeouts, root cause (D-16.1209).** Reproduced on demand: the 7 shell test files on one core with 3
+  workers (`taskset -c 0 … --maxWorkers=3`) failed 3/51 twice (App "redirects…" at the 1 s `waitFor`, App "resolves every
+  route" and Webhooks "signing secret" at 5 s). CPU profiles (`--cpu-prof`, test window cut by hrtime marks): no
+  waiting — the time is React development element creation (owner-stack `Error` per element), react-dom, and jsdom 29's
+  `getComputedStyle` cascade (default stylesheet parse, css-color) behind every `*ByRole` query; plus each lazily
+  routed page's module graph evaluated inside the first test that visits it (measured 1.7 s for the 18 pages, 0.5 s of
+  it SessionsPage + shared deps). "Resolves every route" mounts the full shell 19 times (2.2–2.6 s idle). Fixes, no
+  timeout raised: `src/testing/renderApp.tsx` (split from `render.tsx`, used by the 7 shell test files) eagerly loads
+  every routed page while the test file is imported (A/B, 3 runs each, one core: redirect 0.56–0.71 s vs 0.84–0.90 s,
+  every-route 2.2–2.5 s vs 2.6–3.2 s); the every-route test is now one test per route (`it.each`, 19 tests); f's
+  `20_000` test timeout and `findByRole` 10 s on the docs test removed. After: the same 1-core repro failed 1–2 of 69 in
+  3 runs (Webhooks "signing secret" 3/3 at 5.1–5.4 s, App redirect 1/3) — that test is 1.3 s of real work idle (render
+  0.15, open + fill dialog 0.6, create 0.15, away and back 0.4); under a 4× CPU squeeze it still crosses 5 s. Not
+  bumped; follow-up below. Under the gate's conditions (lock, `--maxWorkers=2`) the full suite passed both times it ran
+  (342/342 before the test changes, 360/360 on the final source).
+- **e2e.** `auth.spec.ts:76` checked: it is not a slice regression but a race the w52a empty state introduced in the
+  test's wait — the Sessions page shows the "Recent sessions" card while the list loads and the empty state once a fresh
+  stack's empty list arrives, so `getByRole("heading", {name: "Recent sessions"})` passed only when the browser caught
+  the loading moment (my runs: :76 passed 1, failed 1; :114 failed 3/3; base `574689d`, which always shows the card:
+  3/3 passed). The four such waits (`auth.spec.ts` ×3 incl. :76 and :114, `auth-gates.spec.ts` ×1) wait for "No sessions yet".
+- **Gate** (int-web, HOME / INDUS_HOME / caches in the scratchpad, full lanes under `flock fullgate.lock`):
+  biome check + format: clean on apps/packages/docs; the repo-wide run reports 52 errors / 2 warnings (format: 7 files)
+  only in `.agents/wip/w52/kit-*` (same 52 on the base `574689d`; not product code); `tsc` web 0, web e2e 0,
+  packages/ui 0; web vitest `--maxWorkers=2` 40 files, 360 passed (342 before the per-route split, same run conditions);
+  web Playwright (fresh `vite build` of web + TUI) 15/15 passed on the final tree (earlier runs before the e2e wait fix: 14/15 twice, :114 failing in the first and :76 in the second); ruff check / format: only `.agents/wip/w52/build_pdf.py`, `kit-web/sheet.py` (24 / 2 files,
+  pre-existing on main), product clean; pyright 0 errors 0 warnings; `pytest tests -k "login or auth" -q -p
+  no:cacheprovider` 704 passed, 2 skipped, 17822 deselected; `python scripts/release/notices.py --check` fresh (437
+  components); `python -m tooling.checks --require-ref` ok (similarity, banned, assets, licenses, … all ok; pins and
+  deps_audit warn with 0 issues, as on main), also re-run after the docs edits: ok.
+- **Decisions** D-16.1190 – D-16.1209: D-16.1190 the owner's parity decision in §3.2 (decided, 2026-10-24) with a
+  pointer at the top of §2.5; §2.7 D-16.1191 – 1192 (W51-a), 1193 – 1194 (W52-sc), 1195 – 1196 (W52-b), 1197 – 1198
+  (W52-c), 1199 – 1200 (W52-d), 1201 – 1202 (W52-pc, W52-e), 1203 – 1204 (W52-f), integration 1205 – 1209; §3.1 range
+  row. Each slice note gained an "Integration (wave 53)" paragraph naming its D-ids; `web-foundation.md` gained the
+  integrated component contract.
+- **Not done here (out of INT-W's brief or time):** no re-capture / side-by-side PDF (no reference screenshots in this
+  container); LEAD-NOTES.md and HANDOFF.md untouched (lead's).
+- **Follow-ups.** (1) Webhooks "signing secret" vitest is 1.3 s idle and can still cross 5 s under a 4× CPU squeeze:
+  split create / away-and-back if parallel builders keep running full suites, or run full web vitest only through the
+  lock. (2) Biome and ruff run over `.agents/wip/w52/kit-*` and `build_pdf.py` (pre-existing failures on main): exclude
+  `.agents/` in `biome.json` / ruff config or fix the kits. (3) The light warning `#ffbd38` is low-contrast as small
+  text on the light canvas (parity choice, D-16.1207). (4) Backend follow-ups carried from the slices: usage
+  `api_calls` / `by_model`, per-provider model list, skills write endpoint, MCP OAuth client calls, sessions import.
+- Environment: every uv / node call ran with the scratchpad HOME and caches; TMPDIR unset for the web e2e (its daemon
+  socket path); no /tmp/indus-e2e-* touched by hand; only processes this run started; a second worktree
+  `scratchpad/int-web-base` (574689d, node_modules hard-linked, `apps/web/dist` and `apps/tui/dist` built) was made to
+  check `auth.spec.ts:76` on the base — can be removed with `git worktree remove`.
+
+### Wave 53 landing notes (desktop integrator, INT-D) — w52g transcript / tool rows / cards / toasts, w52h composer menus / palette / switcher / sidebar rows, w52m panes / HUD / quick entry / onboarding, on the desktop foundation (w51b)
+
+- **Worktree / base.** `$S/int-desk`, detached at local base **e402468** (= main 5115691 + w51b, never pushed). Patches
+  `.agents/wip/w52/w52{g,h,m}.patch` (built on 993f0e9; same tree content) applied in that order with `git apply --3way`.
+  Everything is uncommitted (resolved conflict files and the patches' changes staged, integration edits unstaged).
+  Full diff against e402468: `$S/int-desk-final.diff` (`git diff HEAD --binary`, 89 files, +9542 / −1679; 19 new files).
+  node_modules hard-linked from `$S/base-w51b`; `.venv` by `uv sync --locked`; Electron 44.5.1 unzipped into the tree's
+  own `electron/dist`. No package added, no lockfile / notices change (w51b's are already in the base).
+- **Conflicts (all resolved by reading both sides).** w52h onto g: `app/Shell.tsx` (import lines: both `SessionSwitcher`
+  and `Toasts`), `chat/composer/Composer.tsx` (lucide imports: g's `History` for the restored-draft `NoticeStrip` kept,
+  `Plus` dropped — h's `AttachMenu` replaced g's plain attach button), `ui/ui.css` (h's disabled-row rules + its
+  danger rule that also tints the icon). w52m onto g+h: `ui/components.tsx` (h's menu family / HUD / tooltip /
+  `SmallDialog` kept, m's `PanelLabel` appended), `ui/ui.css` (h's popover / HUD / tooltip / dialog blocks kept, m's
+  panel label + dither appended). The other shared files merged clean and were read for semantic overlap:
+  `i18n/en.ts` (spreads `COMPOSER_MENU_STRINGS` and `TRANSCRIPT_STRINGS`; no duplicate keys across the packs),
+  `styles.css` (h's palette rules, g's toast / tool rules moved out), Composer (g's `NoticeStrip` + h's drawer, help,
+  attach menu, `current` model facts), Shell (g's `ToastRegion` + connection-warning toast, h's palette entries and
+  switcher, m's Alt+B right group), strings packs (own blocks each). No conflict markers left; tsc clean.
+- **Integration change (m's own follow-up, W52-m-6).** The foundation now has g's toast region and h's `SmallDialog`,
+  so the review pane uses them: notices (committed / pushed / failed / PR opened) → `notify({id: "review-notice"})`
+  (success auto-closes, errors stay) with a visually hidden `role=status` mirror; the revert confirm → `SmallDialog`
+  with a new optional `role` prop (`alertdialog`, title "Revert", paths in mono, Cancel / "Discard" as foundation
+  Buttons). Removed the now-unused `.review-notice` / `.review-dialog*` rules (`review-dialog-path` kept).
+  `ReviewPane.test.tsx` unchanged and green.
+- **Electron E2E — run in full (the builders had not).** First run on the merged tree: 6 failed / 37 passed / 2 skipped.
+  Root causes: (1) `chat.electron.test.ts` "Settings › Providers re-runs onboarding" (the case behind "Other
+  providers"): the e2e filled `.onboarding-form input.settings-input`, which after w52m's endpoint form is the
+  endpoint's optional **key** field (a `SecretInput`), so the base URL stayed empty and "Test and continue" stayed
+  disabled; the onboarding overlay then stayed open over the window and the next four cases in the file (chat
+  approval "Run", panes, transcript-once, sidebar) failed behind it — a cascade, not four bugs. Fixed the selector to
+  `input[data-ui="onboarding-endpoint-url"]` (the hook w52m added). (2) `surfaces.electron.test.ts` "HUD: the
+  sidebar's pop-out": the row's hover pop-out button is gone (W52-h-5); the e2e now opens the row menu
+  (`contextmenu` on the row) and clicks "Open in window". No product code changed for either. After the fixes:
+  chat + surfaces 15/15, then the whole lane again on the final tree (below).
+- **Gate (final tree, all through `flock $S/fullgate.lock`, xvfb).** biome `check apps packages tooling scripts`:
+  915 files, 0 errors, 5 warnings (`noDescendingSpecificity`: 3 on the base, 2 from w52h's drawer / HUD `> svg`
+  rules); biome over `.` reports 52 errors / 7 warnings, all 52 errors in the committed `.agents/wip/w52/kit-*`
+  capture scripts (same 52 on the base, not product code); biome format `apps packages` clean. `tsc --noEmit -p
+  apps/desktop` clean. `check-ipc.mjs` ok; `gen-bridge-types.mjs --check` ok. **Desktop vitest (full, maxWorkers=2):
+  174 files, 1730 tests passed** (incl. `testing/electron/wiredApp.electron.test.ts` clicking "Run" under xvfb).
+  **Electron E2E (whole lane): 8 files passed, 1 skipped; 43 tests passed, 2 skipped** — lifecycle 4, chat 9 (incl. the
+  "Other providers" custom-endpoint case), surfaces 6, security 12, remote 1, packaged 2, boot 4, security-audit 5
+  (+1 skipped: fuses of `build/release` — no packaged build there), startup-budget skipped (same reason).
+  `python -m tooling.checks --require-ref`: ok, exit 0 (16 checks; pins and deps_audit warn as on main: certifi
+  exception to 2026-11-08, pypdf advisories). Python untouched (no pytest needed).
+- **Decisions.** D-16.1210 – D-16.1229 in §2.7 (W51-b 1210–1215, W52-g 1216–1221, W52-h 1222–1226 with m's shared
+  parts, W52-m 1227–1228, integration e2e 1229) + §3.1 range row; each note got an "Integration (wave 53, desktop)"
+  paragraph mapping its labels to the ids. INT-W owns D-16.1190 – D-16.1209 (rows go between D-16.1180–1189 and mine).
+- **Per patch.** w52g: done (its "Remaining" list stands: running / approval dot colours on tab and row, the
+  composer's single round Stop — Steer/Queue still show —, prompt clamp expand, swipe-to-reject, busy spinner on
+  approval buttons). w52h: done (10/10 slugs; its late fixes were never re-captured). w52m: done (review pane moved
+  onto foundation toast / dialog at integration). No re-capture / compare PDF in this role.
+- **Follow-ups.** The three remaining-lists above; HUD sheet should stay up while an approval waits (m); quick-entry
+  targets need `target` on `indus:quick:submit` (m); folder picker for the "No folder" state (m); `BootOverlay`'s
+  `.toast boot-restarted` still renders its own toast rather than `notify()` (g did not migrate it); tidy the 5 CSS
+  order warnings; re-capture g/h/m in both themes with the kit (not done here).
+- **Environment.** ENV RULE in every call (HOME etc. under `$S/int-desk-home`); TMPDIR unset for Electron; nothing
+  written outside `$S`; no global `/tmp/indus-e2e-*` cleanup; no process left running.
+
+### Landing notes — wave 53 desktop settings integration (INT-S)
+
+- **Worktree:** `$S/int-set` (detached at f3f7772 = main + w51b + w52 g/h/m). Applied with `git apply --3way`:
+  `.agents/wip/w53/w53i.patch` (clean), then `w53j.patch` (8 files with conflicts, all i vs j; nothing against g/h/m).
+  Everything uncommitted; the index holds the whole result (`git diff --cached`, 44 files, +8620 / -1757; copy at
+  `$S/int-set-final.diff`). `fieldCopyA.ts` (from i) is gone.
+- **Conflicts and resolution**
+  - `i18n/en.ts`: union (both imports and spreads: `SETTINGS_A_STRINGS`, `TRANSCRIPT_STRINGS`, `SETTINGS_B_STRINGS`).
+    No duplicate key across the spread string packs (scripted check, 1708 keys).
+  - `context.tsx`: union (i's `schema`/`focusField`/`saveField`/`savePatch` + j's `go`; j's bridge groups merged clean).
+  - `SettingsOverlay.tsx`: union of the context value; i's rail footer, j's `page.after` block, `pageIcon()` merged clean.
+  - `navMeta.tsx`: one `PAGE_ICONS` map (i's model…passwords entries + j's memory…about entries) behind the one
+    `pageIcon(view, page)`; imports union; `Plug` dropped (gateways = Globe per spec-b).
+  - `pages.ts`: CustomPage union drops both `sessions-archived` (j) and `workspace-desktop` (i); `PageDef.order` (i) and
+    `PageDef.after` (j) both kept; VIEW_IDS keep browser/passwords; Workspace › Files keeps i's custom page with
+    `code_execution.mode` + `file_read_max_chars` (spec-b: `code_execution.mode` stays with slice A); MANIFEST rows union.
+  - `customPages.tsx`: rebuilt from j's version minus i's moved pages (theme, typography, window, workspace-desktop and
+    their helpers); `...PAGES_A` spread; Partial table with `?.()`; only the persona page + `Row` remain;
+    `SecretInput` re-exported from `pagesB/kit.tsx` for Onboarding.
+  - Field copy (`schemaPage.tsx`, `search.ts`): ONE map `settings/fieldCopy.ts` = i's entries + j's entries. Labels,
+    descriptions and placeholders are message keys (j's 57 English strings became `settingsB.field.*` keys in
+    `stringsB.en.ts`); `description: ""` hides the schema's; `options` (names, shown as is); `suggestions` is a function
+    (i's lazy timezone list; j's static lists wrapped). schemaPage: i's comma-list input, then j's option select, then the
+    suggestions combo (timezone placeholder "Search…"), then the JSON textarea; search: copy label + key-derived keyword.
+- **Field placement check** (backend `schema_form()`, 713 fields; ownership computed in base, i, j and merged trees):
+  0 fields that base / i / j put on a page are without an owner after the merge; ownership is unique by construction
+  (first claim); the only fields on two pages are the specs' `also` cross-listings (`security.allow_private_urls` on
+  Browser › Local & private URLs, `checkpoints.max_snapshots` on Advanced › Output limits). Moves: terminal.backend/timeout
+  → Advanced › Terminal, tool_output.max_chars → Advanced › Output, browser.* → Browser, wake word → Voice view.
+  `default-directory` stays on Workspace › Projects; j's `sessions-directory` on Sessions edits the same value.
+- **Gate (final tree)**
+  - biome `check apps packages tooling scripts`: 936 files, 0 errors, 5 warnings (the same `noDescendingSpecificity`
+    set as INT-D: settings.css 503, ui.css x4); `biome format apps packages`: 925 files clean.
+  - `tsc --noEmit -p apps/desktop`: clean.
+  - `check-ipc.mjs`: ok; `gen-bridge-types.mjs --check`: ok (i changed `electron/ipc/schemas.ts`: chatTextScale max 175).
+  - Desktop vitest full (`--maxWorkers=2`, through `flock $S/fullgate.lock`, xvfb): **175 files, 1757 tests passed**.
+  - Electron E2E whole lane (lock, xvfb): **8 files passed, 1 skipped; 43 tests passed, 2 skipped** (chat 9, security 12,
+    surfaces 6, security-audit 5 +1 skipped, lifecycle 4, remote 1, packaged 2, boot 4; startup-budget skipped — no
+    packaged build).
+  - `uv run python -m tooling.checks --require-ref`: ok, exit 0 (16 checks; pins and deps_audit warn as on main).
+- **Captures:** kit copies `$S/int-set-kit/settings-{a,b}.ts` (copied from `$S/w53i-kit`, `$S/w53j-kit`, plus a probe
+  counting `[data-row]` / `[data-field]` per page). 51 pages x light/dark = 102 PNGs in `$S/int-set-shots` (contact
+  sheets `$S/int-set-sheets`). Probe: no page empty, no duplicated row or field on any page, no renderer errors on the
+  A pages, 0 problems on the B pages. Looked at all sheets: no broken page; rail shows both slices' child icons and the
+  footer; Voice shows the wake word block under its schema rows, Sessions shows the archived list under retention.
+- **D-ids** (§2.7, after D-16.1229; §3.1 range row after the 1210 one): D-16.1230 rail/search (dsa-1/3/4), 1231 no
+  Billing (dsa-2, j-1), 1232 model pages (dsa-5/6/7), 1233 rows without a feature (dsa-8/9/11), 1234 chat text 175 %
+  (dsa-10), 1235 Safety/Browser (dsa-12/13/14), 1236 Passwords (dsa-15/16), 1237 field moves (i-1, j-3, integration
+  check), 1238 default folder (i-2, j-2), 1239 shared hooks (i-3 + j's `after`/`go`), 1240 one field-copy table (j-9 +
+  integration), 1241 notifications master (j-4), 1242 no endpoint delete (j-5), 1243 saved connections (j-6), 1244 About
+  log viewer (j-7), 1245 local models (j-8), 1246 page table after the slices (integration); 1247 – 1249 unused (range
+  row). Both task notes got an "Integration (wave 53, settings)" paragraph mapping labels → ids.
+- **Follow-ups:** `voice.record_key` and `security.secret_store` come back secret-masked from `/api/config` (the key
+  name looks secret), so Push-to-talk key shows "Stored. Type to replace it." and Secret store a dotted select — backend
+  masking rule, not the merge; builders' own lists stand (rail footer wiring, MoA delete, vault API, endpoint delete,
+  "Current" pill, provider-card edge, Plugins markup, Screen capture / Tools & Keys › Settings not built); the 5 CSS
+  order warnings.
+- **Environment:** ENV RULE in every call (HOME etc. under `$S/int-set-home`); node_modules hard-linked from
+  `$S/base-w51b`; Electron 44.5.1 unpacked into the worktree's own electron dir (path.txt removed before rewrite so the
+  hard link to the base was not written through); TMPDIR unset; kit temp under `$S/t-intset` (removed); a temporary
+  placement test file in the worktree was deleted after the run; no global /tmp cleanup; no process left running.
+
+### Landing notes — wave 53 INT-KL (desktop slices k + l)
+
+- **Worktree.** `$S/int-kl`, detached at `f3f7772` (main + w51b + w53-desk). node_modules hard-linked from
+  `$S/base-w51b`, `.venv` by `uv sync --locked`, Electron 44.5.1 unpacked into the tree's own electron package.
+  Everything uncommitted (the patches' `git apply --3way` staged their files; integrator edits are unstaged on top).
+- **Apply.** `w53k.patch` then `w53l.patch`, both `git apply --3way`: no textual conflicts (both "fell back to direct
+  application" cleanly, including Shell.tsx — k's LeftSidebar body and l's footer / palette hunks do not overlap).
+- **Shell merge.** k had moved the SESSIONS | BOTS strip out of the `<nav aria-label="Main">` and dropped the nav when
+  the BOTS panel shows (zero navs then). Now one "Main" nav in both panels: it holds the strip, and in the sessions
+  panel New session + page links + cron + contributed links; the roster and the vertical "Scheduled jobs" edge tab
+  sit after it; the edge tab opens l's cron overlay (`openOverlay("cron")`). `data-panel="bots"` drops the nav's 4px
+  bottom pad so the strip sits on the roster. l's footer More menu (webhooks, learning map, session import, profiles,
+  agents), command-center house button (overlay) and palette overlay entries kept as built. routes.ts / i18n spreads:
+  union (applied as is; `/bots` stays a page for deep links; webhooks / command-center / learning-map /
+  session-import are overlays).
+- **Dedupes (one copy each).** `app/overlay/kit.tsx` + `kit.css` moved to `app/kit.tsx` + `app/kit.css` (shared by the
+  pages and the overlay panels); every l import repointed.
+  - TextTabs: one component (`options` API, raised `<sup>` count, `null` = loading bar); `look="page"` = k's 13px
+    header row (Capabilities; Messaging's hand-made status-filter tabs now use it too); default = l's 12px panel row.
+    k's `TextTabs` + `.md-tab*` CSS deleted.
+  - Search: one `QuietSearch` (on the foundation `.desk-search`), new `fill` / `className`; used by Capabilities and
+    Messaging headers (k's `PageSearch` deleted), Connectors, the Skills Hub search (its bare input replaced), the
+    command center / artifacts / session import, and the foundation `ListDetail` list search (its inline copy removed).
+  - Pills: one `PanelPill` (tones muted, category, accent, info, good, warn, bad; `dot`); k's `MdPill` and the raw
+    `span.md-pill` in PluginsTab replaced; l's tones remapped (soft-primary "good" → `info`, green "ok" → `good`).
+  - Meta rows: one `MetaGrid` with `framed` (k's `MetaBox` inset look, spec's inset-panel colours); `MetaBox` deleted.
+  - Detail title: one `DetailHead` (+ `leading`, `description`, `level`); k's `DetailHeader` deleted.
+  - Text actions: one `TextAction` (l's: strong / title / disabled); k's copy deleted, BottomSection uses it.
+  - Empty / error panels: k's `EmptyPanel` deleted; the foundation `EmptyState look="panel"` gained `fill` and `role`.
+  - Kept apart on purpose: `masterDetail.tsx` frame (MasterDetail with seam vs foundation ListDetail — different
+    frames), `CapRow` vs `PanelRow` (switch rows vs menu rows), `DetailSection` (messaging's 11px/600 section title,
+    spec'd differently from l's 10px `CapsLabel`), foundation `TextLink` (inline link, inherits size; used by settings).
+- **Other fixes.** "1 tools" → `toolsets.toolsOne` via `toolCount()`; also `connectors.testOkOne`, `manage.agents.toolsOne`.
+  k's `plugins.rescan` collided with Settings › Plugins' key (PLUGIN_STRINGS spread later, so Capabilities showed
+  "Check the folder again") → `plugins.rescanAll`. Webhooks banner no longer runs under the card's close X
+  (pre-existing in l's capture). Follow-up done: `contrib/host.ts` `pluginSourceFor()` implements
+  `DesktopPluginSource.setEnabled` over the running `PluginLoader` (the stored choice Settings › Plugins applies;
+  renderer-local, no IPC; no-op before plugins start) + 2 host tests; the Capabilities › Plugins Desktop switch is live.
+  Bots surface still not a Desktop row (not in the loader's inventory).
+- **Gate (final tree).** biome `check apps packages tooling scripts`: 946 files, 0 errors, 5 warnings (the same
+  `noDescendingSpecificity` ones INT-D reported; 2 interim ones from the merged kit.css fixed); `biome format apps
+  packages` clean (935 files); `tsc --noEmit -p apps/desktop` clean; `check-ipc.mjs` ok; `gen-bridge-types.mjs
+  --check` ok (exit 0). Desktop vitest full (`--maxWorkers=2`, xvfb, through `flock $S/fullgate.lock`, started after
+  the last code edit): **178 files, 1756 tests passed**. Electron E2E whole lane (through the lock, xvfb): **8 files
+  passed, 1 skipped; 43 passed, 2 skipped** (chat 9, security 12, surfaces 6, security-audit 5 + 1 skipped, lifecycle
+  4, remote 1, packaged 2, boot 4; startup-budget skipped — no packaged build). `uv run python -m tooling.checks
+  --require-ref`: ok, exit 0 (16 checks; pins and deps_audit warn as on main). Logs: `$S/int-kl-vitest1.log`,
+  `$S/int-kl-e2e1.log`, `$S/int-kl-checks2.log`. No Python changed (no pytest).
+- **Captures.** Kit copies `$S/int-kl-kit/{capabilities.ts,cc.ts}` (copied from `$S/w53k-kit`, `$S/w53l-kit`, not
+  edited), SCENES/WORK `$S/t-intkl` → `$S/int-kl-shots/k` (7 pairs, 0 problems) and `$S/int-kl-shots/l` (15 pairs,
+  0 problems), bots-tab and webhooks re-captured after the CSS fixes. Looked at skills, tools, mcp, plugins,
+  messaging, bots-tab, command center (sessions, system), cron, cron dialog, profiles detail, session import,
+  artifacts, webhooks in light and/or dark: no broken page; tabs / search / pills / meta box render as before.
+- **D-ids.** D-16.1250 – D-16.1269 in §2.7 after D-16.1229 (W52-k-1..7 = 1250–1256, W52-l-1..11 = 1257–1267,
+  integration 1268 control kit / one nav / rescan key, 1269 live Desktop switch + singular counts; none unused) and a
+  §3.1 range row after the 1210–1229 one. Both task notes got an "Integration (wave 53, desktop k + l)" paragraph.
+  Settings/* untouched (INT-S owns D-16.1230–1249).
+- **Follow-ups.** Bots row in the Plugins Desktop column; k's list (toolset write route, backend readiness probe,
+  skill catalog / SKILL.md routes, plugin uninstall + catalog, live bot presence, create-room RPC, messaging
+  `docs_url`); l's list (usage counts, curator / memory reset / audit routes, export save path, import paging, cron
+  per-job model, profile facts, layout grip chips + custom templates, markdown import preview, artifacts pager);
+  CapRow/PanelRow could share one row base; artifacts header could take `look="page"` like Capabilities (same
+  page shell in the spec) — left as l built it.
+- **Environment.** ENV RULE in every call (HOME etc. under `$S/int-kl-home`); TMPDIR unset for Electron; kit temp under
+  `$S/t-intkl`; full lanes through `flock $S/fullgate.lock`; nothing written outside `$S` except the e2e fixtures'
+  own `/tmp/indus-e2e-*` dirs (not cleaned globally); no process left running.

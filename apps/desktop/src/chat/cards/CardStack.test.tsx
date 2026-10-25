@@ -45,6 +45,26 @@ const approval = (answers: ServerRequestAnswer[], extra: Partial<ApprovalRequest
     answers,
   );
 
+/** Open the card's "Always allow…" menu (the remaining choices live there). */
+function openMenu() {
+  fireEvent.click(screen.getByRole("button", { name: "More choices" }));
+}
+
+/** Show the reason field (W52-g: behind the menu's "Reject with reason…"). */
+function askReason() {
+  openMenu();
+  fireEvent.click(screen.getByRole("menuitem", { name: "Reject with reason…" }));
+}
+
+/** Every choice the card offers: its buttons plus the menu's items, as a sorted set. */
+function offered(): string[] {
+  openMenu();
+  const found = [...document.querySelectorAll("[data-choice]")].map(
+    (b) => b.getAttribute("data-choice") ?? "",
+  );
+  return [...new Set(found)].sort();
+}
+
 function Transcript(props: { tools: string[]; requests: readonly OpenServerRequest[] }) {
   return (
     <div>
@@ -66,6 +86,7 @@ describe("card stack", () => {
     const requests = [approval(answers)];
     const view = render(<Transcript tools={[]} requests={requests} />);
     const before = view.container.querySelector('[data-request-id="r1"]');
+    askReason();
     const input = screen.getByLabelText("Reason for denying (optional)") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "half typed" } });
     view.rerender(<Transcript tools={["terminal"]} requests={requests} />);
@@ -101,28 +122,52 @@ describe("card stack", () => {
 
   it("shows exactly the backend's choices, deny always among them", () => {
     render(<Transcript tools={[]} requests={[approval([])]} />);
-    const choices = [...document.querySelectorAll("[data-choice]")].map((b) =>
-      b.getAttribute("data-choice"),
-    );
-    expect(choices).toEqual(["once", "session", "deny"]);
+    expect(offered()).toEqual(["deny", "once", "session"]);
+    // Run grants `once`, Reject denies (W52-g)
+    expect(screen.getByRole("button", { name: "Run" }).getAttribute("data-choice")).toBe("once");
+    expect(screen.getByRole("button", { name: "Reject" }).getAttribute("data-choice")).toBe("deny");
     cleanup();
     render(<Transcript tools={[]} requests={[approval([], { choices: ["always"] })]} />);
-    const again = [...document.querySelectorAll("[data-choice]")].map((b) =>
-      b.getAttribute("data-choice"),
-    );
-    expect(again).toEqual(["always", "deny"]);
+    expect(offered()).toEqual(["always", "deny"]);
     cleanup();
     render(<Transcript tools={[]} requests={[approval([], { choices: [] })]} />);
-    const unnamed = [...document.querySelectorAll("[data-choice]")].map((b) =>
-      b.getAttribute("data-choice"),
+    expect(offered()).toEqual(["deny", "once", "session"]);
+  });
+
+  it("Enter runs and Escape rejects the waiting approval, not from inside a field", () => {
+    const answers: ServerRequestAnswer[] = [];
+    render(
+      <div>
+        <textarea aria-label="composer" />
+        <Transcript tools={[]} requests={[approval(answers)]} />
+      </div>,
     );
-    expect(unnamed).toEqual(["once", "session", "deny"]);
+    fireEvent.keyDown(screen.getByLabelText("composer"), { key: "Enter" });
+    expect(answers).toEqual([]);
+    fireEvent.keyDown(document.body, { key: "Enter" });
+    expect(answers).toEqual([{ kind: "approval", choice: "once" }]);
+
+    const rejected: ServerRequestAnswer[] = [];
+    cleanup();
+    render(<Transcript tools={[]} requests={[approval(rejected)]} />);
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(rejected).toEqual([{ kind: "approval", choice: "deny" }]);
+  });
+
+  it("names the command, says what is running, and counts several approvals", () => {
+    const second = open("approval", { request_id: "r2", description: "Read the keychain" }, []);
+    render(<Transcript tools={[]} requests={[approval([]), second]} />);
+    expect(screen.getByText("Running rm -rf build/")).toBeTruthy();
+    expect(screen.getByText("Command")).toBeTruthy();
+    expect(screen.getByText("Command details")).toBeTruthy();
+    expect(screen.getByText("1 / 2")).toBeTruthy();
+    expect(screen.getByText("2 / 2")).toBeTruthy();
   });
 
   it("a drag over Allow does not answer", () => {
     const answers: ServerRequestAnswer[] = [];
     render(<Transcript tools={[]} requests={[approval(answers)]} />);
-    const allow = screen.getByRole("button", { name: "Allow once" });
+    const allow = screen.getByRole("button", { name: "Run" });
     const command = screen.getByText("rm -rf build/");
     // press started on the command text, released over the button
     fireEvent.pointerDown(command, { button: 0 });
@@ -134,22 +179,24 @@ describe("card stack", () => {
   it("a real click or the keyboard answers, once", () => {
     const answers: ServerRequestAnswer[] = [];
     render(<Transcript tools={[]} requests={[approval(answers)]} />);
-    const allow = screen.getByRole("button", { name: "Allow for this session" });
+    openMenu();
+    const allow = screen.getByRole("menuitem", { name: "Allow for this session" });
     fireEvent.pointerDown(allow, { button: 0 });
     fireEvent.click(allow, { detail: 1 });
     expect(answers).toEqual([{ kind: "approval", choice: "session" }]);
     // a second answer (a replayed card clicked again) changes nothing
-    fireEvent.click(screen.getByRole("button", { name: "Deny" }), { detail: 0 });
+    fireEvent.click(screen.getByRole("button", { name: "Reject" }), { detail: 0 });
     expect(answers).toHaveLength(1);
 
     const keyed: ServerRequestAnswer[] = [];
     cleanup();
     render(<Transcript tools={[]} requests={[approval(keyed)]} />);
-    const deny = screen.getByRole("button", { name: "Deny" });
+    askReason();
+    const [deny] = screen.getAllByRole("button", { name: "Reject" });
     fireEvent.change(screen.getByLabelText("Reason for denying (optional)"), {
       target: { value: "not now" },
     });
-    fireEvent.click(deny, { detail: 0 }); // keyboard activation
+    fireEvent.click(deny as HTMLElement, { detail: 0 }); // keyboard activation
     expect(keyed).toEqual([{ kind: "approval", choice: "deny", reason: "not now" }]);
   });
 
@@ -158,7 +205,7 @@ describe("card stack", () => {
     render(
       <CardStack sessionId="s1" requests={[approval(answers)]} connection={null} armMs={50} />,
     );
-    const allow = screen.getByRole("button", { name: "Allow once" });
+    const allow = screen.getByRole("button", { name: "Run" });
     fireEvent.pointerDown(allow, { button: 0 });
     fireEvent.click(allow, { detail: 1 });
     expect(answers).toEqual([]);

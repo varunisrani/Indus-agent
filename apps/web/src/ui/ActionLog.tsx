@@ -3,23 +3,27 @@
 // going and shows its last lines (already masked by the server), then reports how it ended.
 
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { SquareTerminal, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ApiError, api } from "../lib/api.ts";
 import type { ActionStarted, ActionStatus } from "../lib/restTypes.ts";
 import { useVisiblePolling } from "../lib/visibility.ts";
 import { errorText, useToast } from "../shell/Toasts.tsx";
-import { Badge, type BadgeTone, Button, Notice } from "./controls.tsx";
+import { Badge, type BadgeTone, IconButton, Notice } from "./controls.tsx";
 
 export const ACTION_POLL_MS = 1_000;
 export const ACTION_TAIL_LINES = 400;
 
-const STATE_LABEL: Record<ActionStatus["state"], [string, BadgeTone]> = {
-  idle: ["not run yet", "neutral"],
-  unknown: ["earlier run", "neutral"],
-  running: ["running", "accent"],
-  done: ["done", "ok"],
-  failed: ["failed", "danger"],
-};
+/** The badge for a run: running (amber), done (green), or how it ended (red). */
+function stateBadge(status: ActionStatus | undefined): [string, BadgeTone] {
+  if (!status) return ["starting", "warn"];
+  if (status.running || status.state === "running") return ["running", "warn"];
+  if (status.state === "done") return ["done", "ok"];
+  if (status.state === "failed") {
+    return [status.exit_code !== null ? `exit ${status.exit_code}` : "failed", "danger"];
+  }
+  return [status.state === "idle" ? "not run yet" : "earlier run", "neutral"];
+}
 
 export interface ActionLogProps {
   /** The action's name as the server knows it (`doctor`, `daemon-restart`, …). */
@@ -53,31 +57,34 @@ export function ActionLog({ name, run, profile, title, onFinished, onClose }: Ac
     finished.current?.(data);
   }, [status.data, run]);
 
-  const [label, tone] = status.data ? STATE_LABEL[status.data.state] : ["starting", "accent"];
+  const [label, tone] = stateBadge(status.data);
   const lines = status.data?.lines ?? [];
+  const name_ = title ?? name;
   return (
     <section
-      aria-label={`${title ?? name} output`}
-      className="flex flex-col gap-2 rounded-md border border-line bg-bg p-3"
+      aria-label={`${name_} output`}
+      className="flex flex-col gap-3 border border-line bg-canvas p-4"
     >
       <div className="flex items-center gap-2">
-        <span className="flex-1 font-mono text-sm">{title ?? name}</span>
-        <Badge tone={tone as BadgeTone}>{label}</Badge>
+        <SquareTerminal aria-hidden="true" className="size-4 shrink-0 text-ink-muted" />
+        <span className="type-data min-w-0 truncate text-[0.875rem] text-ink">{name_}</span>
+        <Badge tone={tone}>{label}</Badge>
+        <span className="flex-1" />
         {onClose ? (
-          <Button tone="ghost" onClick={onClose} aria-label={`Close ${title ?? name} output`}>
-            Close
-          </Button>
+          <IconButton label="Close log" onClick={onClose}>
+            <X />
+          </IconButton>
         ) : null}
       </div>
       {status.error ? <Notice tone="danger">{(status.error as Error).message}</Notice> : null}
       <pre
         data-testid={`action-log-${name}`}
-        className="max-h-72 overflow-auto rounded bg-code p-2 font-mono text-xs whitespace-pre-wrap"
+        className="m-0 max-h-72 overflow-auto border border-line bg-wash/50 p-3 font-mono text-[0.75rem] leading-relaxed whitespace-pre-wrap break-words text-ink-muted"
       >
-        {lines.join("\n")}
+        {lines.length > 0 ? lines.join("\n") : status.data ? "" : "Starting…"}
       </pre>
       {status.data && !status.data.running && status.data.exit_code !== null ? (
-        <p className="text-xs text-muted">Exit code {status.data.exit_code}.</p>
+        <p className="sr-only">Exit code {status.data.exit_code}.</p>
       ) : null}
     </section>
   );

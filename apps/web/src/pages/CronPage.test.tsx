@@ -3,7 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockApi, isValidSchedule, type MockApi } from "../testing/mockApi.ts";
 import { renderPage } from "../testing/render.tsx";
 import { CronPage } from "./CronPage.tsx";
-import { builderProblem, buildSchedule, DEFAULT_CHOICE } from "./cron/scheduleBuilder.ts";
+import {
+  DEFAULT_DRAFT,
+  draftProblem,
+  draftToSchedule,
+  scheduleToDraft,
+} from "./cron/scheduleBuilder.ts";
 
 let mock: MockApi;
 let restore: () => void;
@@ -25,33 +30,64 @@ afterEach(() => {
 
 async function openNewJob() {
   renderPage(<CronPage />, "/cron");
-  fireEvent.click(await screen.findByRole("button", { name: "New job" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Create" }));
   return within(await screen.findByRole("dialog"));
 }
 
 describe("schedule builder", () => {
   it("emits our grammar strings, which the store accepts", () => {
-    const every = buildSchedule({ ...DEFAULT_CHOICE, kind: "every", amount: 30, unit: "m" });
-    const once = buildSchedule({ ...DEFAULT_CHOICE, kind: "in", amount: 2, unit: "h" });
-    const daily = buildSchedule({ ...DEFAULT_CHOICE, kind: "daily", time: "09:30" });
-    const weekdays = buildSchedule({ ...DEFAULT_CHOICE, kind: "weekdays", time: "18:00" });
-    const cron = buildSchedule({ ...DEFAULT_CHOICE, kind: "cron", cron: " 0  9 * * 1-5 " });
-    expect([every, once, daily, weekdays, cron]).toEqual([
+    const every = draftToSchedule({ ...DEFAULT_DRAFT, mode: "interval", every: 30, unit: "m" });
+    const daily = draftToSchedule({ ...DEFAULT_DRAFT, mode: "daily", time: "09:30" });
+    const weekly = draftToSchedule({
+      ...DEFAULT_DRAFT,
+      mode: "weekly",
+      days: [5, 1, 3],
+      time: "18:05",
+    });
+    const monthly = draftToSchedule({
+      ...DEFAULT_DRAFT,
+      mode: "monthly",
+      dayOfMonth: 15,
+      time: "07:00",
+    });
+    const once = draftToSchedule({ ...DEFAULT_DRAFT, mode: "once", at: "2026-11-02T08:30" });
+    const custom = draftToSchedule({ ...DEFAULT_DRAFT, mode: "custom", custom: " in  2h " });
+    expect([every, daily, weekly, monthly, once, custom]).toEqual([
       "every 30m",
-      "in 2h",
       "daily at 09:30",
-      "weekdays at 18:00",
-      "0 9 * * 1-5",
+      "5 18 * * 1,3,5",
+      "0 7 15 * *",
+      "2026-11-02T08:30",
+      "in 2h",
     ]);
-    for (const schedule of [every, once, daily, weekdays, cron])
+    for (const schedule of [every, daily, weekly, monthly, once, custom])
       expect(isValidSchedule(schedule)).toBe(true);
   });
 
-  it("refuses choices that cannot become a schedule", () => {
-    expect(builderProblem({ ...DEFAULT_CHOICE, kind: "every", amount: 0 })).not.toBeNull();
-    expect(builderProblem({ ...DEFAULT_CHOICE, kind: "in", amount: 1.5 })).not.toBeNull();
-    expect(builderProblem({ ...DEFAULT_CHOICE, kind: "daily", time: "25:00" })).not.toBeNull();
-    expect(builderProblem({ ...DEFAULT_CHOICE, kind: "cron", cron: "0 9 * *" })).not.toBeNull();
+  it("reads schedules back into the picker, unfamiliar ones as custom", () => {
+    expect(scheduleToDraft("every 2h")).toMatchObject({ mode: "interval", every: 2, unit: "h" });
+    expect(scheduleToDraft("daily at 8:00")).toMatchObject({ mode: "daily", time: "08:00" });
+    expect(scheduleToDraft("5 18 * * 1,3,5")).toMatchObject({
+      mode: "weekly",
+      time: "18:05",
+      days: [1, 3, 5],
+    });
+    expect(scheduleToDraft("0 7 15 * *")).toMatchObject({ mode: "monthly", dayOfMonth: 15 });
+    expect(scheduleToDraft("2026-11-02T08:30")).toMatchObject({ mode: "once" });
+    expect(scheduleToDraft("weekdays at 18:00")).toMatchObject({
+      mode: "custom",
+      custom: "weekdays at 18:00",
+    });
+  });
+
+  it("refuses drafts that cannot become a schedule", () => {
+    expect(draftProblem({ ...DEFAULT_DRAFT, mode: "interval", every: 0 })).not.toBeNull();
+    expect(draftProblem({ ...DEFAULT_DRAFT, mode: "interval", every: 1.5 })).not.toBeNull();
+    expect(draftProblem({ ...DEFAULT_DRAFT, mode: "daily", time: "25:00" })).not.toBeNull();
+    expect(draftProblem({ ...DEFAULT_DRAFT, mode: "weekly", days: [] })).not.toBeNull();
+    expect(draftProblem({ ...DEFAULT_DRAFT, mode: "monthly", dayOfMonth: 31 })).not.toBeNull();
+    expect(draftProblem({ ...DEFAULT_DRAFT, mode: "once", at: "" })).not.toBeNull();
+    expect(draftProblem({ ...DEFAULT_DRAFT, mode: "custom", custom: " " })).not.toBeNull();
     expect(isValidSchedule("whenever")).toBe(false);
   });
 });
@@ -60,8 +96,9 @@ describe("cron page", () => {
   it("creates a job with the builder's every 30m", async () => {
     const dialog = await openNewJob();
     fireEvent.change(dialog.getByLabelText("Prompt"), { target: { value: "Summarise my inbox" } });
-    fireEvent.click(dialog.getByRole("button", { name: "Use" }));
-    expect((dialog.getByLabelText("Schedule") as HTMLInputElement).value).toBe("every 30m");
+    expect((dialog.getByLabelText("Schedule") as HTMLSelectElement).value).toBe("interval");
+    expect(dialog.getByText("every 30m")).toBeTruthy();
+    await dialog.findByRole("option", { name: "Telegram home chat" });
     fireEvent.change(dialog.getByLabelText("Deliver to"), { target: { value: "telegram" } });
     fireEvent.click(dialog.getByRole("button", { name: "Create" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -74,23 +111,41 @@ describe("cron page", () => {
     expect(await screen.findByText("every 30m")).toBeTruthy();
   });
 
-  it("creates a one-shot job with the builder's in 2h", async () => {
+  it("creates a one-shot job at a date and time", async () => {
     const dialog = await openNewJob();
     fireEvent.change(dialog.getByLabelText("Prompt"), { target: { value: "Remind me" } });
-    fireEvent.change(dialog.getByLabelText("Kind"), { target: { value: "in" } });
-    fireEvent.change(dialog.getByLabelText("Amount"), { target: { value: "2" } });
-    fireEvent.change(dialog.getByLabelText("Unit"), { target: { value: "h" } });
-    expect(dialog.getByText("in 2h")).toBeTruthy();
-    fireEvent.click(dialog.getByRole("button", { name: "Use" }));
+    fireEvent.change(dialog.getByLabelText("Schedule"), { target: { value: "once" } });
+    fireEvent.change(dialog.getByLabelText("Run at"), { target: { value: "2026-11-02T08:30" } });
+    expect(dialog.getByText("2026-11-02T08:30")).toBeTruthy();
     fireEvent.click(dialog.getByRole("button", { name: "Create" }));
     await waitFor(() => expect(mock.state.cronJobs).toHaveLength(1));
-    expect(mock.state.cronJobs[0]?.schedule).toBe("in 2h");
+    expect(mock.state.cronJobs[0]?.schedule).toBe("2026-11-02T08:30");
+  });
+
+  it("creates a weekly job with skills ticked", async () => {
+    mock.state.skills = [
+      { name: "digest", description: "Digests", category: "", enabled: true },
+      { name: "other", description: "Other", category: "", enabled: true },
+    ];
+    const dialog = await openNewJob();
+    fireEvent.change(dialog.getByLabelText("Prompt"), { target: { value: "Weekly review" } });
+    fireEvent.change(dialog.getByLabelText("Schedule"), { target: { value: "weekly" } });
+    fireEvent.click(dialog.getByRole("button", { name: "Tue" }));
+    fireEvent.change(dialog.getByLabelText("Time of day"), { target: { value: "17:45" } });
+    fireEvent.click(await dialog.findByRole("checkbox", { name: "digest" }));
+    fireEvent.click(dialog.getByRole("button", { name: "Create" }));
+    await waitFor(() => expect(mock.callsTo("POST", "/api/cron/jobs")).toHaveLength(1));
+    expect(mock.callsTo("POST", "/api/cron/jobs")[0]?.body).toMatchObject({
+      schedule: "45 17 * * 1,3,4,5",
+      skills: ["digest"],
+    });
   });
 
   it("keeps the modal open with the server's reason for a bad schedule", async () => {
     const dialog = await openNewJob();
     fireEvent.change(dialog.getByLabelText("Prompt"), { target: { value: "Do it" } });
-    fireEvent.change(dialog.getByLabelText("Schedule"), { target: { value: "whenever" } });
+    fireEvent.change(dialog.getByLabelText("Schedule"), { target: { value: "custom" } });
+    fireEvent.change(dialog.getByLabelText("Custom schedule"), { target: { value: "whenever" } });
     fireEvent.click(dialog.getByRole("button", { name: "Create" }));
     expect((await dialog.findByRole("alert")).textContent).toContain(
       "'whenever' is not a schedule",
@@ -100,10 +155,11 @@ describe("cron page", () => {
 
   it("marks delivery targets that are not set up", async () => {
     const dialog = await openNewJob();
-    const email = within(dialog.getByLabelText("Deliver to")).getByRole("option", {
+    const email = (await within(dialog.getByLabelText("Deliver to")).findByRole("option", {
       name: /Email/,
-    }) as HTMLOptionElement;
+    })) as HTMLOptionElement;
     expect(email.disabled).toBe(true);
+    expect(email.textContent).toContain("set up first");
   });
 
   it("pauses, resumes, runs now and deletes after confirming", async () => {
@@ -173,9 +229,64 @@ describe("cron page", () => {
     );
     const dialog = within(await screen.findByRole("dialog"));
     expect((dialog.getByLabelText("Prompt") as HTMLTextAreaElement).value).toBe("Digest");
-    fireEvent.change(dialog.getByLabelText("Schedule"), { target: { value: "daily at 07:00" } });
-    fireEvent.click(dialog.getByRole("button", { name: "Save" }));
+    expect(dialog.queryByLabelText("Profile")).toBeNull();
+    expect(dialog.getByText("job-1")).toBeTruthy();
+    expect((dialog.getByLabelText("Every") as HTMLInputElement).value).toBe("1");
+    fireEvent.change(dialog.getByLabelText("Schedule"), { target: { value: "daily" } });
+    fireEvent.change(dialog.getByLabelText("Time of day"), { target: { value: "07:00" } });
+    fireEvent.click(dialog.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(mock.callsTo("PUT", "/api/cron/jobs/job-1")).toHaveLength(1));
     expect(await screen.findByText("daily at 07:00")).toBeTruthy();
+  });
+
+  it("asks each profile for All profiles and tags rows with it", async () => {
+    mock.state.profiles = {
+      profiles: [
+        { name: "default", is_default: true },
+        { name: "work", is_default: false },
+      ],
+      active: "default",
+    };
+    mock.state.cronJobs = [
+      {
+        id: "job-1",
+        name: "Digest",
+        prompt: "Digest",
+        schedule: "every 1d",
+        schedule_display: "every 1d",
+        deliver: "local",
+        state: "scheduled",
+        enabled: true,
+        last_run_at: null,
+        next_run_at: null,
+        last_status: null,
+      },
+    ];
+    renderPage(<CronPage />, "/cron");
+    expect(await screen.findAllByTestId("job-job-1")).toHaveLength(2);
+    const asked = mock.callsTo("GET", "/api/cron/jobs").map((c) => c.query.get("profile"));
+    expect(asked).toEqual(["default", "work"]);
+    expect(screen.getByText("Scheduled Jobs (2)")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Profile"), { target: { value: "work" } });
+    await waitFor(() => expect(screen.getAllByTestId("job-job-1")).toHaveLength(1));
+    expect(within(screen.getByTestId("job-job-1")).getByText("work")).toBeTruthy();
+  });
+
+  it("prefills the job panel from a blueprint", async () => {
+    mock.state.cronBlueprints = [
+      {
+        skill: "inbox-digest",
+        description: "Sum up mail",
+        schedule: "daily at 08:00",
+        prompt: "Sum up my mail",
+      },
+    ];
+    renderPage(<CronPage />, "/cron");
+    fireEvent.click(await screen.findByRole("button", { name: "Blueprints" }));
+    const card = within(await screen.findByTestId("blueprint-inbox-digest"));
+    fireEvent.click(card.getByRole("button", { name: "Set up" }));
+    const dialog = within(await screen.findByRole("dialog"));
+    expect((dialog.getByLabelText("Prompt") as HTMLTextAreaElement).value).toBe("Sum up my mail");
+    expect((dialog.getByLabelText("Schedule") as HTMLSelectElement).value).toBe("daily");
   });
 });

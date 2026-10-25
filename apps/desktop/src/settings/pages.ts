@@ -9,8 +9,19 @@
 import type { MessageKey } from "../i18n/index.tsx";
 
 export type CustomPage =
+  // settings slice A (W52-i): hand-built pages of Model, Appearance, Workspace, Passwords
+  | "model-main"
+  | "model-fallbacks"
+  | "model-auxiliary"
+  | "model-moa"
+  | "appearance-general"
+  | "appearance-chat-display"
+  | "appearance-pet"
+  | "workspace-projects"
+  | "workspace-files"
+  | "passwords-credentials"
+  | "passwords-sources"
   | "persona"
-  | "chat-voice"
   | "appearance-theme"
   | "appearance-typography"
   | "appearance-window"
@@ -20,15 +31,23 @@ export type CustomPage =
   | "providers-endpoints"
   | "gateways-connection"
   | "gateways-connections"
-  | "gateways-storage"
   | "keyboard"
   | "notifications"
-  | "sessions-archived"
-  | "workspace-desktop"
   | "profiles"
   | "plugins"
   | "about"
-  | "about-licences";
+  | "about-licences"
+  // settings-b (W52-j): Voice, Notifications, Providers, Gateways, Keyboard, Tools & Keys,
+  // Sessions and About pages added by that slice
+  | "voice-wake"
+  | "notifications-sounds"
+  | "providers-local"
+  | "gateways-updates"
+  | "keyboard-global"
+  | "tools-keys"
+  | "sessions-archived-list"
+  | "sessions-directory"
+  | "about-uninstall";
 
 export interface PageDef {
   readonly id: string;
@@ -37,6 +56,15 @@ export interface PageDef {
   readonly prefixes?: readonly string[];
   readonly also?: readonly string[];
   readonly custom?: CustomPage;
+  /**
+   * The fields shown up front, in this order of importance (W51-b); the page's other fields go
+   * behind the "More settings" fold. Absent: every field shows.
+   */
+  readonly curated?: readonly string[];
+  /** These fields first, in this order; the page's other fields follow in schema order (W52-i). */
+  readonly order?: readonly string[];
+  /** A hand-built block rendered below this page's schema rows (W52-j: Voice, Sessions). */
+  readonly after?: CustomPage;
 }
 
 export const VIEW_IDS = [
@@ -45,13 +73,19 @@ export const VIEW_IDS = [
   "appearance",
   "workspace",
   "safety",
+  "browser",
+  "passwords",
+  // settings-b (W52-j) views, in the reference's order
   "memory",
+  "voice",
   "advanced",
+  "notifications",
   "providers",
   "gateways",
   "keyboard",
-  "notifications",
+  "tools",
   "sessions",
+  "plugins",
   "about",
 ] as const;
 export type ViewId = (typeof VIEW_IDS)[number];
@@ -73,6 +107,7 @@ export const VIEWS: readonly ViewDef[] = [
       {
         id: "main",
         label: "settings.page.model.main",
+        custom: "model-main",
         fields: [
           "model.default",
           "model.provider",
@@ -85,10 +120,17 @@ export const VIEWS: readonly ViewDef[] = [
       {
         id: "fallbacks",
         label: "settings.page.model.fallbacks",
+        custom: "model-fallbacks",
         fields: ["fallback_providers"],
         prefixes: ["fallback."],
       },
-      { id: "auxiliary", label: "settings.page.model.auxiliary", prefixes: ["auxiliary."] },
+      {
+        id: "auxiliary",
+        label: "settings.page.model.auxiliary",
+        custom: "model-auxiliary",
+        prefixes: ["auxiliary."],
+      },
+      { id: "moa", label: "settings.page.model.moa", custom: "model-moa", prefixes: ["moa."] },
     ],
   },
   {
@@ -100,9 +142,10 @@ export const VIEWS: readonly ViewDef[] = [
         id: "behaviour",
         label: "settings.page.chat.behaviour",
         fields: ["display.show_reasoning", "display.busy_input_mode", "timezone"],
+        order: ["timezone", "display.show_reasoning", "display.busy_input_mode"],
       },
       { id: "personality", label: "settings.page.chat.personality", custom: "persona" },
-      { id: "voice", label: "settings.page.chat.voice", custom: "chat-voice" }, // P24-20, P24-35
+      // the wake word moved to the Voice view (W52-j, lead decision "Voice is its own item")
     ],
   },
   {
@@ -110,6 +153,7 @@ export const VIEWS: readonly ViewDef[] = [
     label: "settings.view.appearance",
     scoped: false,
     pages: [
+      { id: "general", label: "settings.page.appearance.general", custom: "appearance-general" },
       { id: "theme", label: "settings.page.appearance.theme", custom: "appearance-theme" },
       {
         id: "typography",
@@ -117,6 +161,12 @@ export const VIEWS: readonly ViewDef[] = [
         custom: "appearance-typography",
       },
       { id: "window", label: "settings.page.appearance.window", custom: "appearance-window" },
+      {
+        id: "chat-display",
+        label: "settings.page.appearance.chatDisplay",
+        custom: "appearance-chat-display",
+      },
+      { id: "pet", label: "settings.page.appearance.pet", custom: "appearance-pet" },
     ],
   },
   {
@@ -124,22 +174,24 @@ export const VIEWS: readonly ViewDef[] = [
     label: "settings.view.workspace",
     scoped: true,
     pages: [
-      { id: "projects", label: "settings.page.workspace.projects", fields: ["terminal.cwd"] },
-      { id: "desktop", label: "settings.page.workspace.desktop", custom: "workspace-desktop" },
+      {
+        id: "projects",
+        label: "settings.page.workspace.projects",
+        custom: "workspace-projects",
+        fields: ["terminal.cwd"],
+      },
       {
         id: "shell",
         label: "settings.page.workspace.shell",
-        fields: [
-          "terminal.backend",
-          "terminal.persistent_shell",
-          "terminal.env_passthrough",
-          "terminal.timeout",
-        ],
+        // terminal.backend / terminal.timeout moved to Advanced › Terminal backend (W52-B-3)
+        fields: ["terminal.persistent_shell", "terminal.env_passthrough"],
       },
       {
         id: "files",
         label: "settings.page.workspace.files",
-        fields: ["file_read_max_chars", "tool_output.max_chars"],
+        custom: "workspace-files",
+        // tool_output.max_chars moves to Advanced › Output limits (slice B, W52-B-3)
+        fields: ["code_execution.mode", "file_read_max_chars"],
       },
     ],
   },
@@ -153,21 +205,147 @@ export const VIEWS: readonly ViewDef[] = [
         label: "settings.page.safety.approvals",
         fields: ["command_allowlist"],
         prefixes: ["approvals."],
+        order: [
+          "approvals.mode",
+          "approvals.timeout",
+          "approvals.mcp_reload_confirm",
+          "command_allowlist",
+        ],
       },
-      { id: "privacy", label: "settings.page.safety.privacy", prefixes: ["security."] },
-      { id: "checkpoints", label: "settings.page.safety.checkpoints", prefixes: ["checkpoints."] },
+      {
+        id: "privacy",
+        label: "settings.page.safety.privacy",
+        prefixes: ["security."],
+        order: ["security.redact_secrets", "security.allow_private_urls"],
+      },
+      {
+        id: "checkpoints",
+        label: "settings.page.safety.checkpoints",
+        prefixes: ["checkpoints."],
+        curated: ["checkpoints.enabled"],
+      },
     ],
   },
+  {
+    id: "browser",
+    label: "settings.view.browser",
+    scoped: true,
+    pages: [
+      {
+        id: "profile",
+        label: "settings.page.browser.profile",
+        // the reference rows first; our other browser.* fields (engine, timeouts, providers) behind
+        // the fold (W52-dsa-14). Listed by name: browser.route_private_local and
+        // browser.vault_sources belong to the next pages.
+        fields: [
+          "browser.real_profile",
+          "browser.real_profile_dir",
+          "browser.provider",
+          "browser.engine",
+          "browser.inactivity_timeout",
+          "browser.command_timeout",
+          "browser.snapshot_threshold",
+          "browser.snapshot_summary",
+          "browser.cdp_url",
+          "browser.executable_path",
+          "browser.env_passthrough",
+          "browser.dialog_policy",
+          "browser.dialog_timeout_s",
+          "browser.camofox_url",
+          "browser.control_enabled",
+          "browser.control_developer_mode",
+        ],
+        curated: ["browser.real_profile", "browser.real_profile_dir"],
+      },
+      {
+        id: "network",
+        label: "settings.page.browser.network",
+        fields: ["browser.route_private_local"],
+        also: ["security.allow_private_urls"],
+      },
+    ],
+  },
+  {
+    id: "passwords",
+    label: "settings.view.passwords",
+    scoped: true,
+    pages: [
+      {
+        id: "credentials",
+        label: "settings.page.passwords.credentials",
+        custom: "passwords-credentials",
+      },
+      {
+        id: "sources",
+        label: "settings.page.passwords.sources",
+        custom: "passwords-sources",
+        fields: ["browser.vault_sources"],
+      },
+    ],
+  },
+  // -- settings-b (W52-j) views ------------------------------------------------------------------
   {
     id: "memory",
     label: "settings.view.memory",
     scoped: true,
     pages: [
-      { id: "persistent", label: "settings.page.memory.persistent", prefixes: ["memory."] },
+      {
+        id: "persistent",
+        label: "settings.page.memory.persistent",
+        prefixes: ["memory."],
+        curated: [
+          "memory.notes_enabled",
+          "memory.profile_enabled",
+          "memory.notes_char_limit",
+          "memory.profile_char_limit",
+          "memory.provider",
+        ],
+      },
       {
         id: "context",
         label: "settings.page.memory.context",
         prefixes: ["compression.", "context."],
+        curated: [
+          "context.engine",
+          "compression.enabled",
+          "compression.threshold",
+          "compression.target_ratio",
+          "compression.min_tail_user_messages",
+          "compression.timeout_s",
+        ],
+      },
+    ],
+  },
+  {
+    id: "voice",
+    label: "settings.view.voice",
+    scoped: true,
+    pages: [
+      {
+        id: "conversation",
+        label: "settings.page.voice.conversation",
+        fields: [
+          "voice.record_key",
+          "voice.max_seconds",
+          "voice.silence_threshold",
+          "voice.silence_seconds",
+          "voice.wait_seconds",
+        ],
+        curated: ["voice.record_key", "voice.max_seconds"],
+        after: "voice-wake",
+      },
+      {
+        id: "transcription",
+        label: "settings.page.voice.transcription",
+        prefixes: ["stt."],
+        curated: ["stt.provider", "stt.local_model", "stt.language", "stt.model"],
+      },
+      {
+        id: "speech",
+        label: "settings.page.voice.speech",
+        fields: ["voice.read_aloud"],
+        prefixes: ["tts."],
+        curated: ["tts.provider", "voice.read_aloud", "tts.voice", "tts.speed"],
       },
     ],
   },
@@ -177,15 +355,63 @@ export const VIEWS: readonly ViewDef[] = [
     scoped: true,
     pages: [
       { id: "desktop", label: "settings.page.advanced.desktop", custom: "advanced-desktop" },
-      { id: "runtime", label: "settings.page.advanced.runtime", prefixes: ["agent."] },
+      {
+        id: "runtime",
+        label: "settings.page.advanced.runtime",
+        prefixes: ["agent."],
+        curated: ["agent.max_turns", "agent.api_max_retries"],
+      },
       {
         id: "tools",
         label: "settings.page.advanced.tools",
-        prefixes: ["code_execution.", "delegation."],
+        fields: ["prompt.tool_use_enforcement"],
+        prefixes: ["code_execution."],
+        curated: [
+          "prompt.tool_use_enforcement",
+          "code_execution.timeout",
+          "code_execution.max_tool_calls",
+        ],
       },
-      { id: "terminal", label: "settings.page.advanced.terminal", prefixes: ["terminal."] },
+      {
+        id: "terminal",
+        label: "settings.page.advanced.terminal",
+        prefixes: ["terminal."],
+        curated: [
+          "terminal.backend",
+          "terminal.timeout",
+          "terminal.docker_image",
+          "terminal.singularity_image",
+          "terminal.modal_image",
+          "terminal.daytona_image",
+        ],
+      },
+      {
+        id: "delegation",
+        label: "settings.page.advanced.delegation",
+        prefixes: ["delegation."],
+        curated: [
+          "delegation.model",
+          "delegation.max_iterations",
+          "delegation.max_concurrent_children",
+          "delegation.max_depth",
+        ],
+      },
+      {
+        id: "output",
+        label: "settings.page.advanced.output",
+        fields: ["tool_output.max_chars"],
+        also: ["checkpoints.max_snapshots"],
+      },
       { id: "profiles", label: "settings.page.advanced.profiles", custom: "profiles" },
-      { id: "plugins", label: "settings.page.advanced.plugins", custom: "plugins" }, // P24-32
+    ],
+  },
+  {
+    id: "notifications",
+    label: "settings.view.notifications",
+    scoped: false,
+    pages: [
+      { id: "alerts", label: "settings.page.notifications.alerts", custom: "notifications" },
+      { id: "sounds", label: "settings.page.notifications.sounds", custom: "notifications-sounds" },
     ],
   },
   {
@@ -200,6 +426,7 @@ export const VIEWS: readonly ViewDef[] = [
         label: "settings.page.providers.endpoints",
         custom: "providers-endpoints",
       },
+      { id: "local", label: "settings.page.providers.local", custom: "providers-local" },
     ],
   },
   {
@@ -217,34 +444,44 @@ export const VIEWS: readonly ViewDef[] = [
         label: "settings.page.gateways.connections",
         custom: "gateways-connections",
       },
-      { id: "storage", label: "settings.page.gateways.storage", custom: "gateways-storage" },
+      { id: "updates", label: "settings.page.gateways.updates", custom: "gateways-updates" },
     ],
   },
   {
     id: "keyboard",
     label: "settings.view.keyboard",
     scoped: false,
-    pages: [{ id: "shortcuts", label: "settings.page.keyboard.shortcuts", custom: "keyboard" }],
+    pages: [
+      { id: "shortcuts", label: "settings.page.keyboard.shortcuts", custom: "keyboard" },
+      { id: "global", label: "settings.page.keyboard.global", custom: "keyboard-global" },
+    ],
   },
   {
-    id: "notifications",
-    label: "settings.view.notifications",
-    scoped: false,
-    pages: [{ id: "alerts", label: "settings.page.notifications.alerts", custom: "notifications" }],
+    id: "tools",
+    label: "settings.view.tools",
+    scoped: true,
+    pages: [{ id: "keys", label: "settings.page.tools.keys", custom: "tools-keys" }],
   },
   {
     id: "sessions",
     label: "settings.view.sessions",
     scoped: true,
     pages: [
-      { id: "archived", label: "settings.page.sessions.archived", custom: "sessions-archived" },
       {
-        id: "directory",
-        label: "settings.page.sessions.directory",
-        also: ["terminal.cwd"],
+        id: "archived",
+        label: "settings.page.sessions.archived",
         prefixes: ["sessions."],
+        curated: ["sessions.auto_prune", "sessions.retention_days"],
+        after: "sessions-archived-list",
       },
+      { id: "directory", label: "settings.page.sessions.directory", custom: "sessions-directory" },
     ],
+  },
+  {
+    id: "plugins",
+    label: "settings.view.plugins",
+    scoped: false,
+    pages: [{ id: "main", label: "settings.page.plugins.main", custom: "plugins" }],
   },
   {
     id: "about",
@@ -252,6 +489,7 @@ export const VIEWS: readonly ViewDef[] = [
     scoped: false,
     pages: [
       { id: "version", label: "settings.page.about.version", custom: "about" },
+      { id: "uninstall", label: "settings.page.about.uninstall", custom: "about-uninstall" },
       { id: "licences", label: "settings.page.about.licences", custom: "about-licences" },
     ],
   },
@@ -286,6 +524,11 @@ export function fieldsOnPage(page: PageDef, schemaFields: readonly string[]): st
     return owner !== null && owner.page.id === page.id && claims(page, field);
   });
 }
+
+/** Old page ids that still land somewhere (saved links, deep links): view → old id → page. */
+const PAGE_ALIASES: Readonly<Partial<Record<ViewId, Readonly<Record<string, string>>>>> = {
+  workspace: { desktop: "projects" }, // W52-i: "On this computer" merged into Projects & discovery
+};
 
 export interface SettingsTarget {
   readonly view: ViewId;
@@ -322,7 +565,9 @@ export function resolveTarget(query: string | URLSearchParams): SettingsTarget {
     }
   }
   const resolved = view ?? (VIEWS[0] as ViewDef);
-  const page = resolved.pages.find((p) => p.id === pageId) ?? (resolved.pages[0] as PageDef);
+  const alias = pageId === null ? undefined : PAGE_ALIASES[resolved.id]?.[pageId];
+  const page =
+    resolved.pages.find((p) => p.id === (alias ?? pageId)) ?? (resolved.pages[0] as PageDef);
   return {
     view: resolved.id,
     page: page.id,
@@ -397,8 +642,8 @@ export const MANIFEST: readonly ManifestRow[] = [
   },
   {
     id: "update-channel",
-    view: "advanced",
-    page: "desktop",
+    view: "about",
+    page: "version",
     label: "settings.updates.channel",
     keywords: ["updates", "canary", "stable", "release", "beta"],
   },
@@ -449,7 +694,7 @@ export const MANIFEST: readonly ManifestRow[] = [
   {
     id: "secure-storage",
     view: "gateways",
-    page: "storage",
+    page: "connection",
     label: "settings.storage.title",
     description: "settings.storage.body",
     keywords: ["keychain", "keyring", "encryption", "secure storage", "safe storage"],
@@ -465,14 +710,14 @@ export const MANIFEST: readonly ManifestRow[] = [
     id: "notify-turn",
     view: "notifications",
     page: "alerts",
-    label: "settings.notify.turnComplete",
+    label: "settings.notify.replyReady",
     keywords: ["notification", "alert", "done", "finished"],
   },
   {
     id: "notify-sounds",
     view: "notifications",
-    page: "alerts",
-    label: "settings.notify.sounds",
+    page: "sounds",
+    label: "settings.sounds.title",
     keywords: ["sound", "audio", "chime"],
   },
   {
@@ -514,14 +759,14 @@ export const MANIFEST: readonly ManifestRow[] = [
   {
     id: "uninstall",
     view: "about",
-    page: "version",
+    page: "uninstall",
     label: "settings.uninstall.title",
     keywords: ["uninstall", "remove", "delete", "app", "everything"],
   },
   {
     id: "default-directory",
     view: "workspace",
-    page: "desktop",
+    page: "projects",
     label: "settings.workspace.defaultDir",
     description: "settings.workspace.defaultDirBody",
     keywords: ["folder", "directory", "new chat", "working folder", "cwd"],
@@ -529,7 +774,7 @@ export const MANIFEST: readonly ManifestRow[] = [
   {
     id: "repo-scan",
     view: "workspace",
-    page: "desktop",
+    page: "projects",
     label: "settings.workspace.scan",
     description: "settings.workspace.scanBody",
     keywords: ["repositories", "repos", "git", "scan", "discover", "projects"],
@@ -537,15 +782,15 @@ export const MANIFEST: readonly ManifestRow[] = [
   {
     id: "data-url-limit",
     view: "workspace",
-    page: "desktop",
+    page: "files",
     label: "settings.workspace.dataUrl",
     description: "settings.workspace.dataUrlBody",
     keywords: ["file size", "limit", "image", "attachment", "read"],
   },
   {
     id: "desktop-plugins",
-    view: "advanced",
-    page: "plugins",
+    view: "plugins",
+    page: "main",
     label: "plugins.title",
     description: "plugins.body",
     keywords: ["plugins", "extensions", "add-ons", "desktop plugins", "sidebar", "panes"],
@@ -557,5 +802,134 @@ export const MANIFEST: readonly ManifestRow[] = [
     label: "settings.profiles.title",
     description: "settings.profiles.body",
     keywords: ["profile", "rename", "delete", "remove"],
+  },
+  // -- settings slice A (W52-i) --------------------------------------------------------------------
+  {
+    id: "moa-presets",
+    view: "model",
+    page: "moa",
+    label: "settingsA.moa.preset",
+    description: "settingsA.moa.intro",
+    keywords: ["mixture", "agents", "moa", "preset", "aggregator", "reference models"],
+  },
+  {
+    id: "language",
+    view: "appearance",
+    page: "general",
+    label: "settingsA.general.language",
+    keywords: ["language", "locale", "english", "translation"],
+  },
+  {
+    id: "interface-mode",
+    view: "appearance",
+    page: "window",
+    label: "settingsA.window.mode",
+    keywords: ["simple", "advanced", "interface", "layout", "panes"],
+  },
+  {
+    id: "chat-font",
+    view: "appearance",
+    page: "typography",
+    label: "settingsA.type.chatFont",
+    keywords: ["font", "typeface", "dyslexic", "chat font"],
+  },
+  {
+    id: "terminal-font",
+    view: "appearance",
+    page: "typography",
+    label: "settingsA.type.terminalFont",
+    keywords: ["font", "monospace", "terminal font"],
+  },
+  {
+    id: "pet",
+    view: "appearance",
+    page: "pet",
+    label: "settingsA.pet.choose",
+    keywords: ["pet", "companion", "mascot", "buddy"],
+  },
+  {
+    id: "saved-credentials",
+    view: "passwords",
+    page: "credentials",
+    label: "settingsA.vault.title",
+    keywords: ["password", "login", "vault", "credentials", "sign in"],
+  },
+  {
+    id: "password-managers",
+    view: "passwords",
+    page: "sources",
+    label: "settingsA.sources.title",
+    keywords: ["1password", "bitwarden", "password manager", "vault"],
+  },
+  // -- settings-b (W52-j) rows --------------------------------------------------------------------
+  {
+    id: "wake-word",
+    view: "voice",
+    page: "conversation",
+    label: "settings.wake.title",
+    keywords: ["wake word", "wake phrase", "hands free", "listen", "microphone", "voice"],
+  },
+  {
+    id: "notify-approvals",
+    view: "notifications",
+    page: "alerts",
+    label: "settings.notify.approvalNeeded",
+    keywords: ["notification", "approval", "permission", "waiting"],
+  },
+  {
+    id: "notify-test",
+    view: "notifications",
+    page: "alerts",
+    label: "settings.notify.test",
+    keywords: ["notification", "test", "try"],
+  },
+  {
+    id: "local-models",
+    view: "providers",
+    page: "local",
+    label: "settings.local.title",
+    keywords: ["local", "ollama", "vllm", "llama.cpp", "lm studio", "offline", "model server"],
+  },
+  {
+    id: "gateway-logs",
+    view: "gateways",
+    page: "connection",
+    label: "settings.gatewayDiag.title",
+    keywords: ["logs", "diagnostics", "log file"],
+  },
+  {
+    id: "launch-mode",
+    view: "gateways",
+    page: "connections",
+    label: "settings.launchMode.title",
+    keywords: ["startup", "launch", "last used", "primary", "connection"],
+  },
+  {
+    id: "global-shortcuts",
+    view: "keyboard",
+    page: "global",
+    label: "settings.globalKeys.title",
+    keywords: ["global", "hud", "quick entry", "system wide", "hotkey", "shortcut"],
+  },
+  {
+    id: "tool-keys",
+    view: "tools",
+    page: "keys",
+    label: "settings.toolKeys.title",
+    keywords: ["tool", "skill", "api key", "token", "secret", "credentials", "variable"],
+  },
+  {
+    id: "sessions-directory",
+    view: "sessions",
+    page: "directory",
+    label: "settings.sessionDir.title",
+    keywords: ["folder", "directory", "project", "new session", "working folder"],
+  },
+  {
+    id: "run-onboarding",
+    view: "advanced",
+    page: "desktop",
+    label: "settings.onboardingAgain.title",
+    keywords: ["onboarding", "setup", "first run", "welcome"],
   },
 ];

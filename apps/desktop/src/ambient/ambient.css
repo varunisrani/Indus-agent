@@ -41,62 +41,175 @@ html[data-window="quick"] body {
   overflow: hidden;
 }
 
-.hud,
-.quick {
+/* HUD (W52-m): the composer bar on top, the transcript on a dark translucent sheet below it. */
+.hud {
   position: fixed;
   inset: 0;
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--indus-color-border);
-  border-radius: var(--indus-radius-lg, 12px);
-  background: var(--indus-color-bg-raised);
-  box-shadow: var(--indus-shadow-mid);
   overflow: hidden;
-}
-
-.hud-bar {
-  display: flex;
-  align-items: center;
-  gap: var(--indus-space-1);
-  padding: var(--indus-space-1) var(--indus-space-2);
-  border-bottom: 1px solid var(--indus-color-border);
-  color: var(--indus-color-fg-muted);
-  font-size: 12px;
-  user-select: none;
-}
-
-.hud-grip {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: var(--indus-space-1);
-  cursor: grab;
-  min-height: 24px;
-}
-
-.hud-grip[data-dragging="true"] {
-  cursor: grabbing;
+  color: var(--desk-fg-1);
 }
 
 .hud-body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
-  overflow: auto;
-  padding: var(--indus-space-2) var(--indus-space-3);
+}
+
+.hud .chat {
+  background: transparent;
+}
+
+/* the composer bar first, full width */
+.hud .chat-composer {
+  order: -1;
+  flex: none;
+  padding: 0;
+  cursor: grab;
+}
+
+.hud[data-dragging="true"] .chat-composer {
+  cursor: grabbing;
+}
+
+.hud .composer-box {
+  min-height: 41px;
+  align-items: center;
+  padding: 6px 64px 6px 12px;
+  border: 1px solid var(--desk-stroke-3);
+  border-radius: 12px;
+  background: var(--desk-bg-input);
+}
+
+.hud .composer-box:focus-within {
+  border-color: var(--desk-accent);
+}
+
+.hud .composer-box textarea {
+  font-size: 15px;
+}
+
+.hud-placeholder-bar {
+  display: flex;
+  align-items: center;
+  height: 41px;
+  padding: 0 64px 0 16px;
+  border: 1px solid var(--desk-stroke-3);
+  border-radius: 12px;
+  background: var(--desk-bg-input);
+  color: var(--desk-fg-3);
+  font-size: 15px;
+}
+
+.hud-tools {
+  position: absolute;
+  top: 0;
+  right: 8px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 41px;
+}
+
+.hud-tool {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--desk-radius-control);
+  background: transparent;
+  color: var(--desk-fg-3);
+  cursor: pointer;
+}
+
+.hud-tool:hover {
+  background: var(--desk-row-hover);
+  color: var(--desk-fg-1);
 }
 
 .hud-row {
-  margin: 0 0 var(--indus-space-2);
-  white-space: pre-wrap;
+  padding: 16px 24px;
+  color: #a4a4a6;
+  font-size: 13px;
 }
 
-.hud-row[data-role="user"] {
-  color: var(--indus-color-fg-muted);
+/* the sheet: inset 8px, near-black at ~82% in both themes, rounded bottom corners */
+.hud .transcript,
+.hud-row {
+  margin: 0 8px;
+  border-radius: 0 0 12px 12px;
+  background: rgb(12 13 18 / 0.82);
+  color: #ffffff;
+  transition: opacity 180ms var(--indus-easing-standard);
 }
 
-.hud-composer {
-  border-top: 1px solid var(--indus-color-border);
-  padding: var(--indus-space-2);
+.hud[data-sheet="shown"] .transcript,
+.hud[data-sheet="shown"] .hud-row {
+  opacity: 1;
+  transition-duration: 110ms;
+}
+
+.hud[data-sheet="hidden"] .transcript,
+.hud[data-sheet="hidden"] .hud-row {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.hud .transcript .msg,
+.hud .transcript .msg-assistant {
+  color: #ffffff;
+  font-size: 15px;
+}
+
+/* a user turn: gold text, no bubble, not sticky */
+.hud .transcript .msg-user {
+  position: static;
+  background: transparent;
+}
+
+.hud .transcript .msg-user .msg-bubble {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #ffcf6b;
+  box-shadow: none;
+}
+
+.hud .transcript table,
+.hud .transcript th,
+.hud .transcript td {
+  border-color: rgb(255 255 255 / 0.1);
+  background: transparent;
+  color: #a4a4a6;
+}
+
+.hud .transcript pre,
+.hud .transcript code {
+  background: rgb(255 255 255 / 0.05);
+  color: #e6e6e6;
+}
+
+.hud .tool-row,
+.hud .inline-diff,
+.hud .msg-notice,
+.hud .msg-note,
+.hud .timeline,
+.hud .transcript-bottom,
+.hud .chat-stalled {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud .transcript,
+  .hud-row {
+    transition: none;
+  }
 }
 
 .hud-edge {
@@ -162,36 +275,93 @@ html[data-window="quick"] body {
   cursor: nwse-resize;
 }
 
+/* Quick entry (W52-m): one card centred in a transparent window. */
 .quick {
-  padding: var(--indus-space-3);
-  gap: var(--indus-space-2);
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 12px;
+  color: var(--desk-fg-1);
+  font-family: var(--desk-font-ui);
 }
 
-.quick textarea {
+.quick-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid var(--desk-stroke-3);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--desk-bg-raised) 96%, var(--desk-fg-1));
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.22);
+}
+
+:root[data-theme="indus-light"] .quick-card {
+  background: #fdfdfd;
+}
+
+.quick-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.quick-prompt {
+  flex: none;
+  color: var(--desk-fg-3);
+  font-size: 15px;
+}
+
+.quick-input {
   flex: 1;
-  resize: none;
+  min-width: 0;
+  padding: 0;
   border: 0;
   outline: none;
   background: transparent;
-  color: var(--indus-color-fg);
+  color: var(--desk-fg-1);
   font: inherit;
   font-size: 15px;
 }
 
-.quick-footer {
-  display: flex;
-  align-items: center;
-  gap: var(--indus-space-2);
-  color: var(--indus-color-fg-muted);
-  font-size: 12px;
+.quick-input::placeholder {
+  color: var(--desk-fg-4);
 }
 
-.quick-footer .quick-hint {
-  flex: 1;
+.quick[data-sending="true"] .quick-input {
+  opacity: 0.55;
+}
+
+.quick-target {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.quick-target-label {
+  color: var(--desk-fg-3);
+  font-size: 11px;
+}
+
+.quick-select {
+  padding: 2px 6px;
+  border: 1px solid var(--desk-stroke-strong);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--desk-fg-1);
+  font: inherit;
+  font-size: 11px;
+}
+
+.quick-select option {
+  background: var(--desk-bg-raised);
+  color: var(--desk-fg-1);
 }
 
 .quick-error {
   margin: 0;
-  color: var(--indus-color-danger);
-  font-size: 12px;
+  color: var(--desk-danger);
+  font-size: 11px;
 }

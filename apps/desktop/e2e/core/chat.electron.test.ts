@@ -55,10 +55,10 @@ let siteUrl = "";
 async function answerIfAsked(app: RunningApp, waitMs = 3_000): Promise<boolean> {
   const until = Date.now() + waitMs;
   while (Date.now() < until) {
-    if (await app.cdp.eval<boolean>(hasButton("Allow once"))) {
+    if (await app.cdp.eval<boolean>(hasButton("Run"))) {
       await sleep(400); // the card's arming delay
-      await app.cdp.click("Allow once");
-      await app.cdp.waitFor(`!(${hasButton("Allow once")})`, "the card to close", 20_000);
+      await app.cdp.click("Run");
+      await app.cdp.waitFor(`!(${hasButton("Run")})`, "the card to close", 20_000);
       return true;
     }
     await sleep(200);
@@ -68,7 +68,14 @@ async function answerIfAsked(app: RunningApp, waitMs = 3_000): Promise<boolean> 
 
 async function showPane(app: RunningApp, id: string, title: string): Promise<void> {
   const opened = await app.cdp.eval<boolean>(`!!document.getElementById('pane-tab-${id}')`);
-  if (!opened) await clickButton(app.cdp, `Open ${title}`);
+  if (!opened) {
+    // the window starts on the chat alone (W51-b): Files and Review have their own band toggle,
+    // the other panes an "Open …" button
+    const open = (await app.cdp.eval<boolean>(hasButton(`Open ${title}`)))
+      ? `Open ${title}`
+      : title;
+    await clickButton(app.cdp, open);
+  }
   await clickAt(app.cdp, `#pane-tab-${id}`);
 }
 
@@ -159,10 +166,13 @@ describe.skipIf(realSkip !== "")(
       const current = stack as Stack;
       await running.secondLaunch(`${DEV_SCHEME}://open/settings?view=providers&page=accounts`);
       await clickButton(running.cdp, "Set up a provider", 30_000);
+      // W52-m: the custom endpoint row sits behind the "Other providers" disclosure
+      await clickButtonStarting(running.cdp, "Other providers", 30_000);
       await clickButtonStarting(running.cdp, "Use a custom OpenAI-compatible endpoint", 30_000);
+      // the base URL field (the endpoint's optional key field is a password input after it)
       await fillField(
         running.cdp,
-        ".onboarding-form input.settings-input",
+        '.onboarding-form input[data-ui="onboarding-endpoint-url"]',
         `http://127.0.0.1:${current.modelPort}/v1`,
       );
       await clickButton(running.cdp, "Test and continue");
@@ -221,7 +231,7 @@ describe.skipIf(realSkip !== "")(
 
     it("chat: streamed reply, tool row, approval card, the reply after it", async () => {
       const running = app as RunningApp;
-      await clickButton(running.cdp, "New chat");
+      await clickButton(running.cdp, "New session");
       await sendPrompt(running.cdp, "Please write the notes");
       await answerIfAsked(running);
       await running.cdp.waitFor(
@@ -235,7 +245,7 @@ describe.skipIf(realSkip !== "")(
       expect(fs.readFileSync(path.join(repo, "notes.md"), "utf8")).toBe("hello from the agent\n");
 
       await sendPrompt(running.cdp, "Please clean up");
-      await running.cdp.waitFor(hasButton("Allow once"), "the approval card", 60_000);
+      await running.cdp.waitFor(hasButton("Run"), "the approval card", 60_000);
       expect(await answerIfAsked(running, 10_000)).toBe(true);
       await running.cdp.waitFor(
         `document.querySelector('.transcript')?.innerText.includes('Cleaned up.')`,
@@ -292,7 +302,7 @@ describe.skipIf(realSkip !== "")(
     it("sidebar: a second chat, then back to the first from the list", async () => {
       const running = app as RunningApp;
       const first = (await running.cdp.eval<string>(`location.hash`)).replace(/^#\//, "");
-      await clickButton(running.cdp, "New chat");
+      await clickButton(running.cdp, "New session");
       await sendPrompt(running.cdp, "Second chat");
       await running.cdp.waitFor(
         `document.querySelector('.transcript')?.innerText.includes('Hello again.')`,
@@ -352,7 +362,7 @@ describe.skipIf(realSkip !== "")(
       );
       await waitConnected(running.cdp, 120_000);
       await running.cdp.waitFor(
-        `document.body.innerText.includes('No conversations yet.')`,
+        `document.body.innerText.includes('No sessions yet')`,
         "the work profile's own (empty) list",
         30_000,
       );

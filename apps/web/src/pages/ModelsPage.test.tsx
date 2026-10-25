@@ -58,15 +58,25 @@ async function startSignIn() {
 }
 
 describe("models page", () => {
-  it("shows the current model and saves a new main model", async () => {
+  it("shows the current model and saves a new main model from the dialog", async () => {
     renderPage(<ModelsPage />, "/models");
-    expect((await screen.findByTestId("current-model")).textContent).toBe(
-      "fake-model · fake · 128,000 token context",
+    await waitFor(() =>
+      expect(screen.getByTestId("current-model").textContent).toBe("fake · fake-model · 128K ctx"),
     );
-    const model = screen.getByLabelText("Model id") as HTMLInputElement;
-    await waitFor(() => expect(model.value).toBe("fake-model"));
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "Switch model" }));
+    expect(dialog.getByText("current: fake-model · fake")).toBeTruthy();
+    // The model in use is listed (and picked) for its provider; the field types another id.
+    const models = within(await dialog.findByRole("list", { name: "Models" }));
+    expect((await models.findByRole("button", { name: /fake-model/ })).textContent).toContain(
+      "CURRENT",
+    );
+    const model = dialog.getByLabelText("Model id") as HTMLInputElement;
+    expect((dialog.getByRole("button", { name: "Switch" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
     fireEvent.change(model, { target: { value: "fake-large" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save model" }));
+    fireEvent.click(dialog.getByRole("button", { name: "Switch" }));
     await waitFor(() =>
       expect(mock.callsTo("POST", "/api/model/set")[0]?.body).toEqual({
         scope: "main",
@@ -77,16 +87,46 @@ describe("models page", () => {
     await waitFor(() =>
       expect(screen.getByTestId("current-model").textContent).toContain("fake-large"),
     );
+    expect(screen.queryByRole("dialog", { name: "Switch model" })).toBeNull();
+  });
+
+  it("picks another provider in the dialog and filters the list", async () => {
+    renderPage(<ModelsPage />, "/models");
+    await screen.findByTestId("provider-fake");
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "Switch model" }));
+    const list = within(await dialog.findByRole("list", { name: "Providers" }));
+    fireEvent.change(dialog.getByLabelText("Filter providers and models"), {
+      target: { value: "sign" },
+    });
+    expect(list.queryByText("Fake provider")).toBeNull();
+    fireEvent.click(list.getByRole("button", { name: /Sign-in provider/ }));
+    fireEvent.change(dialog.getByLabelText("Model id"), { target: { value: "other-model" } });
+    fireEvent.click(dialog.getByRole("button", { name: "Switch" }));
+    await waitFor(() =>
+      expect(mock.callsTo("POST", "/api/model/set")[0]?.body).toEqual({
+        scope: "main",
+        provider: "signin",
+        model: "other-model",
+      }),
+    );
   });
 
   it("lists providers with their state and saves a side task", async () => {
     renderPage(<ModelsPage />, "/models");
     const fake = within(await screen.findByTestId("provider-fake"));
     expect(fake.getByText("configured")).toBeTruthy();
+    expect(fake.getByText("main")).toBeTruthy();
     expect(fake.queryByRole("button", { name: "Sign in" })).toBeNull();
     expect(within(screen.getByTestId("provider-signin")).getByText("no key")).toBeTruthy();
 
+    await waitFor(() =>
+      expect(screen.getByTestId("aux-summary").textContent).toBe("1 task · all auto"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Configure" }));
     const aux = within(await screen.findByTestId("aux-compression"));
+    expect(aux.getByText("auto (main model)")).toBeTruthy();
+    fireEvent.click(aux.getByRole("button", { name: "Change" }));
     fireEvent.change(aux.getByLabelText("Model"), { target: { value: "fake-mini" } });
     fireEvent.click(aux.getByRole("button", { name: "Save" }));
     await waitFor(() =>
@@ -97,6 +137,60 @@ describe("models page", () => {
         model: "fake-mini",
       }),
     );
+    await waitFor(() =>
+      expect(screen.getByTestId("aux-summary").textContent).toBe("1 override · 0 auto"),
+    );
+  });
+
+  it("resets only the overridden side tasks after a confirm", async () => {
+    mock.state.auxiliary.tasks.push(
+      { task: "title", provider: "fake", model: "fake-mini", base_url: "", description: "" },
+      { task: "vision", provider: "", model: "fake-eye", base_url: "", description: "" },
+    );
+    renderPage(<ModelsPage />, "/models");
+    await waitFor(() =>
+      expect(screen.getByTestId("aux-summary").textContent).toBe("2 overrides · 1 auto"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Configure" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Reset all to auto" }));
+    const confirm = within(await screen.findByRole("dialog", { name: "Reset side tasks" }));
+    expect(mock.callsTo("POST", "/api/model/set")).toHaveLength(0);
+    fireEvent.click(confirm.getByRole("button", { name: "Reset" }));
+    await waitFor(() => expect(mock.callsTo("POST", "/api/model/set")).toHaveLength(2));
+    expect(mock.callsTo("POST", "/api/model/set").map((c) => c.body)).toEqual([
+      { scope: "auxiliary", task: "title", provider: "auto", model: "" },
+      { scope: "auxiliary", task: "vision", provider: "auto", model: "" },
+    ]);
+    await waitFor(() =>
+      expect(screen.getByTestId("aux-summary").textContent).toBe("3 tasks · all auto"),
+    );
+  });
+
+  it("shows usage for the period, sessions only while the token flag is off", async () => {
+    mock.state.usage = [
+      { day: "2026-10-24", input_tokens: 3400, output_tokens: 316, cost: 0.005, sessions: 3 },
+    ];
+    renderPage(<ModelsPage />, "/models");
+    const figures = await screen.findByLabelText("Model usage");
+    await waitFor(() => expect(figures.textContent).toContain("Total sessions"));
+    expect(figures.textContent).not.toContain("Input");
+    expect(screen.getByText("dashboard.show_token_analytics")).toBeTruthy();
+    const header = within(screen.getByTestId("page-header-after-title"));
+    fireEvent.click(header.getByRole("button", { name: "7d" }));
+    await waitFor(() =>
+      expect(mock.callsTo("GET", "/api/analytics/usage").at(-1)?.query.get("days")).toBe("7"),
+    );
+  });
+
+  it("shows token figures when the flag is on", async () => {
+    mock.state.config = { ...mock.state.config, dashboard: { show_token_analytics: true } };
+    mock.state.usage = [
+      { day: "2026-10-24", input_tokens: 3400, output_tokens: 316, cost: 0.005, sessions: 3 },
+    ];
+    renderPage(<ModelsPage />, "/models");
+    const figures = await screen.findByLabelText("Model usage");
+    await waitFor(() => expect(figures.textContent).toContain("3.7K"));
+    expect(figures.textContent).toContain("$0.0050");
   });
 
   it("polls at the server's interval and stops when approved", async () => {

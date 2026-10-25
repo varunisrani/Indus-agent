@@ -2,6 +2,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router";
 import { describe, expect, it } from "vitest";
+import { clearToasts, ToastRegion } from "../app/Toasts.tsx";
 import { fakeRest } from "../settings/fakeRest.ts";
 import { DeepLinkHost } from "./DeepLinkHost.tsx";
 import type { LinkPayload } from "./deepLinkActions.ts";
@@ -34,8 +35,11 @@ function Where() {
 
 function mount(api = fakeRest()) {
   const fake = fakeLinks();
+  act(() => clearToasts());
+  // the host's notes go to the window's toast region (W52-g)
   render(
     <MemoryRouter initialEntries={["/s-1"]}>
+      <ToastRegion />
       <DeepLinkHost links={fake.links} api={api} />
       <Where />
     </MemoryRouter>,

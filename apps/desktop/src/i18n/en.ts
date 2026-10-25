@@ -3,8 +3,11 @@
 
 import { AMBIENT_STRINGS } from "../ambient/strings.en.ts";
 import { CAPABILITY_STRINGS } from "../app/capabilities/strings.en.ts";
+import { COMMAND_CENTER_STRINGS } from "../app/command-center/strings.en.ts";
 import { MANAGE_STRINGS } from "../app/manage/strings.en.ts";
+import { COMPOSER_MENU_STRINGS } from "../chat/composer/strings.en.ts";
 import { CHAT_STRINGS } from "../chat/strings.en.ts";
+import { TRANSCRIPT_STRINGS } from "../chat/transcriptStrings.en.ts";
 import { VOICE_STRINGS } from "../chat/voice/strings.en.ts";
 import { PLUGIN_STRINGS } from "../contrib/strings.en.ts";
 import { DEEP_LINK_STRINGS } from "../deepLinks/strings.en.ts";
@@ -14,6 +17,8 @@ import { PANE_STRINGS } from "../panes/strings.en.ts";
 import { PET_STRINGS } from "../pet/strings.en.ts";
 import { PROFILE_STRINGS } from "../profiles/strings.en.ts";
 import { SETTINGS_STRINGS } from "../settings/strings.en.ts";
+import { SETTINGS_A_STRINGS } from "../settings/stringsA.en.ts";
+import { SETTINGS_B_STRINGS } from "../settings/stringsB.en.ts";
 import { UNINSTALL_STRINGS } from "../settings/uninstallStrings.en.ts";
 import { SIDEBAR_STRINGS } from "../sidebar/strings.en.ts";
 import { THEME_STRINGS } from "../theme/strings.en.ts";
@@ -32,12 +37,15 @@ export const en = {
   "error.reload": "Reload window",
 
   "nav.label": "Main",
-  "nav.newChat": "New chat",
+  "nav.newChat": "New session",
+  "nav.sessions": "Sessions",
+  "nav.hideSidebar": "Hide sidebar",
+  "nav.showSidebar": "Show sidebar",
   "nav.capabilities": "Capabilities",
   "nav.messaging": "Messaging",
   "nav.artifacts": "Artifacts",
   "nav.settings": "Settings",
-  "nav.cron": "Scheduled tasks",
+  "nav.cron": "Scheduled jobs",
   "nav.profiles": "Profiles",
   "nav.agents": "Agents",
   "nav.more": "More",
@@ -65,8 +73,9 @@ export const en = {
     "Still trying to reach Indus. Your conversation stays here and you can keep writing.",
 
   "chat.label": "Conversation",
-  "chat.empty.title": "What should we work on?",
-  "chat.empty.body": "Start a conversation below.",
+  "chat.empty.title": "INDUS AGENT",
+  "chat.empty.body":
+    "Describe a task, ask a question or paste a snippet. Indus keeps the whole session in mind and asks before it guesses.",
 
   "transcript.label": "Messages",
   "transcript.showEarlier": "Show earlier messages",
@@ -178,6 +187,8 @@ export const en = {
 
   // chat surfaces (P20-19..24: composer, queue, cards, model picker, status bar, slash)
   ...CHAT_STRINGS,
+  // composer menus, model and effort menus (W52-h)
+  ...COMPOSER_MENU_STRINGS,
 
   // sessions sidebar (P20-25), profile rail and switching (P20-26)
   ...SIDEBAR_STRINGS,
@@ -188,6 +199,7 @@ export const en = {
 
   // settings, onboarding, deep links (P20-32..34)
   ...SETTINGS_STRINGS,
+  ...SETTINGS_A_STRINGS, // settings slice A (W52-i)
   ...ONBOARDING_STRINGS,
   ...DEEP_LINK_STRINGS,
 
@@ -218,4 +230,12 @@ export const en = {
 
   // desktop plugin inventory (P24-32 wiring)
   ...PLUGIN_STRINGS,
+
+  // transcript look: approval / error cards, tool rows, toasts (W52-g)
+  ...TRANSCRIPT_STRINGS,
+  // settings-b pages (W52-j)
+  ...SETTINGS_B_STRINGS,
+
+  // command center, management overlays, artifacts, layout editor (W52-l)
+  ...COMMAND_CENTER_STRINGS,
 } as const satisfies Record<string, string>;

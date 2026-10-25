@@ -5,6 +5,10 @@
 // the one main's launch decision picked (`profile.get().launch`). A main window starts its
 // foreground connection at once: `connection.get` starts (or joins) main's boot.
 
+import "@fontsource/inter/400.css";
+import "@fontsource/inter/500.css";
+import "@fontsource/inter/600.css";
+import "@fontsource/abril-fatface/400.css";
 import "./styles.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";

@@ -3,7 +3,10 @@
 // Shiki runs on its JavaScript regex engine: the CSP allows no `wasm-unsafe-eval`. Mermaid runs
 // with `securityLevel: "strict"`. The HTML these libraries return is their own escaped output.
 
+import { Copy } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
+import { copyText } from "../app/clipboard.ts";
+import { useT } from "../i18n/index.tsx";
 
 export interface RichLoaders {
   highlight(code: string, lang: string): Promise<string | null>;
@@ -118,11 +121,32 @@ export function CodeBlock(props: { code: string; lang: string; closed: boolean }
     closed ? `${lang}\u0000${code}` : "",
     closed ? () => loaders.highlight(code, lang) : null,
   );
-  if (html !== null) return <LibraryHtml tag="div" className="md-code" html={html} />;
   return (
-    <pre className="md-code" data-lang={lang}>
-      <code>{code}</code>
-    </pre>
+    <div className="md-code-wrap">
+      {html !== null ? (
+        <LibraryHtml tag="div" className="md-code" html={html} />
+      ) : (
+        <pre className="md-code" data-lang={lang}>
+          <code>{code}</code>
+        </pre>
+      )}
+      {closed && <CopyCode code={code} />}
+    </div>
+  );
+}
+
+/** The copy button a finished code block shows on hover (W52-g). */
+function CopyCode(props: { code: string }) {
+  const t = useT();
+  return (
+    <button
+      type="button"
+      className="desk-icon-btn md-code-copy"
+      aria-label={t("markdown.copyCode")}
+      onClick={() => void copyText(props.code)}
+    >
+      <Copy aria-hidden="true" size={13} />
+    </button>
   );
 }
 

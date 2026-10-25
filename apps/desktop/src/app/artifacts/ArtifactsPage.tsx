@@ -3,15 +3,21 @@
 // back to the session that made it. A file is downloaded through main (`artifacts.download`):
 // main mints the download ticket on the current connection with the artifact's originating profile
 // and session and saves the bytes into Downloads — on a remote connection that is the only way to
-// fetch it, and the renderer never sees the ticket.
+// fetch it, and the renderer never sees the ticket. W52-l look: a page with centred text tabs and
+// counts, a refresh icon, an image card grid and a hairline table for files and links.
 
+import { FileText, ImageIcon, Link2, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import type { IndusDesktopBridge } from "../../global.d.ts";
 import { useT } from "../../i18n/index.tsx";
 import { type RestAnswer, type RestLike, rest } from "../../settings/settingsApi.ts";
+import { Button, EmptyState, IconButton } from "../../ui/components.tsx";
 import { desktopBridge } from "../bridge.ts";
-import { LoadState, PageFrame, useApi, useRestValue, when } from "../manage/common.tsx";
+import { QuietSearch, TextTabs } from "../kit.tsx";
+import { Loader } from "../Loader.tsx";
+import { useApi, useRestValue, when } from "../manage/common.tsx";
+import "./artifacts.css";
 import { sessionPath } from "../routes.ts";
 import {
   type Artifact,
@@ -105,101 +111,210 @@ export function ArtifactsPage(props: {
     }
   };
 
+  const all = loaded.state === "ok" ? loaded.data.artifacts : [];
+  const counts = {
+    all: all.length,
+    image: all.filter((a) => a.kind === "image").length,
+    file: all.filter((a) => a.kind === "file").length,
+    link: all.filter((a) => a.kind === "link").length,
+  };
+  const q = query.trim().toLowerCase();
+  const shown = all.filter(
+    (a) =>
+      (kind === "all" || a.kind === kind) &&
+      (q === "" || a.value.toLowerCase().includes(q) || a.sessionTitle.toLowerCase().includes(q)),
+  );
+  const images = shown.filter((a) => a.kind === "image");
+  const others = shown.filter((a) => a.kind !== "image");
+  const nameOf = (a: Artifact) => a.value.split("/").pop() || a.value;
+  const action = (artifact: Artifact) =>
+    isRemoteValue(artifact.value) ? (
+      <button
+        type="button"
+        className="art-link"
+        onClick={() => void bridge?.external.open({ url: artifact.value })}
+      >
+        {t("manage.artifacts.openLink")}
+      </button>
+    ) : (
+      <button type="button" className="art-link" onClick={() => void download(artifact)}>
+        {t("manage.artifacts.download")}
+      </button>
+    );
+
   return (
-    <PageFrame title={t("nav.artifacts")} id="artifacts">
-      <div className="manage-inline">
-        {(["all", "image", "file", "link"] as const).map((k) => (
-          <button
-            key={k}
-            type="button"
-            className="button button-secondary"
-            aria-pressed={kind === k}
-            onClick={() => setKind(k)}
-          >
-            {t(`manage.artifacts.kind.${k}`)}
-          </button>
-        ))}
-        <input
-          aria-label={t("manage.artifacts.search")}
-          placeholder={t("manage.artifacts.search")}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
+    <section className="art-page" aria-labelledby="artifacts-title">
+      <h1 id="artifacts-title" className="sr-only">
+        {t("nav.artifacts")}
+      </h1>
+      <header className="art-head">
+        <div className="art-head-left">
+          {all.length > 0 && (
+            <QuietSearch
+              label={t("manage.artifacts.search")}
+              placeholder={t("manage.artifacts.search")}
+              value={query}
+              onChange={setQuery}
+            />
+          )}
+        </div>
+        <TextTabs
+          label={t("art.kinds")}
+          value={kind}
+          options={(["all", "image", "file", "link"] as const).map((k) => ({
+            value: k,
+            label: t(`manage.artifacts.kind.${k}`),
+            count: counts[k],
+          }))}
+          onChange={setKind}
         />
-      </div>
+        <div className="art-head-right">
+          <IconButton
+            label={t("art.refresh")}
+            className={loaded.state === "loading" ? "art-spin" : undefined}
+            icon={<RefreshCw aria-hidden="true" size={14} />}
+            onClick={loaded.reload}
+          />
+        </div>
+      </header>
       {note !== "" && (
-        <p className="manage-muted" role="status">
+        <p className="art-note" role="status">
           {note}
         </p>
       )}
-      <LoadState value={loaded}>
-        {(data) => {
-          const q = query.trim().toLowerCase();
-          const shown = data.artifacts.filter(
-            (a) =>
-              (kind === "all" || a.kind === kind) &&
-              (q === "" ||
-                a.value.toLowerCase().includes(q) ||
-                a.sessionTitle.toLowerCase().includes(q)),
-          );
-          return (
-            <>
-              {data.skipped > 0 && (
-                <p className="manage-muted">
-                  {t("manage.artifacts.skipped", { count: data.skipped })}
-                </p>
-              )}
-              {shown.length === 0 && <p className="manage-muted">{t("manage.artifacts.none")}</p>}
-              <div className="manage-gallery">
-                {shown.map((artifact) => (
-                  <div className="manage-card" key={artifact.key} data-kind={artifact.kind}>
-                    {artifact.kind === "image" && isRemoteValue(artifact.value) && (
-                      <img
-                        className="manage-thumb"
-                        src={artifact.value}
-                        alt=""
-                        loading="lazy"
-                        referrerPolicy="no-referrer"
-                      />
-                    )}
-                    <span className="manage-code">
-                      {artifact.value.split("/").pop() || artifact.value}
-                    </span>
-                    <span className="manage-muted">
-                      {artifact.sessionTitle} · {when(artifact.timestamp)}
-                    </span>
-                    <div className="manage-inline">
-                      <button
-                        type="button"
-                        className="button button-secondary"
-                        onClick={() => open(artifact.sessionId)}
-                      >
-                        {t("manage.artifacts.openChat")}
-                      </button>
-                      {isRemoteValue(artifact.value) ? (
-                        <button
-                          type="button"
-                          className="button button-secondary"
-                          onClick={() => void bridge?.external.open({ url: artifact.value })}
-                        >
-                          {t("manage.artifacts.openLink")}
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          className="button button-secondary"
-                          onClick={() => void download(artifact)}
-                        >
-                          {t("manage.artifacts.download")}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
+      <div className="art-body">
+        {loaded.state === "loading" ? (
+          <Loader />
+        ) : loaded.state === "error" ? (
+          <EmptyState
+            look="panel"
+            title={t("art.errorTitle")}
+            description={
+              loaded.code === "not-connected" ? t("manage.notConnected") : loaded.message
+            }
+            action={
+              <Button variant="secondary" size="sm" onClick={loaded.reload}>
+                {t("manage.retry")}
+              </Button>
+            }
+          />
+        ) : (
+          <>
+            {loaded.data.skipped > 0 && (
+              <p className="art-note">
+                {t("manage.artifacts.skipped", { count: loaded.data.skipped })}
+              </p>
+            )}
+            {shown.length === 0 ? (
+              <div className="art-empty">
+                <EmptyState look="panel" title={t("art.none")} description={t("art.noneBody")} />
               </div>
-            </>
-          );
-        }}
-      </LoadState>
-    </PageFrame>
+            ) : (
+              <>
+                {images.length > 0 && (
+                  <>
+                    <p className="art-pager">{t("art.images", { count: images.length })}</p>
+                    <div className="art-grid">
+                      {images.map((artifact) => (
+                        <article className="art-card" key={artifact.key} data-kind="image">
+                          <div className="art-thumb">
+                            {isRemoteValue(artifact.value) ? (
+                              <img
+                                src={artifact.value}
+                                alt=""
+                                loading="lazy"
+                                referrerPolicy="no-referrer"
+                              />
+                            ) : (
+                              <ImageIcon aria-hidden="true" size={20} />
+                            )}
+                          </div>
+                          <div className="art-card-text">
+                            <span className="art-kind">
+                              <ImageIcon aria-hidden="true" size={10} />
+                              {t("art.image")}
+                            </span>
+                            <span className="art-name">{nameOf(artifact)}</span>
+                            <span className="art-path">{artifact.value}</span>
+                            <span className="art-path">
+                              {artifact.sessionTitle} · {when(artifact.timestamp)}
+                            </span>
+                            <span className="art-actions">
+                              <button
+                                type="button"
+                                className="art-link"
+                                onClick={() => open(artifact.sessionId)}
+                              >
+                                {t("manage.artifacts.openChat")}
+                              </button>
+                              {action(artifact)}
+                            </span>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  </>
+                )}
+                {others.length > 0 && (
+                  <>
+                    <p className="art-pager">{t("art.items", { count: others.length })}</p>
+                    <table className="art-table">
+                      <thead>
+                        <tr>
+                          <th>{t("art.name")}</th>
+                          <th>{t("art.location")}</th>
+                          <th>{t("art.session")}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {others.map((artifact) => (
+                          <tr key={artifact.key} data-kind={artifact.kind}>
+                            <td>
+                              <span className="art-file">
+                                <span className="art-tile" aria-hidden="true">
+                                  {artifact.kind === "link" ? (
+                                    <Link2 size={12} />
+                                  ) : (
+                                    <FileText size={12} />
+                                  )}
+                                </span>
+                                <span className="art-name">{nameOf(artifact)}</span>
+                              </span>
+                            </td>
+                            <td>
+                              <span className="art-location">
+                                <span className="art-path">{artifact.value}</span>
+                                {action(artifact)}
+                              </span>
+                            </td>
+                            <td>
+                              <button
+                                type="button"
+                                className="art-session"
+                                onClick={() => open(artifact.sessionId)}
+                              >
+                                <span>{artifact.sessionTitle}</span>
+                                <span className="art-time">{when(artifact.timestamp)}</span>
+                              </button>
+                              <button
+                                type="button"
+                                className="art-link"
+                                onClick={() => open(artifact.sessionId)}
+                              >
+                                {t("manage.artifacts.openChat")}
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </>
+                )}
+              </>
+            )}
+          </>
+        )}
+      </div>
+    </section>
   );
 }

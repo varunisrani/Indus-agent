@@ -6,10 +6,14 @@ import type {
   IndusDesktopAbout,
   IndusDesktopAmbient,
   IndusDesktopConnection,
+  IndusDesktopExternal,
   IndusDesktopFs,
+  IndusDesktopLogs,
+  IndusDesktopNotifications,
   IndusDesktopPrefs,
   IndusDesktopProfile,
   IndusDesktopSecrets,
+  IndusDesktopShortcuts,
   IndusDesktopUninstall,
   IndusDesktopUpdates,
   IndusDesktopZoom,
@@ -17,6 +21,8 @@ import type {
   IndusPrefsPatch,
   IndusPrefsSnapshot,
 } from "../global.d.ts";
+import type { ViewId } from "./pages.ts";
+import type { SchemaFields } from "./search.ts";
 import type { RestLike } from "./settingsApi.ts";
 
 export interface SettingsBridge {
@@ -35,6 +41,15 @@ export interface SettingsBridge {
   readonly uninstall?: IndusDesktopUninstall;
   /** About → Licences: the packaged third-party notices (W46, F-2). */
   readonly about?: IndusDesktopAbout;
+  // settings-b (W52-j)
+  /** Quick entry's on/off and each global shortcut's registration state (P20-35). */
+  readonly shortcuts?: IndusDesktopShortcuts;
+  /** Notifications › Send test notification (P20-36). */
+  readonly notifications?: IndusDesktopNotifications;
+  /** Gateways › Diagnostics: show the desktop log (P20-39). */
+  readonly logs?: IndusDesktopLogs;
+  /** Providers › API keys: "Get a key" links open in the browser. */
+  readonly external?: IndusDesktopExternal;
 }
 
 /** `model.save_key` over the daemon (keys go to the profile's secret store, never the renderer). */
@@ -54,6 +69,17 @@ export interface SettingsContextValue {
   readonly reloadConfig: () => void;
   /** A hand-built row a link or search hit points at. */
   readonly focusRow: string | null;
+  // -- settings slice A (W52-i): hand-built pages that also show schema rows --------------------
+  /** `GET /api/config/schema` (null while loading or unreadable). */
+  readonly schema?: SchemaFields | null;
+  /** The schema field a link or search hit points at. */
+  readonly focusField?: string | null;
+  /** Write one field (`PUT /api/config`, the chosen profile); null when saved, else the error. */
+  readonly saveField?: (key: string, value: unknown) => Promise<string | null>;
+  /** Write a whole subtree (`PUT /api/config {config: patch}`); null when saved, else the error. */
+  readonly savePatch?: (patch: Record<string, unknown>) => Promise<string | null>;
+  /** Open another settings page (W52-j: cross-page links such as "Have an API key instead?"). */
+  readonly go?: (target: { view: ViewId; page?: string; row?: string | null }) => void;
 }
 
 export const SettingsContext = createContext<SettingsContextValue | null>(null);

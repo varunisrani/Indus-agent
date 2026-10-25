@@ -10,6 +10,7 @@ import type {
   ConfigObject,
   ConfigSchema,
   CredentialPoolResponse,
+  CronBlueprint,
   CronJob,
   CronJobInput,
   DaemonInfo,
@@ -57,6 +58,8 @@ export interface MockState {
   pruneCount: number;
   config: ConfigObject;
   schema: ConfigSchema;
+  /** What `/api/config/defaults` answers (W52-e). */
+  configDefaults: ConfigObject;
   effective: EffectiveEntry[];
   env: EnvKeys;
   /** What the secret store holds; never sent back by any route. */
@@ -68,6 +71,7 @@ export interface MockState {
   fileText: Record<string, string>;
   lockedRoot: string | null;
   cronJobs: CronJob[];
+  cronBlueprints: CronBlueprint[];
   targets: DeliveryTarget[];
   skills: SkillInfo[];
   toolsets: ToolsetInfo[];
@@ -240,6 +244,7 @@ export function defaultMockState(): MockState {
       },
       category_order: ["model", "display"],
     },
+    configDefaults: { model: { provider: "" }, display: { interface: "cli", bell: false } },
     effective: [],
     env: {},
     envValues: {},
@@ -249,6 +254,7 @@ export function defaultMockState(): MockState {
     fileText: {},
     lockedRoot: null,
     cronJobs: [],
+    cronBlueprints: [],
     targets: [{ id: "local", label: "Save locally", kind: "local", available: true }],
     skills: [],
     toolsets: [],
@@ -380,6 +386,7 @@ function jobFrom(input: CronJobInput, id: string): CronJob {
     last_run_at: null,
     next_run_at: "2026-10-21T09:00:00Z",
     last_status: null,
+    ...(input.skills ? { skills: input.skills } : {}),
   };
 }
 
@@ -390,6 +397,7 @@ function cronInput(body: unknown): CronJobInput {
     prompt: text(record.prompt),
     schedule: text(record.schedule),
     deliver: text(record.deliver) || "local",
+    ...(Array.isArray(record.skills) ? { skills: record.skills.map(String) } : {}),
   };
 }
 
@@ -554,6 +562,7 @@ function routes(state: MockState): Array<[string, RegExp, Handler]> {
       },
     ],
     ["GET", /^\/api\/config\/schema$/, () => ok(state.schema)],
+    ["GET", /^\/api\/config\/defaults$/, () => ok(state.configDefaults)],
     ["GET", /^\/api\/config\/effective$/, () => ok({ entries: state.effective })],
 
     ["GET", /^\/api\/env$/, () => ok(state.env)],
@@ -690,6 +699,7 @@ function routes(state: MockState): Array<[string, RegExp, Handler]> {
 
     ["GET", /^\/api\/cron\/jobs$/, () => ok({ jobs: state.cronJobs })],
     ["GET", /^\/api\/cron\/delivery-targets$/, () => ok({ targets: state.targets })],
+    ["GET", /^\/api\/cron\/blueprints$/, () => ok({ blueprints: state.cronBlueprints })],
     [
       "POST",
       /^\/api\/cron\/jobs$/,

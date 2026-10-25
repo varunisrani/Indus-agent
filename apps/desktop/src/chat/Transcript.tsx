@@ -13,10 +13,9 @@ import {
   useRef,
   useState,
 } from "react";
-import { Loader } from "../app/Loader.tsx";
 import { useT } from "../i18n/index.tsx";
 import { ErrorCard } from "./ErrorCard.tsx";
-import type { FailureAction } from "./failure.ts";
+import { type FailureAction, failureEcho } from "./failure.ts";
 import { Markdown } from "./Markdown.tsx";
 import type {
   AssistantItem,
@@ -28,7 +27,9 @@ import type {
 } from "./messageStream.ts";
 import { Timeline } from "./Timeline.tsx";
 import { ToolRow } from "./ToolRow.tsx";
+import { TurnActivity } from "./TurnActivity.tsx";
 import { useShowReasoning, useTranscript } from "./transcriptReact.tsx";
+import "./transcript.css";
 
 /** Items rendered at first, and added per page. */
 export const TRANSCRIPT_PAGE = 60;
@@ -57,27 +58,63 @@ export interface TranscriptProps {
   footer?: ReactNode;
 }
 
-function UserRow(props: { item: UserItem }) {
+/**
+ * When this window sent a prompt (W52-g). Only prompts typed here have a time: the stored history
+ * carries none, so a reloaded row shows no time rather than a guessed one.
+ */
+const sentTimes = new Map<string, number>();
+
+function sentAt(sessionId: string, item: UserItem): number | null {
+  const key = `${sessionId}\u0000${item.text}`;
+  if (!item.persisted && item.localId !== null && !sentTimes.has(key)) {
+    sentTimes.set(key, Date.now());
+  }
+  return sentTimes.get(key) ?? null;
+}
+
+/** Forget prompt times (tests). */
+export function resetSentTimes(): void {
+  sentTimes.clear();
+}
+
+function UserRow(props: { item: UserItem; sessionId: string }) {
   const t = useT();
+  const time = sentAt(props.sessionId, props.item);
+  const label =
+    time === null
+      ? null
+      : new Date(time).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   return (
     <div className="msg msg-user" data-key={props.item.key} data-persisted={props.item.persisted}>
       <span className="sr-only">{t("transcript.you")}</span>
       <div className="msg-bubble">{props.item.text}</div>
+      {label !== null && (
+        <span className="msg-user-meta">
+          <time
+            dateTime={new Date(time ?? 0).toISOString()}
+            title={t("transcript.sentAt", { time: label })}
+          >
+            {label}
+          </time>
+        </span>
+      )}
     </div>
   );
 }
 
-function AssistantRow(props: { item: AssistantItem; showReasoning: boolean }) {
+function AssistantRow(props: { item: AssistantItem; showReasoning: boolean; hideEcho: boolean }) {
   const { item, showReasoning } = props;
   const t = useT();
   const lastTool = item.parts.findLastIndex((part) => part.type === "tool");
-  const visible = item.parts.filter((part) => part.type !== "reasoning" || showReasoning);
+  const lastIndex = item.parts.length - 1;
   return (
     <div className="msg msg-assistant" data-key={item.key} data-streaming={item.streaming}>
       <span className="sr-only">{t("transcript.assistant")}</span>
       {item.parts.map((part, index) => {
         const key = part.type === "tool" ? `tool-${part.callId}` : `${part.type}-${index}`;
-        if (part.type === "tool") return <ToolRow key={key} part={part} />;
+        if (part.type === "tool")
+          return <ToolRow key={key} part={part} settled={!item.streaming} />;
+        if (props.hideEcho && index === lastIndex) return null;
         if (part.type === "reasoning") {
           if (!showReasoning) return null;
           return (
@@ -97,7 +134,7 @@ function AssistantRow(props: { item: AssistantItem; showReasoning: boolean }) {
           </div>
         );
       })}
-      {item.streaming && visible.length === 0 && <Loader size="sm" />}
+      {item.streaming && <TurnActivity turnKey={item.key} />}
       {item.interrupted && <p className="msg-note">{t("transcript.interrupted")}</p>}
     </div>
   );
@@ -130,22 +167,48 @@ function NoticeRow(props: { item: NoticeItem }) {
 
 function Row(props: {
   item: TranscriptItem;
+  sessionId: string;
   showReasoning: boolean;
+  /** The failure sentence the turn's reply repeated (shown in the card's details, not above it). */
+  echo: { assistantKey: string; text: string } | null;
   onFailureAction?: ((action: FailureAction, item: ErrorItem) => void) | undefined;
 }) {
   const { item } = props;
   switch (item.kind) {
     case "user":
-      return <UserRow item={item} />;
+      return <UserRow item={item} sessionId={props.sessionId} />;
     case "assistant":
-      return <AssistantRow item={item} showReasoning={props.showReasoning} />;
+      return (
+        <AssistantRow
+          item={item}
+          showReasoning={props.showReasoning}
+          hideEcho={props.echo?.assistantKey === item.key}
+        />
+      );
     case "error":
-      return <ErrorCard item={item} onAction={props.onFailureAction} />;
+      return (
+        <ErrorCard item={item} echo={props.echo?.text ?? null} onAction={props.onFailureAction} />
+      );
     case "async":
       return <AsyncRow item={item} />;
     case "notice":
       return <NoticeRow item={item} />;
   }
+}
+
+/**
+ * A failed turn's reply often ends with the backend's own failure sentence; the error card says the
+ * same thing, so that last text moves into the card's details instead of showing twice.
+ */
+function echoOf(group: readonly TranscriptItem[]): { assistantKey: string; text: string } | null {
+  const error = group.find((item): item is ErrorItem => item.kind === "error");
+  if (error === undefined) return null;
+  const reply = group.find(
+    (item): item is AssistantItem => item.kind === "assistant" && item.turnId === error.turnId,
+  );
+  const last = reply?.parts[reply.parts.length - 1];
+  if (reply === undefined || last === undefined || last.type !== "text") return null;
+  return failureEcho(last.text) ? { assistantKey: reply.key, text: last.text.trim() } : null;
 }
 
 /** Group items into turns so the prompt row can stick to the top while its answer scrolls. */
@@ -258,18 +321,23 @@ export function Transcript(props: TranscriptProps) {
             {t("transcript.showEarlier")}
           </button>
         )}
-        {turns(visible).map((group) => (
-          <section key={group[0]?.key} className="turn">
-            {group.map((item) => (
-              <Row
-                key={item.key}
-                item={item}
-                showReasoning={showReasoning}
-                onFailureAction={props.onFailureAction}
-              />
-            ))}
-          </section>
-        ))}
+        {turns(visible).map((group) => {
+          const echo = echoOf(group);
+          return (
+            <section key={group[0]?.key} className="turn">
+              {group.map((item) => (
+                <Row
+                  key={item.key}
+                  item={item}
+                  sessionId={sessionId}
+                  showReasoning={showReasoning}
+                  echo={echo}
+                  onFailureAction={props.onFailureAction}
+                />
+              ))}
+            </section>
+          );
+        })}
         {props.footer}
       </div>
       <Timeline prompts={prompts} onJump={jump} />

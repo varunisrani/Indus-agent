@@ -21,7 +21,7 @@ const AREA = { x: 0, y: 0, width: 1920, height: 1080 };
 
 describe("HUD geometry", () => {
   it("default bounds: centred near the bottom, never above the area", () => {
-    expect(defaultHudBounds(AREA)).toEqual({ x: 680, y: 768, width: 560, height: 240 });
+    expect(defaultHudBounds(AREA)).toEqual({ x: 650, y: 688, width: 620, height: 320 });
     expect(defaultHudBounds({ x: 0, y: 0, width: 300, height: 200 })).toEqual({
       x: 0,
       y: 0,
@@ -243,6 +243,6 @@ describe("HUD controller", () => {
     screen.cursor = { x: 960, y: 540 };
     hud.snapToPointer();
     const win = created[0] as FakeWindow;
-    expect(win.getBounds()).toMatchObject({ x: 680, y: 500 });
+    expect(win.getBounds()).toMatchObject({ x: 650, y: 500 });
   });
 });

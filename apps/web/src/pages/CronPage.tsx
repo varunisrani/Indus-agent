@@ -1,254 +1,176 @@
-// Cron (P18-22): scheduled prompts. Create and edit in a modal with a schedule helper; pause,
-// resume, run now and delete from the list.
+// Cron (P18-22, look W52-c): scheduled prompts. A Jobs / Blueprints strip; jobs listed as cards
+// with icon actions (pause or resume, run now, edit, delete) and filtered by profile ("All
+// profiles" asks each profile and merges); create and edit in the job panel.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useId, useState } from "react";
+import { Clock, Pause, Pencil, Play, Trash2, Zap } from "lucide-react";
+import { useId, useState } from "react";
 import { api } from "../lib/api.ts";
-import { relativeTime } from "../lib/format.ts";
-import type { CronJob, CronJobInput, CronState, DeliveryTarget } from "../lib/restTypes.ts";
+import type { CronJob, CronState } from "../lib/restTypes.ts";
 import { HeaderActions } from "../shell/PageHeader.tsx";
 import { errorText, useToast } from "../shell/Toasts.tsx";
 import {
   Badge,
   type BadgeTone,
   Button,
-  Field,
-  inputClass,
-  Notice,
-  QueryState,
+  Card,
+  ErrorState,
+  IconButton,
+  Loading,
+  SectionHeading,
+  Segmented,
+  Select,
 } from "../ui/controls.tsx";
-import { ConfirmDialog, Modal } from "../ui/Dialog.tsx";
-import {
-  BUILDER_KINDS,
-  BUILDER_UNITS,
-  type BuilderChoice,
-  type BuilderKind,
-  type BuilderUnit,
-  builderProblem,
-  buildSchedule,
-  DEFAULT_CHOICE,
-} from "./cron/scheduleBuilder.ts";
+import { ConfirmDialog } from "../ui/Dialog.tsx";
+import { Blueprints } from "./cron/Blueprints.tsx";
+import { JobModal, type JobModalStart } from "./cron/JobModal.tsx";
 
 const STATE_TONE: Record<CronState, BadgeTone> = {
   scheduled: "ok",
   paused: "warn",
   running: "accent",
-  completed: "neutral",
+  completed: "danger",
   error: "danger",
 };
 
-export function ScheduleBuilder({ onUse }: { onUse: (schedule: string) => void }) {
-  const id = useId();
-  const [choice, setChoice] = useState<BuilderChoice>(DEFAULT_CHOICE);
-  const problem = builderProblem(choice);
-  const update = (patch: Partial<BuilderChoice>) => setChoice((c) => ({ ...c, ...patch }));
-  return (
-    <fieldset className="flex flex-col gap-2 rounded-md border border-line p-3">
-      <legend className="px-1 text-xs text-muted">Schedule helper</legend>
-      <div className="flex flex-wrap items-end gap-2">
-        <label className="flex flex-col gap-1 text-xs text-muted">
-          Kind
-          <select
-            className={inputClass}
-            value={choice.kind}
-            onChange={(e) => update({ kind: e.currentTarget.value as BuilderKind })}
-          >
-            {BUILDER_KINDS.map((k) => (
-              <option key={k.value} value={k.value}>
-                {k.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        {choice.kind === "every" || choice.kind === "in" ? (
-          <>
-            <label className="flex flex-col gap-1 text-xs text-muted">
-              Amount
-              <input
-                className={`${inputClass} w-20`}
-                type="number"
-                min={1}
-                value={Number.isNaN(choice.amount) ? "" : choice.amount}
-                onChange={(e) => update({ amount: Number.parseInt(e.currentTarget.value, 10) })}
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-xs text-muted">
-              Unit
-              <select
-                className={inputClass}
-                value={choice.unit}
-                onChange={(e) => update({ unit: e.currentTarget.value as BuilderUnit })}
-              >
-                {BUILDER_UNITS.map((u) => (
-                  <option key={u.value} value={u.value}>
-                    {u.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </>
-        ) : null}
-        {choice.kind === "daily" || choice.kind === "weekdays" ? (
-          <label className="flex flex-col gap-1 text-xs text-muted">
-            Time
-            <input
-              className={inputClass}
-              value={choice.time}
-              onChange={(e) => update({ time: e.currentTarget.value })}
-              placeholder="09:00"
-            />
-          </label>
-        ) : null}
-        {choice.kind === "cron" ? (
-          <label className="flex flex-1 flex-col gap-1 text-xs text-muted">
-            Expression
-            <input
-              className={`${inputClass} font-mono`}
-              value={choice.cron}
-              onChange={(e) => update({ cron: e.currentTarget.value })}
-            />
-          </label>
-        ) : null}
-        <Button
-          disabled={problem !== null}
-          onClick={() => onUse(buildSchedule(choice))}
-          aria-describedby={`${id}-preview`}
-        >
-          Use
-        </Button>
-      </div>
-      <p id={`${id}-preview`} className="text-xs text-muted">
-        {problem ?? (
-          <>
-            Will set: <code className="font-mono">{buildSchedule(choice)}</code>
-          </>
-        )}
-      </p>
-    </fieldset>
-  );
+type View = "jobs" | "blueprints";
+type Action = "pause" | "resume" | "trigger" | "remove";
+
+/** A job with the profile it was read from. */
+interface ProfiledJob extends CronJob {
+  profile: string;
 }
 
-function JobModal({
+function when(iso: string | null): string {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? iso : date.toLocaleString();
+}
+
+function repeatText(job: CronJob): string {
+  const times = job.repeat?.times ?? null;
+  return times === null ? "forever" : `${job.repeat?.completed ?? 0}/${times}`;
+}
+
+function JobCard({
   job,
-  targets,
-  onClose,
+  onAct,
+  onEdit,
+  onDelete,
 }: {
-  job: CronJob | null;
-  targets: DeliveryTarget[];
-  onClose: () => void;
+  job: ProfiledJob;
+  onAct: (action: Action) => void;
+  onEdit: () => void;
+  onDelete: () => void;
 }) {
-  const toast = useToast();
-  const client = useQueryClient();
-  const ids = useId();
-  const [input, setInput] = useState<CronJobInput>({
-    name: job?.name ?? "",
-    prompt: job?.prompt ?? "",
-    schedule: job?.schedule ?? "",
-    deliver: job?.deliver ?? "local",
-  });
-  const [problem, setProblem] = useState("");
-  const save = useMutation({
-    mutationFn: (body: CronJobInput) =>
-      job ? api.cron.update(job.id, body) : api.cron.create(body),
-    onSuccess: () => {
-      toast.show(job ? "Job updated." : "Job created.", "success");
-      void client.invalidateQueries({ queryKey: ["cron"] });
-      onClose();
-    },
-    onError: (error) => setProblem(errorText(error)),
-  });
-
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    if (!input.prompt.trim()) return setProblem("Write the prompt the job should run.");
-    if (!input.schedule.trim()) return setProblem("Give the job a schedule.");
-    setProblem("");
-    save.mutate({ ...input, name: input.name.trim(), schedule: input.schedule.trim() });
-  };
-
-  const set = (patch: Partial<CronJobInput>) => setInput((i) => ({ ...i, ...patch }));
+  const skills = job.skills ?? [];
+  const overdue =
+    job.state === "scheduled" &&
+    job.next_run_at !== null &&
+    Date.parse(job.next_run_at) < Date.now();
   return (
-    <Modal
-      open
-      onOpenChange={(next) => (next ? undefined : onClose())}
-      title={job ? `Edit ${job.name || "job"}` : "New scheduled job"}
-      description="A prompt the agent runs on a schedule, with its answer delivered where you choose."
+    <li
+      className="flex items-start gap-3 border border-line px-4 py-3.5"
+      data-testid={`job-${job.id}`}
     >
-      <form className="flex flex-col gap-3" onSubmit={submit}>
-        <Field label="Name (optional)" htmlFor={`${ids}-name`}>
-          <input
-            id={`${ids}-name`}
-            className={inputClass}
-            value={input.name}
-            onChange={(e) => set({ name: e.currentTarget.value })}
-          />
-        </Field>
-        <Field label="Prompt" htmlFor={`${ids}-prompt`}>
-          <textarea
-            id={`${ids}-prompt`}
-            className={inputClass}
-            rows={4}
-            value={input.prompt}
-            onChange={(e) => set({ prompt: e.currentTarget.value })}
-          />
-        </Field>
-        <Field
-          label="Schedule"
-          htmlFor={`${ids}-schedule`}
-          hint="For example: every 30m, in 2h, daily at 09:00, or a cron line such as 0 9 * * 1-5."
-        >
-          <input
-            id={`${ids}-schedule`}
-            className={`${inputClass} font-mono`}
-            value={input.schedule}
-            onChange={(e) => set({ schedule: e.currentTarget.value })}
-          />
-        </Field>
-        <ScheduleBuilder onUse={(schedule) => set({ schedule })} />
-        <Field label="Deliver to" htmlFor={`${ids}-deliver`}>
-          <select
-            id={`${ids}-deliver`}
-            className={inputClass}
-            value={input.deliver}
-            onChange={(e) => set({ deliver: e.currentTarget.value })}
-          >
-            {targets.map((t) => (
-              <option key={t.id} value={t.id} disabled={!t.available}>
-                {t.label}
-                {t.available ? "" : " (not set up)"}
-              </option>
-            ))}
-          </select>
-        </Field>
-        {problem ? <Notice tone="danger">{problem}</Notice> : null}
-        <div className="flex justify-end gap-2">
-          <Button onClick={onClose}>Cancel</Button>
-          <Button type="submit" tone="primary" disabled={save.isPending}>
-            {job ? "Save" : "Create"}
-          </Button>
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[0.875rem] font-medium text-ink">
+            {job.name || job.prompt.slice(0, 60)}
+          </span>
+          <Badge tone={STATE_TONE[job.state]}>{job.state}</Badge>
+          {job.profile ? <Badge>{job.profile}</Badge> : null}
+          {job.deliver && job.deliver !== "local" ? <Badge>to: {job.deliver}</Badge> : null}
+          {skills.length ? (
+            <Badge>{skills.length === 1 ? skills[0] : `${skills.length} skills`}</Badge>
+          ) : null}
+          {job.last_status && job.last_status !== "ok" ? (
+            <Badge tone="danger">last: {job.last_status}</Badge>
+          ) : null}
         </div>
-      </form>
-    </Modal>
+        {job.name ? (
+          <p className="m-0 truncate text-[0.75rem] text-ink-muted">{job.prompt}</p>
+        ) : null}
+        <p className="m-0 flex flex-wrap gap-x-4 gap-y-1 text-[0.75rem] text-ink-muted">
+          <code className="type-data text-[0.75rem] text-ink">{job.schedule_display}</code>
+          <span>repeat: {repeatText(job)}</span>
+          <span>Last: {when(job.last_run_at)}</span>
+          <span className={overdue ? "text-warning" : undefined}>
+            {overdue ? "Overdue since" : "Next"}: {when(job.next_run_at)}
+          </span>
+        </p>
+        {job.last_error ? (
+          <p className="m-0 text-[0.6875rem] break-words text-danger">{job.last_error}</p>
+        ) : null}
+      </div>
+      <div className="flex shrink-0 items-center gap-1">
+        {job.enabled ? (
+          <IconButton label="Pause" onClick={() => onAct("pause")}>
+            <Pause className="text-warning" />
+          </IconButton>
+        ) : (
+          <IconButton label="Resume" onClick={() => onAct("resume")}>
+            <Play className="text-success" />
+          </IconButton>
+        )}
+        <IconButton label="Run now" onClick={() => onAct("trigger")}>
+          <Zap />
+        </IconButton>
+        <IconButton label="Edit" onClick={onEdit}>
+          <Pencil />
+        </IconButton>
+        <IconButton label="Delete" tone="danger" onClick={onDelete}>
+          <Trash2 />
+        </IconButton>
+      </div>
+    </li>
   );
 }
 
 export function CronPage() {
   const toast = useToast();
   const client = useQueryClient();
-  const [editing, setEditing] = useState<CronJob | "new" | null>(null);
-  const [deleting, setDeleting] = useState<CronJob | null>(null);
-  const jobs = useQuery({ queryKey: ["cron", "jobs"], queryFn: () => api.cron.jobs() });
-  const targets = useQuery({ queryKey: ["cron", "targets"], queryFn: () => api.cron.targets() });
+  const ids = useId();
+  const [view, setView] = useState<View>("jobs");
+  const [filter, setFilter] = useState("");
+  const [editing, setEditing] = useState<JobModalStart | null>(null);
+  const [deleting, setDeleting] = useState<ProfiledJob | null>(null);
+
+  const profiles = useQuery({ queryKey: ["profiles", "list"], queryFn: () => api.profiles() });
+  const names = profiles.data?.profiles.map((p) => p.name) ?? [];
+  const home = profiles.data?.current ?? profiles.data?.active ?? "";
+
+  const jobs = useQuery({
+    queryKey: ["cron", "jobs", filter, names.join("\n")],
+    enabled: !profiles.isPending,
+    queryFn: async (): Promise<ProfiledJob[]> => {
+      if (filter) {
+        const reply = await api.cron.jobs(filter);
+        return reply.jobs.map((job) => ({ ...job, profile: filter }));
+      }
+      if (names.length === 0) {
+        const reply = await api.cron.jobs();
+        return reply.jobs.map((job) => ({ ...job, profile: home }));
+      }
+      // "All profiles": one request per profile, merged; a profile that fails is skipped
+      // unless every one fails.
+      const replies = await Promise.allSettled(names.map((name) => api.cron.jobs(name)));
+      const merged: ProfiledJob[] = [];
+      let failure: unknown = null;
+      replies.forEach((reply, i) => {
+        if (reply.status === "fulfilled")
+          for (const job of reply.value.jobs) merged.push({ ...job, profile: names[i] ?? "" });
+        else failure = reply.reason;
+      });
+      if (failure !== null && merged.length === 0 && replies.every((r) => r.status === "rejected"))
+        throw failure;
+      return merged;
+    },
+  });
 
   const act = useMutation({
-    mutationFn: async ({
-      job,
-      action,
-    }: {
-      job: CronJob;
-      action: "pause" | "resume" | "trigger" | "remove";
-    }) => {
-      await api.cron[action](job.id);
+    mutationFn: async ({ job, action }: { job: ProfiledJob; action: Action }) => {
+      await api.cron[action](job.id, job.profile || undefined);
     },
     onSuccess: (_reply, { job, action }) => {
       const label = job.name || job.id;
@@ -262,67 +184,99 @@ export function CronPage() {
     onError: (error) => toast.show(errorText(error), "error"),
   });
 
-  const list = jobs.data?.jobs ?? [];
+  const list = jobs.data ?? [];
+  const create = (prefill?: JobModalStart["prefill"]) =>
+    setEditing({
+      job: null,
+      profile: filter || home || "default",
+      ...(prefill ? { prefill } : {}),
+    });
+
   return (
-    <div className="flex flex-col gap-4 p-4">
+    <div className="flex flex-col gap-6 px-4 py-[1.4375rem] lg:pr-8 lg:pl-[1.4375rem]">
       <HeaderActions>
-        <Button tone="primary" onClick={() => setEditing("new")}>
-          New job
+        <Button tone="primary" size="sm" className="uppercase" onClick={() => create()}>
+          Create
         </Button>
       </HeaderActions>
-      <QueryState
-        loading={jobs.isPending}
-        error={jobs.error}
-        empty={list.length === 0}
-        emptyText="No scheduled jobs yet."
-      >
-        <ul className="flex flex-col gap-2" aria-label="Scheduled jobs">
-          {list.map((job) => (
-            <li
-              key={job.id}
-              className="flex flex-col gap-2 rounded-md border border-line bg-raised p-3"
-              data-testid={`job-${job.id}`}
-            >
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="flex-1 text-sm font-medium">
-                  {job.name || job.prompt.slice(0, 60)}
-                </span>
-                <Badge tone={STATE_TONE[job.state]}>{job.state}</Badge>
-                <code className="font-mono text-xs">{job.schedule_display}</code>
-              </div>
-              <p className="text-xs text-muted">
-                Last run {relativeTime(job.last_run_at)}
-                {job.last_status ? ` (${job.last_status})` : ""} · next{" "}
-                {job.next_run_at ? relativeTime(job.next_run_at) : "not planned"} · to {job.deliver}
-              </p>
-              <div className="flex flex-wrap gap-1">
-                {job.enabled ? (
-                  <Button tone="ghost" onClick={() => act.mutate({ job, action: "pause" })}>
-                    Pause
-                  </Button>
-                ) : (
-                  <Button tone="ghost" onClick={() => act.mutate({ job, action: "resume" })}>
-                    Resume
-                  </Button>
-                )}
-                <Button tone="ghost" onClick={() => act.mutate({ job, action: "trigger" })}>
-                  Run now
-                </Button>
-                <Button tone="ghost" onClick={() => setEditing(job)}>
-                  Edit
-                </Button>
-                <Button tone="ghost" onClick={() => setDeleting(job)}>
-                  Delete
-                </Button>
-              </div>
-            </li>
-          ))}
-        </ul>
-      </QueryState>
+      <Segmented
+        label="Cron view"
+        fill
+        value={view}
+        options={[
+          { value: "jobs", label: "Jobs" },
+          { value: "blueprints", label: "Blueprints" },
+        ]}
+        onChange={setView}
+      />
+
+      {view === "jobs" ? (
+        <section aria-label="Jobs" className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <SectionHeading icon={Clock}>Scheduled Jobs ({list.length})</SectionHeading>
+            <div className="flex w-full flex-col gap-1.5 sm:w-[13.75rem]">
+              <label htmlFor={`${ids}-profile`} className="type-label text-ink-muted">
+                Profile
+              </label>
+              <Select
+                id={`${ids}-profile`}
+                value={filter}
+                onChange={(e) => setFilter(e.currentTarget.value)}
+              >
+                <option value="">All profiles</option>
+                {names.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          </div>
+          {jobs.error ? (
+            <ErrorState message={errorText(jobs.error)} onRetry={() => void jobs.refetch()} />
+          ) : null}
+          {jobs.isPending && !jobs.error ? (
+            <div className="flex justify-center py-24">
+              <Loading />
+            </div>
+          ) : list.length === 0 && !jobs.error ? (
+            <Card className="flex flex-col items-center gap-3 py-8 text-center">
+              <p className="m-0 text-[0.8125rem] text-ink-muted">No scheduled jobs yet.</p>
+              <Button tone="primary" size="sm" className="uppercase" onClick={() => create()}>
+                Create job
+              </Button>
+            </Card>
+          ) : (
+            <ul className="m-0 flex list-none flex-col gap-3 p-0" aria-label="Scheduled jobs">
+              {list.map((job) => (
+                <JobCard
+                  key={`${job.profile}/${job.id}`}
+                  job={job}
+                  onAct={(action) => act.mutate({ job, action })}
+                  onEdit={() => setEditing({ job, profile: job.profile })}
+                  onDelete={() => setDeleting(job)}
+                />
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : (
+        <Blueprints
+          onSetUp={(blueprint) =>
+            create({
+              name: blueprint.skill,
+              prompt: blueprint.prompt ?? "",
+              ...(blueprint.schedule ? { schedule: blueprint.schedule } : {}),
+              skills: [blueprint.skill],
+            })
+          }
+        />
+      )}
+
       {editing ? (
         <JobModal
-          job={editing === "new" ? null : editing}
-          targets={targets.data?.targets ?? []}
+          start={editing}
+          profiles={names.length ? names : [editing.profile]}
           onClose={() => setEditing(null)}
         />
       ) : null}

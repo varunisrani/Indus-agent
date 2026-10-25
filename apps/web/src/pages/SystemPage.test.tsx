@@ -36,17 +36,41 @@ function section(name: string) {
 }
 
 async function ready() {
-  await screen.findByText(/Version 0\.1\.0/);
+  await screen.findByText("v0.1.0");
+  await waitFor(() => expect(screen.queryByLabelText("Loading")).toBeNull());
 }
 
 describe("system page", () => {
-  it("shows host numbers", async () => {
+  it("shows host numbers in tiles and leaves out the ones we do not have", async () => {
     renderPage(<SystemPage />, "/system");
     await ready();
-    const host = section("This machine");
-    await waitFor(() => expect(host.getByText("4")).toBeTruthy());
-    expect(host.getByText("0.5 / 0.4 / 0.3")).toBeTruthy();
-    expect(host.getByText("4.0 GiB of 8.0 GiB (50 %)")).toBeTruthy();
+    const host = section("Host");
+    expect(host.getByText("4 cores")).toBeTruthy();
+    expect(host.getByText("0.50 / 0.40 / 0.30")).toBeTruthy();
+    expect(host.getByText("4.0 GB / 8.0 GB (50.0%)")).toBeTruthy();
+    expect(host.getByText("40.0 GB / 100.0 GB (40.0%)")).toBeTruthy();
+    expect(host.getByText("latest")).toBeTruthy();
+    expect(host.queryByText("Uptime")).toBeNull();
+    expect(host.getByText("Up to date.")).toBeTruthy();
+  });
+
+  it("shows one section's load failure with a Retry that refetches", async () => {
+    mock.failNext("GET", "/api/memory", {
+      status: 500,
+      body: { detail: { code: "internal", message: "store offline" } },
+    });
+    renderPage(<SystemPage />, "/system");
+    await ready();
+    const memory = section("Memory");
+    expect((await memory.findByRole("alert")).textContent).toContain(
+      "Could not load the memory settings",
+    );
+    expect(memory.getByText("Details: store offline")).toBeTruthy();
+    const before = mock.callsTo("GET", "/api/memory").length;
+    fireEvent.click(memory.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(mock.callsTo("GET", "/api/memory").length).toBe(before + 1));
+    // the other sections still render
+    expect(section("Host").getByText("4 cores")).toBeTruthy();
   });
 
   it("badges commits behind and asks before updating", async () => {
@@ -58,16 +82,16 @@ describe("system page", () => {
     };
     renderPage(<SystemPage />, "/system");
     await ready();
-    const updates = section("Updates");
-    expect(updates.getByText("3 commits behind")).toBeTruthy();
-    fireEvent.click(updates.getByRole("button", { name: "Update" }));
+    const updates = section("Host");
+    expect(updates.getByText("3 behind")).toBeTruthy();
+    fireEvent.click(updates.getByRole("button", { name: "Update now" }));
     const dialog = within(await screen.findByRole("dialog"));
     expect(mock.state.actionsStarted).toEqual([]);
     fireEvent.click(dialog.getByRole("button", { name: "Update" }));
     await waitFor(() => expect(mock.state.actionsStarted).toEqual(["update"]));
-    expect(await updates.findByTestId("action-log-update")).toBeTruthy();
+    expect(await screen.findByTestId("action-log-update")).toBeTruthy();
 
-    fireEvent.click(updates.getByRole("button", { name: "Check again" }));
+    fireEvent.click(updates.getByRole("button", { name: "Check for updates" }));
     await waitFor(() =>
       expect(
         mock.callsTo("GET", "/api/system/update").some((c) => c.query.get("force") === "1"),
@@ -84,11 +108,11 @@ describe("system page", () => {
       message: "Pull the newer image and recreate the container.",
     };
     renderPage(<SystemPage />, "/system");
-    await screen.findByText(/installed as docker/);
-    const updates = section("Updates");
-    expect(updates.queryByRole("button", { name: "Update" })).toBeNull();
+    await ready();
+    const updates = section("Host");
+    expect(updates.queryByRole("button", { name: "Update now" })).toBeNull();
     expect(updates.getByText("Pull the newer image and recreate the container.")).toBeTruthy();
-    expect(updateBadge(mock.state.update)).toBe("docker");
+    expect(updateBadge(mock.state.update)).toBe("");
   });
 
   it("asks before stopping the daemon, then tails the stop", async () => {
@@ -109,7 +133,7 @@ describe("system page", () => {
     const dialog = within(await screen.findByRole("dialog"));
     expect(mock.state.actionsStarted).toEqual([]);
     fireEvent.click(dialog.getByRole("button", { name: "Stop" }));
-    const log = await daemon.findByTestId("action-log-daemon-stop");
+    const log = await screen.findByTestId("action-log-daemon-stop");
     await waitFor(() => expect(log.textContent).toContain("waiting for the daemon"));
     act(() => {
       vi.advanceTimersByTime(ACTION_POLL_MS);
@@ -144,29 +168,38 @@ describe("system page", () => {
     });
     expect(mock.callsTo("GET", "/api/actions/doctor/status")).toHaveLength(polls);
     expect(screen.getByText("Exit code 0.")).toBeTruthy();
+    expect(screen.getByText("done")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Close log" }));
+    expect(screen.queryByTestId("action-log-doctor")).toBeNull();
   });
 
   it("offers the backup for download once it is written", async () => {
     renderPage(<SystemPage />, "/system");
     await ready();
-    fireEvent.click(screen.getByRole("button", { name: "Back up this profile" }));
+    const download = screen.getByRole("button", { name: "Download backup" }) as HTMLButtonElement;
+    expect(download.disabled).toBe(true);
+    expect(screen.getByText("No backup created yet")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Create backup" }));
     expect(await screen.findByText("/home/user/.indus/backups/indus-backup-1.zip")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Download" })).toBeTruthy();
+    expect(download.disabled).toBe(false);
   });
 
-  it("imports by path and refuses a relative one", async () => {
+  it("restores by path after confirming and refuses a relative one", async () => {
     renderPage(<SystemPage />, "/system");
     await ready();
-    fireEvent.change(screen.getByLabelText("Import archive path"), {
+    fireEvent.change(screen.getByLabelText("Restore from path"), {
       target: { value: "backup.zip" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Import" }));
+    fireEvent.click(screen.getByRole("button", { name: "Restore path" }));
     expect((await screen.findByRole("alert")).textContent).toContain("full path");
-    fireEvent.change(screen.getByLabelText("Import archive path"), {
+    fireEvent.change(screen.getByLabelText("Restore from path"), {
       target: { value: "/srv/backup.zip" },
     });
     fireEvent.click(screen.getByRole("checkbox", { name: "Overwrite existing files" }));
-    fireEvent.click(screen.getByRole("button", { name: "Import" }));
+    fireEvent.click(screen.getByRole("button", { name: "Restore path" }));
+    const dialog = within(await screen.findByRole("dialog"));
+    expect(mock.callsTo("POST", "/api/ops/import")).toHaveLength(0);
+    fireEvent.click(dialog.getByRole("button", { name: "Restore" }));
     await waitFor(() =>
       expect(mock.callsTo("POST", "/api/ops/import")[0]?.body).toEqual({
         archive: "/srv/backup.zip",
@@ -185,6 +218,7 @@ describe("system page", () => {
     expect(key.type).toBe("password");
     fireEvent.change(key, { target: { value } });
     fireEvent.click(pool.getByRole("button", { name: "Add key" }));
+    await waitFor(() => expect(pool.queryByText("No pooled credentials yet.")).toBeNull());
     const row = within(await pool.findByTestId("pool-fake-1"));
     expect(key.value).toBe("");
     expect(row.getByText("pool…89")).toBeTruthy();
@@ -225,12 +259,14 @@ describe("system page", () => {
     renderPage(<SystemPage />, "/system");
     await ready();
     const hooks = section("Shell hooks");
-    await waitFor(() => expect(hooks.getByLabelText("Command")).toBeTruthy());
-    fireEvent.change(hooks.getByLabelText("Command"), { target: { value: "~/hooks/log.sh" } });
-    const add = hooks.getByRole("button", { name: "Add hook" }) as HTMLButtonElement;
+    expect(hooks.getByText("No shell hooks.")).toBeTruthy();
+    fireEvent.click(hooks.getByRole("button", { name: "New hook" }));
+    const modal = within(await screen.findByRole("dialog", { name: "New shell hook" }));
+    fireEvent.change(modal.getByLabelText("Command"), { target: { value: "~/hooks/log.sh" } });
+    const add = modal.getByRole("button", { name: "Add hook" }) as HTMLButtonElement;
     expect(add.disabled).toBe(true);
-    expect(hooks.getByText(/runs this command on your machine/)).toBeTruthy();
-    fireEvent.click(hooks.getByRole("checkbox"));
+    expect(modal.getByText(/runs this command on your machine/)).toBeTruthy();
+    fireEvent.click(modal.getByRole("checkbox"));
     expect(add.disabled).toBe(false);
     fireEvent.click(add);
     await waitFor(() =>
@@ -242,9 +278,9 @@ describe("system page", () => {
     );
     const row = within(await hooks.findByTestId("hook-grant-1"));
     expect(row.getByText("approved")).toBeTruthy();
-    expect((hooks.getByRole("checkbox") as HTMLInputElement).checked).toBe(false);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 
-    fireEvent.click(row.getByRole("button", { name: "Remove" }));
+    fireEvent.click(row.getByRole("button", { name: "Remove hook" }));
     const dialog = within(await screen.findByRole("dialog"));
     fireEvent.click(dialog.getByRole("button", { name: "Remove" }));
     await waitFor(() => expect(hooks.queryByTestId("hook-grant-1")).toBeNull());
@@ -272,9 +308,12 @@ describe("system page", () => {
     await ready();
     const checkpoints = section("Checkpoints");
     await waitFor(() => expect(checkpoints.getByText("/srv/app")).toBeTruthy());
-    expect(checkpoints.getByText("3.0 MiB", { selector: "span.rounded-full" })).toBeTruthy();
+    expect(checkpoints.getByText("1 project · 3.0 MB")).toBeTruthy();
     fireEvent.change(checkpoints.getByLabelText("Keep days"), { target: { value: "3" } });
     fireEvent.click(checkpoints.getByRole("button", { name: "Prune checkpoints" }));
+    const dialog = within(await screen.findByRole("dialog"));
+    expect(mock.callsTo("POST", "/api/ops/checkpoints/prune")).toHaveLength(0);
+    fireEvent.click(dialog.getByRole("button", { name: "Prune" }));
     await waitFor(() =>
       expect(mock.callsTo("POST", "/api/ops/checkpoints/prune")[0]?.body).toEqual({
         retention_days: 3,

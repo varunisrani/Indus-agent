@@ -10,6 +10,7 @@ import { useTheme } from "../app/theme.tsx";
 import type { IndusDesktopThemes, IndusMarketplaceItem } from "../global.d.ts";
 import { useT } from "../i18n/index.tsx";
 import { bridgeRest, type RestLike } from "../settings/settingsApi.ts";
+import { deskFromPresetCss } from "./deskTokens.ts";
 import { type AppearanceStore, appearance, syncTui, userThemeFrom } from "./themeStore.ts";
 import { base64Bytes, themesFromVsix } from "./vscodeImport.ts";
 
@@ -27,8 +28,12 @@ export function ProfileAppearanceStyle(props: { profile: string | null; store?: 
   const { resolved } = useTheme();
   const own = props.profile !== null ? value.profiles[props.profile] : undefined;
   if (props.profile === null || own === undefined || Object.keys(own).length === 0) return null;
-  const css = store.css(props.profile, resolved === "indus-dark" ? "dark" : "light");
-  return css === "" ? null : <style data-indus-appearance={props.profile}>{css}</style>;
+  const scheme = resolved === "indus-dark" ? "dark" : "light";
+  const css = store.css(props.profile, scheme);
+  if (css === "") return null;
+  // a profile preset repaints the base colours; the desk surfaces follow them (W51-b)
+  const derived = own.theme === undefined ? "" : `\n${deskFromPresetCss(scheme)}`;
+  return <style data-indus-appearance={props.profile}>{`${css}${derived}`}</style>;
 }
 
 /** Search, download, convert and install a Marketplace theme (then use it). */

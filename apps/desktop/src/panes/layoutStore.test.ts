@@ -19,16 +19,28 @@ function memoryStorage(): StorageLike & { data: Map<string, string> } {
   };
 }
 
-function store(storage: StorageLike | null = memoryStorage(), available = ALL) {
-  return new LayoutStore({ storage, available: () => available });
+/** A store laid out with every pane (the Default preset); `fresh` keeps the start layout. */
+function store(storage: StorageLike | null = memoryStorage(), available = ALL, fresh = false) {
+  const s = new LayoutStore({ storage, available: () => available });
+  if (!fresh) s.applyPreset("default");
+  return s;
 }
 
 describe("layout store", () => {
-  it("starts from the Default preset in Advanced mode", () => {
-    const s = store();
+  it("starts on the chat alone in Advanced mode, the tool panes ready to reopen", () => {
+    const s = store(memoryStorage(), ALL, true);
     expect(s.mode()).toBe("advanced");
-    expect(new Set(allPanes(s.layout().root))).toEqual(new Set(ALL));
+    expect(allPanes(s.layout().root)).toEqual(["chat"]);
+    expect(
+      s
+        .layout()
+        .closed.map((c) => c.pane)
+        .sort(),
+    ).toEqual(ALL.filter((pane) => pane !== "chat").sort());
     expect(layoutProblems(s.layout())).toEqual([]);
+    expect(s.reopenLast()).toBe("preview");
+    s.applyPreset("default");
+    expect(new Set(allPanes(s.layout().root))).toEqual(new Set(ALL));
   });
 
   it("Simple mode hides terminal, files and review and restores Advanced on the way back", () => {
@@ -68,7 +80,7 @@ describe("layout store", () => {
     first.close("review");
     first.setMode("simple");
     first.applyPreset("focus");
-    const second = store(storage);
+    const second = store(storage, ALL, true);
     expect(second.mode()).toBe("simple");
     expect(second.getSnapshot().preset).toBe("focus");
     second.setMode("advanced");
@@ -111,7 +123,7 @@ describe("layout store", () => {
         },
       }),
     );
-    expect(allPanes(store(storage).layout().root)).toEqual(["chat", "preview"]);
+    expect(allPanes(store(storage, ALL, true).layout().root)).toEqual(["chat", "preview"]);
   });
 
   it("reopen last closed and the focused zone for cycle and jump", () => {
@@ -147,5 +159,41 @@ describe("layout store", () => {
     const s = store();
     const view = withoutUnknown(s.layout(), new Set(["chat", "preview"]));
     expect(new Set(allPanes(view.root))).toEqual(new Set(["chat", "preview"]));
+  });
+});
+
+describe("the right-side group (W52-m)", () => {
+  it("files on top, the terminal under the whole right group, review left of files", () => {
+    const s = store(memoryStorage(), ALL, true);
+    s.open("files");
+    const root1 = s.layout().root;
+    expect(root1?.kind === "split" && root1.orientation).toBe("row");
+    expect(allPanes(root1)).toEqual(["chat", "files"]);
+    s.open("terminal");
+    const root2 = s.layout().root;
+    expect(root2?.kind).toBe("split");
+    const right = root2?.kind === "split" ? root2.children[1] : null;
+    expect(right?.kind === "split" && right.orientation).toBe("column");
+    expect(allPanes(right ?? null)).toEqual(["files", "terminal"]);
+    s.open("review");
+    const right3 = (() => {
+      const root = s.layout().root;
+      return root?.kind === "split" ? root.children[1] : null;
+    })();
+    expect(allPanes(right3 ?? null)).toEqual(["review", "files", "terminal"]);
+    const top = right3?.kind === "split" ? right3.children[0] : null;
+    expect(top?.kind === "split" && top.orientation).toBe("row");
+    expect(layoutProblems(s.layout())).toEqual([]);
+    // closing review takes only its column away
+    s.close("review");
+    expect(allPanes(s.layout().root)).toEqual(["chat", "files", "terminal"]);
+  });
+
+  it("an arrangement the group did not build opens panes the usual way", () => {
+    const s = store(); // the Default preset: every pane already placed
+    s.close("review");
+    s.open("review");
+    expect(new Set(allPanes(s.layout().root))).toEqual(new Set(ALL));
+    expect(layoutProblems(s.layout())).toEqual([]);
   });
 });

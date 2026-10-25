@@ -92,8 +92,8 @@ export function terminalColours(): Record<string, string> {
   const map = ansi[name];
   const dark = name === "indus-dark";
   return {
-    background: cssVar("--indus-color-code-bg", dark ? "#16181d" : "#f6f5f2"),
-    foreground: cssVar("--indus-color-fg", dark ? "#e8e6e1" : "#1f1f1c"),
+    background: cssVar("--indus-terminal-bg", dark ? "#000000" : "#f5f8fc"),
+    foreground: cssVar("--indus-terminal-fg", dark ? "#f0e6d2" : "#170d02"),
     cursor: cssVar("--indus-color-accent", dark ? "#8ab4f8" : "#2557c7"),
     selectionBackground: cssVar("--indus-color-selection", dark ? "#33415c" : "#cdd9f2"),
     black: map.black,

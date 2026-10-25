@@ -1,4 +1,4 @@
-// Tab and window shortcuts of the pane shell (P20-27). The platform modifier is ⌘ on macOS and
+// Tab and window shortcuts of the pane shell (P20-27; tab cycling on Ctrl+PageDown since W52-h). The platform modifier is ⌘ on macOS and
 // Ctrl elsewhere. Holding it alone for 400 ms shows slot numbers on the tabs; any other key or
 // letting go hides them. The mapping is pure (`actionForKey`) so it is tested without a DOM.
 
@@ -39,10 +39,22 @@ export function isModifierKey(event: KeyLike, platform: string): boolean {
   return event.key === (isMac(platform) ? "Meta" : "Control");
 }
 
+/** Ctrl+Tab / Ctrl+Shift+Tab on every platform: the session switcher's step (W52-h-2). */
+export function switcherStep(event: KeyLike): 1 | -1 | null {
+  if (event.key !== "Tab" || !event.ctrlKey || event.metaKey || event.altKey) return null;
+  return event.shiftKey ? -1 : 1;
+}
+
 export function actionForKey(event: KeyLike, platform: string): PaneAction | null {
-  // Ctrl+Tab cycles on every platform (as browsers do).
-  if (event.key === "Tab" && event.ctrlKey && !event.metaKey && !event.altKey) {
-    return { kind: "cycle", step: event.shiftKey ? -1 : 1 };
+  // Ctrl+PageDown / Ctrl+PageUp cycle the tabs on every platform (Ctrl+Tab is the switcher's).
+  if (
+    (event.key === "PageDown" || event.key === "PageUp") &&
+    event.ctrlKey &&
+    !event.metaKey &&
+    !event.altKey &&
+    !event.shiftKey
+  ) {
+    return { kind: "cycle", step: event.key === "PageDown" ? 1 : -1 };
   }
   if (!modifierDown(event, platform)) return null;
   const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;

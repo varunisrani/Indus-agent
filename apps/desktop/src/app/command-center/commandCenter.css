@@ -1,0 +1,410 @@
+/* The Command center overlay (W52-l): rail, breadcrumb row, and the four sections. */
+
+.cc-card .desk-overlay-nav {
+  padding: 11px 10px 8px;
+}
+
+.cc-card .desk-overlay-nav-body ul {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cc-card .desk-nav-link {
+  min-height: 28px;
+  margin: 0;
+  border: 1px solid transparent;
+  border-radius: var(--desk-radius-card);
+  font-size: var(--desk-text-ui);
+}
+
+.cc-card .desk-nav-link > svg {
+  width: 16px;
+  height: 16px;
+}
+
+.cc-card .desk-nav-link[aria-current="page"] {
+  border-color: var(--desk-stroke-active);
+}
+
+.cc-card .desk-nav-link[aria-current="page"] > svg {
+  color: color-mix(in srgb, var(--desk-fg-1) 80%, transparent);
+}
+
+.cc-card .desk-overlay-main {
+  width: 100%;
+  max-width: 1200px;
+  margin-inline: auto;
+}
+
+.cc-card .desk-overlay-head {
+  min-height: 0;
+  padding: 22px clamp(20px, 4vw, 64px) 0;
+}
+
+.cc-card .desk-overlay-body {
+  display: flex;
+  flex-direction: column;
+  padding: 12px clamp(20px, 4vw, 64px) 0;
+}
+
+.cc-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  min-height: 24px;
+}
+
+.cc-head .desk-breadcrumb {
+  flex: 1;
+  font-size: var(--desk-text-small);
+}
+
+.cc-head-aside {
+  display: flex;
+  justify-content: flex-end;
+  max-width: 40vw;
+}
+
+.cc-head-aside .kit-quiet-search {
+  width: 220px;
+}
+
+.cc-head .desk-segmented {
+  background: var(--kit-track);
+}
+
+.cc-head .desk-segment {
+  font-size: var(--desk-text-micro);
+  font-weight: 500;
+}
+
+.cc-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 48px 0;
+}
+
+.cc-empty-line {
+  display: grid;
+  place-items: center;
+  min-height: 192px;
+  margin: 0;
+  color: var(--desk-fg-3);
+  font-size: var(--desk-text-small);
+}
+
+.cc-empty-line.cc-left {
+  display: block;
+  min-height: 0;
+}
+
+/* -- sessions ------------------------------------------------------------------------------- */
+
+.cc-sessions {
+  padding-bottom: 24px;
+}
+
+.cc-session-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cc-session {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: var(--desk-radius-card);
+}
+
+.cc-session:hover {
+  background: var(--desk-row-hover);
+}
+
+.cc-session-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 8px 8px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cc-session:hover .cc-session-main {
+  padding-left: 8px;
+  margin-left: 0;
+}
+
+.cc-session-title {
+  overflow: hidden;
+  color: var(--desk-fg-1);
+  font-size: var(--desk-text-ui);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cc-session-date {
+  color: var(--desk-fg-3);
+  font-size: var(--desk-text-small);
+}
+
+.cc-session-actions {
+  display: flex;
+  gap: 2px;
+  padding-right: 6px;
+  opacity: 0;
+  transition: opacity var(--indus-duration-quick) var(--indus-easing-standard);
+}
+
+.cc-session:hover .cc-session-actions,
+.cc-session:focus-within .cc-session-actions {
+  opacity: 1;
+}
+
+.cc-danger-icon:hover:not(:disabled) {
+  color: var(--desk-danger);
+}
+
+.cc-more {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 8px;
+}
+
+/* -- system --------------------------------------------------------------------------------- */
+
+.cc-system {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 28px;
+  min-height: 0;
+}
+
+.cc-status {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 11px;
+}
+
+.cc-status-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cc-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--desk-warning);
+}
+
+.cc-status-dot[data-running="true"] {
+  background: var(--kit-ok);
+}
+
+.cc-status-label {
+  flex: 1;
+  color: var(--desk-fg-1);
+  font-size: var(--desk-text-ui);
+  font-weight: 500;
+}
+
+.cc-status-actions {
+  display: flex;
+  gap: 14px;
+}
+
+.cc-status-caption {
+  margin: 0;
+  color: var(--desk-fg-3);
+  font-size: var(--desk-text-small);
+}
+
+.cc-logs {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.cc-logs .kit-caps-row {
+  flex-wrap: wrap;
+}
+
+.cc-logs .kit-log {
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+}
+
+.cc-log-error {
+  color: var(--desk-danger);
+  font-size: var(--desk-text-small);
+}
+
+/* -- usage ---------------------------------------------------------------------------------- */
+
+.cc-usage {
+  display: flex;
+  flex-direction: column;
+  gap: 36px;
+  padding: 22px 0 32px;
+}
+
+.cc-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.cc-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--desk-fg-3);
+  font-size: 10.4px;
+}
+
+.cc-legend-in,
+.cc-legend-out {
+  width: 8px;
+  height: 8px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--desk-accent) 60%, transparent);
+}
+
+.cc-legend-out {
+  margin-left: 8px;
+  background: color-mix(in srgb, #00bc7d 70%, transparent);
+}
+
+.cc-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 96px;
+}
+
+.cc-bar {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-width: 1px;
+  height: 100%;
+}
+
+.cc-bar-in {
+  background: color-mix(in srgb, var(--desk-accent) 60%, transparent);
+}
+
+.cc-bar-out {
+  background: color-mix(in srgb, #00bc7d 70%, transparent);
+}
+
+.cc-chart-ends {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  color: var(--desk-fg-3);
+  font-size: 9.6px;
+}
+
+.cc-chart-empty {
+  display: grid;
+  place-items: center;
+  height: 96px;
+  margin: 0;
+  color: var(--desk-fg-3);
+  font-size: var(--desk-text-small);
+}
+
+.cc-usage-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
+}
+
+/* -- maintenance ---------------------------------------------------------------------------- */
+
+.cc-maint {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 16px 0 32px;
+}
+
+.cc-maint-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 0;
+}
+
+.cc-maint-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.cc-maint-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--desk-fg-1);
+  font-size: var(--desk-text-ui);
+  font-weight: 500;
+}
+
+.cc-maint-aside {
+  color: var(--desk-fg-3);
+  font-size: var(--desk-text-small);
+  font-weight: 400;
+}
+
+.cc-maint-desc,
+.cc-maint-caption {
+  margin: 2px 0 0;
+  color: var(--desk-fg-3);
+  font-size: var(--desk-text-small);
+}
+
+.cc-maint-caption {
+  margin: 0 0 4px;
+}
+
+.cc-maint-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.cc-days {
+  width: 64px;
+  padding: 2px 6px;
+  border: 1px solid var(--desk-stroke-field);
+  border-radius: var(--desk-radius-control);
+  background: var(--desk-bg-canvas);
+  color: var(--desk-fg-1);
+  font: inherit;
+  font-size: var(--desk-text-small);
+}
+
+.cc-run {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}

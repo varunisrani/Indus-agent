@@ -1,80 +1,89 @@
-/* Sessions sidebar (P20-25). Tokens only, as in styles.css. */
+/* Sessions sidebar (P20-25), on the desk look (W51-b). Tokens only. */
 
 .sidebar-sessions {
   display: flex;
   flex-direction: column;
-  gap: var(--indus-space-2);
   flex: 1;
   min-height: 0;
+  gap: 2px;
+  padding-top: 6px;
 }
 
 .sidebar-search {
-  display: flex;
-  align-items: center;
-  gap: var(--indus-space-1);
-  padding: 0 var(--indus-space-2);
-  border: 1px solid var(--indus-color-border);
-  border-radius: var(--indus-radius-md);
-  background: var(--indus-color-bg);
-  color: var(--indus-color-fg-muted);
+  margin: 0 8px 4px;
 }
 
-.sidebar-search input {
-  flex: 1;
-  min-width: 0;
-  padding: var(--indus-space-1) 0;
-  border: 0;
-  background: transparent;
-  color: var(--indus-color-fg);
-  font: inherit;
-  outline: none;
-}
-
-.sidebar-views {
-  align-self: stretch;
-}
-
-.sidebar-views .segmented-option {
-  flex: 1;
-  justify-content: center;
+.sidebar-filter-menu {
+  top: calc(100% + 4px);
+  right: 0;
+  width: 180px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
 }
 
 .sidebar-scroll {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  padding: 0 8px 8px;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-section {
+  display: flex;
+  flex-direction: column;
 }
 
 .sidebar-section + .sidebar-section {
-  margin-top: var(--indus-space-3);
+  margin-top: 12px;
+}
+
+/* the last section fills the rest so its empty state sits in the middle of the column */
+.sidebar-section:last-child {
+  flex: 1;
+}
+
+.sidebar-section:last-child > .desk-empty {
+  margin: auto 0;
+  padding-bottom: 48px;
 }
 
 .sidebar-section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 var(--indus-space-2);
+  padding: 0 4px 0 10px;
 }
 
-.sidebar-section-header h2 {
-  margin: 0;
-  font-size: 11px;
-  font-weight: var(--indus-font-weight-medium);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--indus-color-fg-muted);
+.sidebar-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 0;
+  padding: 0 12px;
+  color: var(--desk-fg-3);
+  font-size: var(--desk-text-small);
+  line-height: 24px;
+}
+
+.sidebar-hint > svg {
+  color: var(--desk-fg-4);
+  transform: rotate(45deg);
+}
+
+.sidebar-empty-action {
+  color: var(--desk-fg-2);
+  background: transparent;
 }
 
 .sidebar-error {
-  margin: 0;
-  padding: 0 var(--indus-space-2);
-  font-size: 12px;
-  color: var(--indus-color-danger);
+  margin: 4px 16px;
+  color: var(--desk-danger);
+  font-size: var(--desk-text-small);
 }
 
 .session-list {
   list-style: none;
-  margin: 0;
+  margin: 2px 0 0;
   padding: 0;
 }
 
@@ -82,27 +91,60 @@
   position: relative;
   display: flex;
   align-items: center;
-  border-radius: var(--indus-radius-md);
+  border-radius: var(--desk-radius-control);
 }
 
-.session-row:hover,
+.session-row:hover {
+  background: var(--desk-row-hover);
+}
+
 .session-row[data-current="true"] {
-  background: var(--indus-color-code-bg);
+  background: var(--desk-row-active);
 }
 
 .session-open {
   display: flex;
   align-items: center;
-  gap: var(--indus-space-1);
+  gap: 6px;
   flex: 1;
   min-width: 0;
-  padding: var(--indus-space-1) var(--indus-space-2);
+  height: 27px;
+  padding: 0 8px 0 10px;
   border: 0;
   background: transparent;
-  color: var(--indus-color-fg);
+  color: var(--desk-fg-2);
   font: inherit;
+  font-size: var(--desk-text-nav);
   text-align: left;
   cursor: pointer;
+}
+
+.session-open:focus-visible {
+  outline: 1px solid var(--desk-accent);
+  outline-offset: -1px;
+}
+
+.session-rename {
+  flex: 1;
+  min-width: 0;
+  height: 25px;
+  margin: 1px 4px;
+  padding: 0 6px;
+  border: 1px solid var(--desk-accent);
+  border-radius: var(--desk-radius-control);
+  background: var(--desk-bg-canvas);
+  color: var(--desk-fg-1);
+  font: inherit;
+  font-size: var(--desk-text-nav);
+}
+
+.session-rename:focus-visible {
+  outline: none;
+}
+
+.session-row[data-current="true"] .session-open,
+.session-row:hover .session-open {
+  color: var(--desk-fg-1);
 }
 
 .session-title {
@@ -114,49 +156,49 @@
 }
 
 .session-time {
-  font-size: 11px;
-  color: var(--indus-color-fg-muted);
+  flex: none;
+  color: var(--desk-fg-3);
+  font-size: 10px;
 }
 
+/* a quiet bullet in front of every row; the running and unread dots replace it */
 .session-dots {
-  display: inline-flex;
+  display: inline-grid;
+  place-items: center;
   width: 8px;
+  flex: none;
 }
 
 .session-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: var(--indus-radius-full);
-  background: var(--indus-color-accent);
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--desk-accent);
+}
+
+.session-dot[data-kind="idle"] {
+  background: var(--desk-fg-4);
 }
 
 .session-dot[data-kind="running"] {
-  background: var(--indus-color-success);
-  animation: session-pulse 1.4s var(--indus-easing-standard) infinite;
+  background: var(--desk-success);
+  animation: session-pulse 1.2s ease-in-out infinite;
 }
 
 .session-branch {
-  color: var(--indus-color-fg-muted);
-}
-
-.session-actions {
-  display: none;
-}
-
-.session-row:hover .session-actions,
-.session-row:focus-within .session-actions {
-  display: inline-flex;
+  flex: none;
+  color: var(--desk-fg-3);
 }
 
 .project-group {
-  margin-top: var(--indus-space-1);
+  margin-top: 4px;
 }
 
 .project-header {
   display: flex;
   align-items: center;
-  gap: var(--indus-space-1);
-  padding: 0 var(--indus-space-2);
+  gap: 4px;
+  padding: 0 8px;
 }
 
 .project-name {
@@ -165,16 +207,16 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-weight: var(--indus-font-weight-medium);
+  font-weight: 500;
 }
 
 .project-form {
   display: flex;
   flex-direction: column;
-  gap: var(--indus-space-2);
-  padding: var(--indus-space-2);
-  border: 1px solid var(--indus-color-border);
-  border-radius: var(--indus-radius-md);
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--desk-stroke-1);
+  border-radius: var(--desk-radius-card);
 }
 
 .project-form .field {
@@ -187,30 +229,30 @@
 .project-form input,
 .project-form textarea {
   font: inherit;
-  color: var(--indus-color-fg);
-  background: var(--indus-color-bg);
-  border: 1px solid var(--indus-color-border);
-  border-radius: var(--indus-radius-sm);
-  padding: var(--indus-space-1);
+  color: var(--desk-fg-1);
+  background: var(--desk-bg-canvas);
+  border: 1px solid var(--desk-stroke-1);
+  border-radius: var(--desk-radius-control);
+  padding: 4px;
 }
 
 .project-form-actions {
   display: flex;
-  gap: var(--indus-space-2);
+  gap: 8px;
 }
 
 .repo-list {
   max-height: 160px;
   overflow-y: auto;
-  border: 1px solid var(--indus-color-border);
-  border-radius: var(--indus-radius-sm);
+  border: 1px solid var(--desk-stroke-1);
+  border-radius: var(--desk-radius-control);
   font-size: 12px;
 }
 
 .repo-choice {
   display: flex;
   align-items: center;
-  gap: var(--indus-space-1);
+  gap: 4px;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -226,4 +268,12 @@
   .session-dot[data-kind="running"] {
     animation: none;
   }
+}
+
+/* the search's no-match caption (W52-l, 3.13) */
+.sidebar-no-match {
+  margin: 34px 0 0;
+  padding: 0 10px;
+  color: var(--desk-fg-3);
+  font-size: var(--desk-text-small);
 }

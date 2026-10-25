@@ -45,6 +45,10 @@ afterEach(() => {
 describe("keys", () => {
   it("clears the input after save and shows only the redacted preview", async () => {
     renderPage(<EnvPage />, "/env");
+    // An unset key shows no input until Set is pressed.
+    const row = within(await screen.findByTestId("key-MODEL_API_KEY"));
+    expect(row.queryByLabelText("New value for MODEL_API_KEY")).toBeNull();
+    fireEvent.click(row.getByRole("button", { name: "Set" }));
     const input = (await screen.findByLabelText("New value for MODEL_API_KEY")) as HTMLInputElement;
     expect(input.type).toBe("password");
     fireEvent.change(input, { target: { value: secret() } });
@@ -54,6 +58,11 @@ describe("keys", () => {
 
     const preview = await screen.findByTestId("preview-MODEL_API_KEY");
     expect(preview.textContent).toBe("valu…89");
+    // The editor closes after a save; Replace opens an empty one.
+    expect(screen.queryByLabelText("New value for MODEL_API_KEY")).toBeNull();
+    fireEvent.click(
+      within(screen.getByTestId("key-MODEL_API_KEY")).getByRole("button", { name: "Replace" }),
+    );
     expect((screen.getByLabelText("New value for MODEL_API_KEY") as HTMLInputElement).value).toBe(
       "",
     );
@@ -80,15 +89,20 @@ describe("keys", () => {
     renderPage(<EnvPage />, "/env");
     await screen.findByTestId("key-MODEL_API_KEY");
     expect(screen.queryByTestId("key-DEBUG_ENDPOINT")).toBeNull();
-    fireEvent.click(screen.getByRole("switch", { name: "Show advanced keys" }));
+    const toggle = screen.getByRole("button", { name: "Show advanced" });
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(toggle);
     expect(await screen.findByTestId("key-DEBUG_ENDPOINT")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Hide advanced" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
   });
 
   it("deletes a key only after confirming", async () => {
     renderPage(<EnvPage />, "/env");
     fireEvent.click(
       within(await screen.findByTestId("key-SEARCH_API_KEY")).getByRole("button", {
-        name: "Delete",
+        name: "Clear",
       }),
     );
     const dialog = await screen.findByRole("dialog");
@@ -99,5 +113,55 @@ describe("keys", () => {
     await waitFor(() =>
       expect(within(screen.getByTestId("key-SEARCH_API_KEY")).getByText("not set")).toBeTruthy(),
     );
+  });
+
+  it("groups provider keys per provider and lists sign-in providers", async () => {
+    mock.state.env = {
+      ALPHA_API_KEY: key({ category: "provider", description: "API key for Alpha AI" }),
+      ALPHA_BASE_URL: key({
+        category: "provider",
+        description: "Endpoint URL override for Alpha AI",
+        is_set: true,
+        redacted_value: "http…ai",
+      }),
+      OWN_TOKEN: key({ category: "custom", is_set: true, redacted_value: "own…en" }),
+    };
+    renderPage(<EnvPage />, "/env");
+    const group = await screen.findByRole("button", { name: /Alpha AI/ });
+    expect(group.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByTestId("key-ALPHA_API_KEY")).toBeNull();
+    expect(within(group).getByText("1 set")).toBeTruthy();
+    fireEvent.click(group);
+    expect(await screen.findByTestId("key-ALPHA_API_KEY")).toBeTruthy();
+    expect(
+      within(screen.getByTestId("key-OWN_TOKEN")).getByTestId("preview-OWN_TOKEN"),
+    ).toBeTruthy();
+    const nav = within(screen.getByRole("navigation", { name: "Jump to section" }));
+    expect(nav.getAllByRole("button").map((b) => b.textContent)).toEqual([
+      "OAuth",
+      "Providers",
+      "Custom keys",
+    ]);
+    expect(await screen.findByRole("region", { name: "Provider sign-ins" })).toBeTruthy();
+  });
+
+  it("adds a custom key by name and refuses a name that is not an env name", async () => {
+    renderPage(<EnvPage />, "/env");
+    const card = within(await screen.findByRole("region", { name: "Custom keys" }));
+    fireEvent.change(card.getByLabelText("Add a key"), { target: { value: "9bad" } });
+    fireEvent.click(card.getByRole("button", { name: "Add" }));
+    expect((await card.findByRole("alert")).textContent).toContain("not starting with a digit");
+    fireEvent.change(card.getByLabelText("Add a key"), { target: { value: "my_token" } });
+    fireEvent.click(card.getByRole("button", { name: "Add" }));
+    const input = await card.findByLabelText("New value for MY_TOKEN");
+    fireEvent.change(input, { target: { value: secret() } });
+    fireEvent.click(within(card.getByTestId("key-MY_TOKEN")).getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(mock.callsTo("PUT", "/api/env")[0]?.body).toEqual({
+        key: "MY_TOKEN",
+        value: secret(),
+      }),
+    );
+    expect(document.body.innerHTML).not.toContain(secret());
   });
 });

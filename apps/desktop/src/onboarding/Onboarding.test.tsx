@@ -295,6 +295,8 @@ describe("onboarding overlay", () => {
     render(<Onboarding ready api={api} saveKey={null} />);
     await settle();
     expect(hook("onboarding-dialog").getAttribute("role")).toBe("dialog");
+    // W52-m: the custom endpoint row sits behind the "Other providers" disclosure
+    fireEvent.click(screen.getByRole("button", { name: "Other providers" }));
     await act(async () => {
       fireEvent.click(hook("onboarding-custom-option"));
     });
@@ -329,5 +331,60 @@ describe("onboarding overlay", () => {
       false,
     );
     expect(isProviderFailure({ type: "turn.started" })).toBe(false);
+  });
+});
+
+describe("onboarding look (W52-m)", () => {
+  it("first run: a notice box, key providers behind the disclosure, tiles on the key screen", async () => {
+    const api = fakeRest();
+    api.route("GET", "/api/model/options", OPTIONS(false));
+    render(<Onboarding ready api={api} saveKey={null} />);
+    await settle();
+    expect(screen.getByText(/No model provider is connected yet/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /OpenRouter/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Other providers" }));
+    expect(screen.getByRole("button", { name: /OpenRouter/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Collapse" })).toBeTruthy();
+    expect(screen.queryByText(/recommended/i)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Paste an API key/ }));
+    expect(screen.queryByRole("combobox")).toBeNull();
+    const tile = screen.getByRole("button", { name: /OpenRouter/ });
+    expect(tile.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: /Another key/ }));
+    expect(screen.getByLabelText("Variable name")).toBeTruthy();
+  });
+
+  it("opened from Settings: no notice box", async () => {
+    const api = fakeRest();
+    api.route("GET", "/api/model/options", OPTIONS(true));
+    render(<Onboarding ready api={api} saveKey={null} />);
+    await settle();
+    await act(async () => {
+      requestOnboarding({ reason: "manual" });
+    });
+    await settle();
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(screen.queryByText(/No model provider is connected yet/)).toBeNull();
+  });
+
+  it("a provider failure brings it back with its own notice", async () => {
+    const api = fakeRest();
+    api.route("GET", "/api/model/options", OPTIONS(false));
+    const bus = events();
+    render(<Onboarding ready api={api} saveKey={null} events={bus.source} />);
+    await settle();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Choose later" }));
+    });
+    await act(async () => {
+      bus.emit({
+        type: "turn.done",
+        session_id: "s",
+        reason: "provider_failed",
+        failure: { reason: "No API key is configured for this provider" },
+      });
+    });
+    await settle();
+    expect(screen.getByText(/failed at the provider/)).toBeTruthy();
   });
 });

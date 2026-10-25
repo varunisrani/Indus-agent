@@ -1,0 +1,332 @@
+/* The composer's floating surfaces (W52-h): help card, attach menu and dialogs, model and effort
+   menus. The drawer, menu and dialog skins come from ui/ui.css; this file only places them. */
+
+.composer-help {
+  max-height: min(420px, calc(100vh - 128px));
+  overflow: auto;
+}
+
+.composer-help-head {
+  color: var(--desk-fg-4);
+  font-weight: 500;
+}
+
+.composer-help-list {
+  margin: 0;
+  padding: 0 0 4px;
+  list-style: none;
+}
+
+.composer-help-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 26px;
+  padding: 0 10px;
+  font-size: var(--desk-text-small);
+}
+
+.composer-help-cmd {
+  color: var(--desk-fg-2);
+  font-family: var(--indus-font-mono, ui-monospace, monospace);
+  font-size: var(--desk-text-small);
+  font-weight: 500;
+}
+
+.composer-help-text {
+  overflow: hidden;
+  color: var(--desk-fg-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-help-keys {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.composer-help-keys .desk-kbd {
+  height: 17px;
+  min-width: 16px;
+  border-color: var(--desk-stroke-3);
+  color: var(--desk-fg-2);
+}
+
+.composer-help-foot {
+  margin: 0;
+  padding: 6px 10px 4px;
+  border-top: 1px solid var(--desk-stroke-1);
+  color: var(--desk-fg-3);
+  font-size: var(--desk-text-micro);
+}
+
+/* -- attach -------------------------------------------------------------------------------- */
+
+.composer-attach-root {
+  align-self: center;
+}
+
+.composer-attach-menu {
+  bottom: calc(100% + 10px);
+  left: -6px;
+  width: 240px;
+}
+
+.composer-attach-tip {
+  margin: 0;
+  padding: 4px 10px 2px;
+  color: var(--desk-fg-3);
+  font-size: var(--desk-text-micro);
+}
+
+.composer-attach-tip .desk-kbd {
+  height: 15px;
+  min-width: 14px;
+  color: var(--desk-fg-2);
+}
+
+.composer-url-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.composer-url-error {
+  margin: 0;
+  color: var(--desk-danger);
+  font-size: var(--desk-text-small);
+}
+
+.composer-snippets {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.composer-snippet {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--desk-stroke-1);
+  border-radius: var(--desk-radius-card);
+  background: transparent;
+  color: var(--desk-fg-1);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.composer-snippet:hover,
+.composer-snippet:focus-visible {
+  outline: none;
+  background: var(--desk-row-hover);
+}
+
+.composer-snippet > svg {
+  margin-top: 2px;
+  color: var(--desk-fg-3);
+}
+
+.composer-snippet strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.composer-snippet small {
+  display: block;
+  color: var(--desk-fg-3);
+  font-size: var(--desk-text-small);
+}
+
+/* -- model and effort menus --------------------------------------------------------------- */
+
+.model-menu,
+.effort-menu {
+  bottom: calc(100% + 9px);
+  right: 0;
+}
+
+.model-menu {
+  width: 288px;
+  max-height: min(420px, calc(100vh - 160px));
+  overflow: auto;
+}
+
+.effort-menu {
+  width: 208px;
+}
+
+.model-menu-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 37px;
+  margin: -4px -4px 0;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--desk-stroke-2);
+}
+
+.model-menu-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--desk-fg-1);
+  font: inherit;
+  font-size: var(--desk-text-small);
+}
+
+.model-menu-search input::placeholder {
+  color: var(--desk-fg-3);
+}
+
+.model-menu-search input:focus-visible {
+  outline: none;
+}
+
+.model-menu-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.model-row {
+  display: flex;
+  align-items: center;
+  border-radius: 2px;
+}
+
+.model-row:hover,
+.model-row:focus-within {
+  background: var(--desk-row-hover);
+}
+
+.model-star {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--desk-fg-4);
+  cursor: pointer;
+}
+
+.model-star[aria-pressed="true"] {
+  color: var(--desk-accent);
+}
+
+.model-star > svg {
+  width: 13px;
+  height: 13px;
+}
+
+.model-row-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  padding: 4px 4px 4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--desk-fg-1);
+  font: inherit;
+  font-size: var(--desk-text-small);
+  line-height: 16px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.model-row-name[aria-current="true"] {
+  font-weight: 600;
+}
+
+.model-row-name:focus-visible {
+  outline: none;
+}
+
+.model-row-note {
+  padding-right: 4px;
+  color: var(--desk-fg-3);
+  font-size: var(--desk-text-micro);
+}
+
+.model-row-more {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--desk-fg-3);
+  cursor: pointer;
+}
+
+.model-row-more > svg {
+  width: 14px;
+  height: 14px;
+}
+
+.model-row[data-dim="true"] .model-row-name {
+  color: var(--desk-fg-3);
+}
+
+.model-star[aria-pressed="true"] > svg {
+  fill: currentColor;
+}
+
+.model-menu-note {
+  margin: 0;
+  padding: 4px 10px;
+  color: var(--desk-fg-3);
+  font-size: var(--desk-text-small);
+}
+
+.model-menu .desk-menu-item {
+  color: var(--desk-fg-2);
+}
+
+.model-confirm {
+  margin: 4px 0 0;
+  padding: 8px 10px;
+  border-top: 1px solid var(--desk-stroke-2);
+  font-size: var(--desk-text-small);
+}
+
+.model-confirm p {
+  margin: 0 0 6px;
+}
+
+.model-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.model-picker-note {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  color: var(--desk-fg-3);
+  font-size: var(--desk-text-micro);
+  white-space: nowrap;
+}
+
+.spin {
+  animation: desk-spin 900ms linear infinite;
+}
+
+@keyframes desk-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

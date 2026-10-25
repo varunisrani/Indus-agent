@@ -1,4 +1,5 @@
-// Browser entry: outer query cache (shell data), router with the injected base path, theme tokens.
+// Browser entry: outer query cache (shell data), router with the injected base path, fonts and
+// tokens (the theme provider itself lives in App).
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { lazy, StrictMode } from "react";
@@ -9,7 +10,7 @@ import { basePath } from "./lib/bootstrap.ts";
 import { exposePluginSdk } from "./plugins/registry.ts";
 import { buildDashboardSdk } from "./plugins/sdk.ts";
 import { AuthWidget } from "./shell/AuthWidget.tsx";
-import { ThemeStyles } from "./shell/ThemeSwitch.tsx";
+import "./theme/fonts.ts";
 import "./index.css";
 
 // The chat terminal (P18-26) and xterm load only when /chat is first visited.
@@ -29,7 +30,6 @@ if (root) {
     <StrictMode>
       <QueryClientProvider client={client}>
         <BrowserRouter {...(base ? { basename: base } : {})}>
-          <ThemeStyles />
           <App chatHost={ChatHost} sidebarFooter={<AuthWidget />} />
         </BrowserRouter>
       </QueryClientProvider>

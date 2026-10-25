@@ -22,11 +22,17 @@ async function row(id: string) {
   return within(await screen.findByTestId(`session-${id}`));
 }
 
+/** The page opens on the Overview; rows with actions live under History. */
+function renderHistory(path = "/sessions") {
+  renderPage(<SessionsPage />, path);
+  fireEvent.click(screen.getByRole("button", { name: "History" }));
+}
+
 describe("delete", () => {
   for (const [code, message] of Object.entries(CONFLICT_MESSAGES)) {
     it(`explains a 409 ${code} in plain language`, async () => {
       mock.state.deleteConflicts["s-chat-1"] = code;
-      renderPage(<SessionsPage />, "/sessions");
+      renderHistory();
       fireEvent.click((await row("s-chat-1")).getByRole("button", { name: "Delete" }));
       const dialog = await screen.findByRole("dialog");
       fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
@@ -36,7 +42,7 @@ describe("delete", () => {
   }
 
   it("sends the snapshot identity and removes the row", async () => {
-    renderPage(<SessionsPage />, "/sessions");
+    renderHistory();
     fireEvent.click((await row("s-chat-2")).getByRole("button", { name: "Delete" }));
     fireEvent.click(
       within(await screen.findByRole("dialog")).getByRole("button", { name: "Delete" }),
@@ -51,54 +57,58 @@ describe("delete", () => {
 
 describe("prune", () => {
   it("shows the dry-run count before pruning", async () => {
-    renderPage(<SessionsPage />, "/sessions");
-    fireEvent.click(await screen.findByRole("button", { name: "Prune…" }));
+    renderHistory();
+    fireEvent.click(await screen.findByRole("button", { name: "Prune old sessions" }));
     const dialog = await screen.findByRole("dialog");
-    const pruneButton = within(dialog).getByRole("button", { name: /^Prune/ });
-    expect((pruneButton as HTMLButtonElement).disabled).toBe(true);
+    const pruneButton = () =>
+      within(dialog).getByRole("button", { name: "Prune" }) as HTMLButtonElement;
+    expect(within(dialog).queryByRole("button", { name: "Check" })).toBeNull();
 
     fireEvent.change(within(dialog).getByLabelText("Older than (days)"), {
       target: { value: "30" },
     });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Check" }));
-    expect((await within(dialog).findByTestId("prune-preview")).textContent).toContain(
-      "3 sessions would be removed",
+    expect(pruneButton().disabled).toBe(true);
+    await waitFor(() =>
+      expect(within(dialog).getByTestId("prune-preview").textContent).toContain(
+        "3 sessions would be removed",
+      ),
     );
     const dry = mock.callsTo("POST", "/api/sessions/prune");
-    expect(dry).toHaveLength(1);
-    expect(dry[0]?.body).toEqual({ older_than_days: 30, dry_run: true });
+    expect(dry.at(-1)?.body).toEqual({ older_than_days: 30, dry_run: true });
+    expect(dry.every((call) => (call.body as { dry_run: boolean }).dry_run)).toBe(true);
 
-    fireEvent.click(within(dialog).getByRole("button", { name: "Prune 3" }));
+    await waitFor(() => expect(pruneButton().disabled).toBe(false));
+    fireEvent.click(pruneButton());
     expect(await screen.findByText("Removed 3 sessions.")).toBeTruthy();
-    expect(mock.callsTo("POST", "/api/sessions/prune")[1]?.body).toEqual({
+    expect(mock.callsTo("POST", "/api/sessions/prune").at(-1)?.body).toEqual({
       older_than_days: 30,
       dry_run: false,
     });
   });
 
   it("refuses a day count that is not a whole number", async () => {
-    renderPage(<SessionsPage />, "/sessions");
-    fireEvent.click(await screen.findByRole("button", { name: "Prune…" }));
+    renderHistory();
+    fireEvent.click(await screen.findByRole("button", { name: "Prune old sessions" }));
     const dialog = await screen.findByRole("dialog");
     fireEvent.change(within(dialog).getByLabelText("Older than (days)"), {
       target: { value: "-4" },
     });
     expect(within(dialog).getByText("Enter a whole number of days.")).toBeTruthy();
     expect(
-      (within(dialog).getByRole("button", { name: "Check" }) as HTMLButtonElement).disabled,
+      (within(dialog).getByRole("button", { name: "Prune" }) as HTMLButtonElement).disabled,
     ).toBe(true);
   });
 });
 
 describe("browse", () => {
   it("resumes a session in Chat with its id", async () => {
-    renderPage(<SessionsPage />, "/sessions?profile=work");
+    renderHistory("/sessions?profile=work");
     fireEvent.click((await row("s-chat-1")).getByRole("button", { name: /Resume/ }));
     await waitFor(() => expect(currentLocation()).toBe("/chat?resume=s-chat-1&profile=work"));
   });
 
   it("filters by tab: chats exclude automation, automation includes only it", async () => {
-    renderPage(<SessionsPage />, "/sessions");
+    renderHistory();
     await row("s-chat-1");
     expect(screen.queryByTestId("session-s-cron-1")).toBeNull();
     expect(mock.callsTo("GET", "/api/sessions")[0]?.query.get("exclude_sources")).toBe(
@@ -117,31 +127,62 @@ describe("browse", () => {
     await row("s-cron-1");
   });
 
-  it("filters by an exact source", async () => {
-    renderPage(<SessionsPage />, "/sessions");
+  it("filters by one or several sources from the source menu", async () => {
+    renderHistory();
     await row("s-chat-1");
-    const select = screen.getByLabelText("Source");
-    await waitFor(() => expect(within(select).getByRole("option", { name: "web" })).toBeTruthy());
-    fireEvent.change(select, { target: { value: "web" } });
+    // Stats load before the menu lists anything.
+    await waitFor(() =>
+      expect(mock.callsTo("GET", "/api/sessions/stats").length).toBeGreaterThan(0),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Source" }));
+    const menu = await screen.findByRole("group", { name: "Chat sources" });
+    fireEvent.click(await within(menu).findByRole("checkbox", { name: /WEB/ }));
     await waitFor(() => expect(screen.queryByTestId("session-s-chat-1")).toBeNull());
     expect(mock.callsTo("GET", "/api/sessions").at(-1)?.query.get("source")).toBe("web");
+    expect(screen.getByRole("button", { name: "Source" }).textContent).toContain("WEB");
+
+    fireEvent.click(within(menu).getByRole("checkbox", { name: /CLI/ }));
+    await row("s-chat-1");
+    expect(mock.callsTo("GET", "/api/sessions").at(-1)?.query.get("sources")).toBe("web,cli");
+    expect(screen.getByRole("button", { name: "Source" }).textContent).toContain("2 sources");
+
+    fireEvent.click(within(menu).getByRole("button", { name: "Clear" }));
+    await waitFor(() =>
+      expect(mock.callsTo("GET", "/api/sessions").at(-1)?.query.get("exclude_sources")).toBe(
+        AUTOMATION_SOURCES.join(","),
+      ),
+    );
+  });
+
+  it("deletes the selected sessions one by one", async () => {
+    renderHistory();
+    fireEvent.click((await row("s-chat-1")).getByRole("checkbox"));
+    fireEvent.click((await row("s-chat-2")).getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "Delete 2 selected" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(screen.queryByTestId("session-s-chat-1")).toBeNull());
+    await waitFor(() => expect(screen.queryByTestId("session-s-chat-2")).toBeNull());
+    expect(mock.callsTo("DELETE", "/api/sessions/s-chat-1")).toHaveLength(1);
+    expect(mock.callsTo("DELETE", "/api/sessions/s-chat-2")).toHaveLength(1);
   });
 
   it("renders search snippets with marks and scrolls the opened hit to its first match", async () => {
     const scrolled = vi.fn();
     Element.prototype.scrollIntoView = scrolled;
-    renderPage(<SessionsPage />, "/sessions");
+    renderHistory();
     fireEvent.change(await screen.findByLabelText("Search sessions"), {
       target: { value: "parser" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    // Search runs as you type (after a short pause) and the results replace the list.
     const results = await screen.findByRole("list", { name: "Search results" });
+    expect(screen.queryByRole("list", { name: "Sessions" })).toBeNull();
     const mark = await within(results).findByText("parser", { selector: "mark" });
     expect(mark.tagName).toBe("MARK");
     // No HTML is injected: the snippet's surrounding text is plain text nodes.
     expect(results.innerHTML).not.toContain("&lt;mark&gt;");
 
-    fireEvent.click(within(results).getByRole("button"));
+    fireEvent.click(within(results).getByRole("button", { name: "Refactor the parser" }));
     const detail = await screen.findByTestId("detail-s-chat-1");
     expect(
       (await within(detail).findAllByText("parser", { selector: "mark" })).length,
@@ -150,16 +191,19 @@ describe("browse", () => {
   });
 
   it("shows the history with tool calls folded", async () => {
-    renderPage(<SessionsPage />, "/sessions");
+    renderHistory();
     fireEvent.click((await row("s-chat-1")).getByRole("button", { name: "Refactor the parser" }));
     const detail = await screen.findByTestId("detail-s-chat-1");
-    expect(await within(detail).findByText("Tool call: read_file")).toBeTruthy();
-    expect(within(detail).getByText("Result from read_file")).toBeTruthy();
+    const call = await within(detail).findByTestId("tool-call-t1");
+    expect(call.tagName).toBe("DETAILS");
+    expect(call.hasAttribute("open")).toBe(false);
+    expect(within(call).getByText("read_file")).toBeTruthy();
+    expect(within(detail).getByText("Tool: read_file")).toBeTruthy();
     expect(within(detail).getByRole("heading", { name: "Done" })).toBeTruthy();
   });
 
   it("renames with the mutation identity", async () => {
-    renderPage(<SessionsPage />, "/sessions");
+    renderHistory();
     fireEvent.click((await row("s-chat-2")).getByRole("button", { name: "Rename" }));
     const input = screen.getByLabelText("Session title");
     fireEvent.change(input, { target: { value: "Release plan v2" } });
@@ -175,10 +219,32 @@ describe("browse", () => {
   });
 
   it("shows the stats bar", async () => {
-    renderPage(<SessionsPage />, "/sessions");
+    renderHistory();
     const stats = await screen.findByLabelText("Session statistics");
     await waitFor(() =>
-      expect(within(stats).getByText("Sessions").nextSibling?.textContent).toBe("3"),
+      expect(within(stats).getByText("Total").nextSibling?.textContent).toBe("3"),
     );
+  });
+
+  it("opens on the Overview with recent cards; a card's title opens it in History", async () => {
+    renderPage(<SessionsPage />, "/sessions");
+    const recent = await screen.findByRole("list", { name: "Recent sessions" });
+    expect(screen.queryByTestId("session-s-chat-1")).toBeNull();
+    fireEvent.click(within(recent).getByRole("button", { name: "Refactor the parser" }));
+    expect(await screen.findByTestId("detail-s-chat-1")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "History" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+  });
+
+  it("shows the empty state for a filter with no sessions", async () => {
+    mock.state.sessions = [];
+    renderPage(<SessionsPage />, "/sessions");
+    expect(await screen.findByText("No sessions yet")).toBeTruthy();
+    // Nothing for the Overview: the view switch goes, the search box shows.
+    expect(screen.queryByRole("button", { name: "History" })).toBeNull();
+    expect(screen.getByLabelText("Search sessions")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Automation" }));
+    expect(await screen.findByText("No sessions in this filter")).toBeTruthy();
   });
 });

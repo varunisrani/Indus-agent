@@ -119,11 +119,25 @@ export function pluginRows(records: readonly PluginRecord[]): DesktopPluginRow[]
   }));
 }
 
-/** The Capabilities page's Desktop column (P24-26): the running loader's inventory, read when
- * asked (empty until the plugins started). */
-export const desktopPluginSource: DesktopPluginSource = {
-  list: async (): Promise<DesktopPluginRow[]> => pluginRows(running?.inventory() ?? []),
-};
+/**
+ * The Capabilities page's Desktop column (P24-26) over a loader: its inventory, read when asked
+ * (empty until the plugins started), and the on/off switch — the same stored choice Settings ›
+ * Plugins applies (`PluginLoader.setEnabled`, renderer-local: no IPC). Never rejects: with no
+ * loader yet the page's re-read simply shows the row unchanged.
+ */
+export function pluginSourceFor(
+  loader: () => Pick<PluginLoader, "inventory" | "setEnabled"> | null,
+): DesktopPluginSource {
+  return {
+    list: async (): Promise<DesktopPluginRow[]> => pluginRows(loader()?.inventory() ?? []),
+    setEnabled: async (id, on) => {
+      await loader()?.setEnabled(id, on);
+    },
+  };
+}
+
+/** The window's Desktop column source (the running loader). */
+export const desktopPluginSource: DesktopPluginSource = pluginSourceFor(() => running);
 
 /** Load the checked plugins main lists, and follow its changes (hot reload). */
 export async function startDesktopPlugins(deps: HostDeps): Promise<PluginLoader> {

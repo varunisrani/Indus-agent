@@ -1,11 +1,13 @@
-// One session's full history, rendered as light Markdown with each tool call folded away. When
-// opened from a search hit, the searched words are marked and the first mark scrolled into view.
+// One session's full history, rendered as light Markdown with each tool call folded away. Each
+// message sits on a tinted block by role (user ink, assistant green, tool amber). When opened from
+// a search hit, the searched words are marked and the first mark scrolled into view.
 
 import { useQuery } from "@tanstack/react-query";
+import { ChevronRight, LoaderCircle } from "lucide-react";
 import { Fragment, type ReactNode, useEffect, useRef } from "react";
 import { api } from "../../lib/api.ts";
+import { relativeTime } from "../../lib/format.ts";
 import type { SessionMessage } from "../../lib/restTypes.ts";
-import { QueryState } from "../../ui/controls.tsx";
 
 /** Render a server snippet whose matches are wrapped in `<mark>…</mark>`, as text (no HTML). */
 export function SnippetText({ snippet }: { snippet: string }) {
@@ -101,7 +103,10 @@ function MarkdownText({ text, term }: { text: string; term: string }) {
         const key = `${block.kind}-${i}`;
         if (block.kind === "code") {
           return (
-            <pre key={key} className="overflow-x-auto rounded-md bg-code p-2 font-mono text-xs">
+            <pre
+              key={key}
+              className="m-0 overflow-x-auto border border-line bg-wash p-2 font-mono text-[0.75rem]"
+            >
               <MarkedText text={block.text} term={term} />
             </pre>
           );
@@ -110,13 +115,13 @@ function MarkdownText({ text, term }: { text: string; term: string }) {
           // Message headings sit below the page (h1) and section (h2) levels.
           const Heading = HEADING_TAGS[Math.min(3, (block.level ?? 1) - 1)] ?? "h6";
           return (
-            <Heading key={key} className="text-sm font-semibold">
+            <Heading key={key} className="m-0 text-[0.875rem] font-semibold">
               <MarkedText text={block.text} term={term} />
             </Heading>
           );
         }
         return (
-          <p key={key} className="whitespace-pre-wrap">
+          <p key={key} className="m-0 whitespace-pre-wrap">
             <MarkedText text={block.text} term={term} />
           </p>
         );
@@ -125,27 +130,74 @@ function MarkdownText({ text, term }: { text: string; term: string }) {
   );
 }
 
+const ROLE_LOOK: Record<SessionMessage["role"], { box: string; label: string; name: string }> = {
+  user: { box: "bg-selected", label: "text-ink", name: "User" },
+  assistant: { box: "bg-success-wash", label: "text-success", name: "Assistant" },
+  system: { box: "bg-wash", label: "text-ink-muted", name: "System" },
+  tool: { box: "bg-warning-wash", label: "text-warning", name: "Tool" },
+};
+
+/** True when `text` contains any word of the search `term` (case-insensitive). */
+function matches(text: string, term: string): boolean {
+  const words = term.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return false;
+  const lower = text.toLowerCase();
+  return words.some((word) => lower.includes(word));
+}
+
+function MessageHead({ message, hit }: { message: SessionMessage; hit: boolean }) {
+  const look = ROLE_LOOK[message.role];
+  const name = message.role === "tool" ? `Tool: ${message.tool_name ?? "unknown"}` : look.name;
+  return (
+    <header className="flex items-baseline gap-2 text-[0.75rem]">
+      <span className={`font-semibold ${look.label}`}>{name}</span>
+      {message.timestamp ? (
+        <span className="text-ink-soft">{relativeTime(message.timestamp)}</span>
+      ) : null}
+      {hit ? (
+        <span className="type-badge border border-warning/40 bg-warning-wash px-1.5 text-warning">
+          match
+        </span>
+      ) : null}
+    </header>
+  );
+}
+
 function MessageView({ message, term }: { message: SessionMessage; term: string }) {
+  const look = ROLE_LOOK[message.role];
+  const hit = matches(message.content ?? "", term);
+  const ring = hit ? "ring-1 ring-warning/60" : "";
   if (message.role === "tool") {
     return (
-      <details className="rounded-md border border-line px-2 py-1 text-xs">
-        <summary className="cursor-pointer text-muted">
-          Result from {message.tool_name ?? "a tool"}
-        </summary>
-        <pre className="mt-1 overflow-x-auto font-mono whitespace-pre-wrap">
+      <article className={`flex flex-col gap-1.5 px-3 py-3 ${look.box} ${ring}`}>
+        <MessageHead message={message} hit={hit} />
+        <pre className="m-0 overflow-x-auto font-mono text-[0.8125rem] whitespace-pre-wrap text-ink">
           <MarkedText text={message.content ?? ""} term={term} />
         </pre>
-      </details>
+      </article>
     );
   }
   return (
-    <article className="flex flex-col gap-1">
-      <span className="text-xs font-medium text-muted uppercase">{message.role}</span>
+    <article className={`flex flex-col gap-1.5 px-3 py-3 text-[0.875rem] ${look.box} ${ring}`}>
+      <MessageHead message={message} hit={hit} />
       {message.content ? <MarkdownText text={message.content} term={term} /> : null}
       {(message.tool_calls ?? []).map((call) => (
-        <details key={call.id} className="rounded-md border border-line px-2 py-1 text-xs">
-          <summary className="cursor-pointer text-muted">Tool call: {call.name}</summary>
-          <pre className="mt-1 overflow-x-auto font-mono whitespace-pre-wrap">{call.arguments}</pre>
+        <details
+          key={call.id}
+          data-testid={`tool-call-${call.id}`}
+          className="group mt-2 border border-warning/20 bg-warning/5 text-[0.75rem]"
+        >
+          <summary className="flex min-h-[1.9375rem] cursor-pointer list-none items-center gap-2 px-3 py-1.5 font-mono text-warning">
+            <ChevronRight
+              aria-hidden="true"
+              className="size-3 transition-transform group-open:rotate-90"
+            />
+            <span className="flex-1">{call.name}</span>
+            <span className="text-warning/50">{call.id}</span>
+          </summary>
+          <pre className="m-0 overflow-x-auto border-t border-warning/20 px-3 py-2 font-mono whitespace-pre-wrap text-warning/80">
+            {call.arguments}
+          </pre>
         </details>
       ))}
     </article>
@@ -177,20 +229,30 @@ export function SessionDetail({
   return (
     <div
       ref={root}
-      className="flex flex-col gap-3 border-t border-line pt-3"
+      className="flex max-h-[37.5rem] flex-col gap-3 overflow-y-auto border-t border-line bg-canvas/50 p-4"
       data-testid={`detail-${sessionId}`}
     >
-      <QueryState
-        loading={messages.isPending}
-        error={messages.error}
-        empty={list.length === 0}
-        emptyText="This session has no messages."
-      >
-        {list.map((message, i) => (
+      {messages.isPending ? (
+        <div className="flex h-8 items-center justify-center" aria-busy="true">
+          <LoaderCircle
+            aria-label="Loading messages"
+            className="size-4 animate-spin text-ink-soft"
+          />
+        </div>
+      ) : messages.error ? (
+        <p role="alert" className="m-0 text-center text-[0.875rem] text-danger">
+          {messages.error instanceof Error
+            ? messages.error.message
+            : "The messages could not be loaded."}
+        </p>
+      ) : list.length === 0 ? (
+        <p className="m-0 text-center text-[0.875rem] text-ink-soft">No messages</p>
+      ) : (
+        list.map((message, i) => (
           // biome-ignore lint/suspicious/noArrayIndexKey: history rows are append-only and positional
           <MessageView key={i} message={message} term={highlight} />
-        ))}
-      </QueryState>
+        ))
+      )}
     </div>
   );
 }

@@ -40,6 +40,14 @@ function mount(connection: FakeConnection, extra: Partial<ComposerProps> = {}) {
   return { view, box, drafts, props };
 }
 
+/** The + menu's "Files…" row (W52-h: the attach button opens a menu). */
+async function openFiles() {
+  fireEvent.click(screen.getByRole("button", { name: "Attach" }));
+  await act(async () => {
+    fireEvent.click(screen.getByRole("menuitem", { name: "Files…" }));
+  });
+}
+
 function type(box: HTMLTextAreaElement, value: string) {
   fireEvent.change(box, { target: { value } });
 }
@@ -124,11 +132,12 @@ describe("composer", () => {
     expect(box.value).toBe("/usage ");
   });
 
-  it("the highlighted row's note uses the accent's ink, not the muted grey (W47 d)", async () => {
+  it("slash rows are grouped by catalogue category, plugin commands last (W52-h)", async () => {
     const connection = chatDaemon().on("complete.slash", () => ({
       items: [
         { text: "/agents", display: "/agents", meta: "background tasks" },
-        { text: "/usage", display: "/usage", meta: "token use" },
+        { text: "/deploy", display: "/deploy", meta: "a plugin command" },
+        { text: "/new", display: "/new", meta: "fresh session" },
       ],
     }));
     const { box } = mount(connection);
@@ -136,12 +145,56 @@ describe("composer", () => {
       type(box, "/");
     });
     const options = await screen.findAllByRole("option");
-    const note = (option: HTMLElement | undefined) =>
-      option?.querySelector("span:last-child")?.className.split(/\s+/) ?? [];
+    expect(options.map((o) => o.querySelector(".desk-popover-name")?.textContent)).toEqual([
+      "/new",
+      "/agents",
+      "/deploy",
+    ]);
     expect(options[0]?.getAttribute("aria-selected")).toBe("true");
-    expect(note(options[0])).toContain("text-accent-fg");
-    expect(note(options[0])).not.toContain("text-muted");
-    expect(note(options[1])).toContain("text-muted");
+    const heads = [...document.querySelectorAll(".desk-popover-head")].map((h) => h.textContent);
+    expect(heads[0]).toBe("Session");
+    expect(heads.at(-1)).toBe("Other");
+  });
+
+  it("@ in a fresh draft searches the draft's folder and shows an empty state (W52-h)", async () => {
+    const connection = chatDaemon().on("complete.path", () => ({ items: [] }));
+    const { box } = mount(connection, { sessionId: null, newSessionCwd: "/work/repo" });
+    await act(async () => {
+      type(box, "look at @src");
+    });
+    expect(connection.called("complete.path")[0]?.params).toMatchObject({
+      word: "@src",
+      cwd: "/work/repo",
+    });
+    expect(screen.getByRole("status").textContent).toContain("No matches");
+    fireEvent.keyDown(box, { key: "Escape" });
+    expect(screen.queryByText("No matches")).toBeNull();
+  });
+
+  it("a lone ? shows the help card; deleting it closes the card (W52-h)", () => {
+    const { box } = mount(chatDaemon());
+    type(box, "?");
+    const help = screen.getByRole("region", { name: "Composer help" });
+    expect(help.textContent).toContain("/resume");
+    expect(help.textContent).toContain("Hotkeys");
+    type(box, "");
+    expect(screen.queryByRole("region", { name: "Composer help" })).toBeNull();
+  });
+
+  it("the + menu inserts a URL reference and lists Paste image disabled (W52-h)", async () => {
+    const { box } = mount(chatDaemon(), { pickFiles: async () => [] });
+    fireEvent.click(screen.getByRole("button", { name: "Attach" }));
+    expect(
+      screen.getByRole("menuitem", { name: "Paste image" }).getAttribute("aria-disabled"),
+    ).toBe("true");
+    fireEvent.click(screen.getByRole("menuitem", { name: "URL…" }));
+    fireEvent.change(screen.getByLabelText("Address"), {
+      target: { value: "https://example.com/a" },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    });
+    expect(box.value).toBe("@url:https://example.com/a ");
   });
 
   it("a slow answer for an older word never replaces the newer list", async () => {
@@ -151,7 +204,14 @@ describe("composer", () => {
       (params) =>
         new Promise((resolve) => {
           releases.push(() =>
-            resolve({ items: [{ text: `${params.word}-match`, display: `${params.word}-match` }] }),
+            resolve({
+              items: [
+                {
+                  text: `${String(params.word).slice(1)}-match`,
+                  display: `${String(params.word).slice(1)}-match`,
+                },
+              ],
+            }),
           );
         }),
     );
@@ -198,9 +258,7 @@ describe("composer", () => {
       pickFiles: async () => ["/Users/me/Desktop/shot.png"],
       attachmentDeps: { uploadBytes, readLocalBytes, guardLocalPath },
     });
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Attach" }));
-    });
+    await openFiles();
     // and one pasted file (never has a path)
     const pasted = new File([new Uint8Array([9, 9])], "notes.txt", { type: "text/plain" });
     fireEvent.paste(box, { clipboardData: { files: [pasted] } });
@@ -229,9 +287,7 @@ describe("composer", () => {
       pickFiles: async () => ["/home/me/shot.png"],
       attachmentDeps: { uploadBytes, guardLocalPath, readLocalBytes: async () => new Uint8Array() },
     });
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Attach" }));
-    });
+    await openFiles();
     type(box, "this one");
     await act(async () => {
       fireEvent.keyDown(box, { key: "Enter" });
@@ -251,9 +307,7 @@ describe("composer", () => {
         },
       },
     });
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Attach" }));
-    });
+    await openFiles();
     type(box, "secret stuff");
     await act(async () => {
       fireEvent.keyDown(box, { key: "Enter" });

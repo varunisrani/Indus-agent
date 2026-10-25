@@ -86,3 +86,22 @@ export function failureActions(layer: FailureLayer, retryable: boolean): Failure
       return [...retry, "open-logs", "new-session"];
   }
 }
+
+/**
+ * Openings of the sentences our backend writes as a failed turn's reply (src/indus/core
+ * loop_texts). The error card already says the turn failed, so such a reply is shown in the card's
+ * details instead of as a second line above it (W52-g).
+ */
+const FAILURE_REPLIES: readonly string[] = [
+  "The model provider could not answer:",
+  "The turn stopped because of an internal error:",
+  "Your conversation could not be saved, so I stopped",
+  "The request kept being restarted, so the turn stopped.",
+  "The model kept calling a tool that does not exist",
+];
+
+/** Whether a reply's text is only the backend's failure sentence. */
+export function failureEcho(text: string): boolean {
+  const line = text.trim();
+  return line !== "" && FAILURE_REPLIES.some((opening) => line.startsWith(opening));
+}

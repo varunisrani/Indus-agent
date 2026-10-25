@@ -635,6 +635,12 @@ export interface CronJob {
   last_run_at: string | null;
   next_run_at: string | null;
   last_status: string | null;
+  /** Skills loaded before the prompt runs. */
+  skills?: string[];
+  /** `times` null = forever. */
+  repeat?: { times: number | null; completed: number };
+  last_error?: string | null;
+  paused_reason?: string | null;
 }
 
 export interface CronJobInput {
@@ -642,6 +648,15 @@ export interface CronJobInput {
   prompt: string;
   schedule: string;
   deliver: string;
+  skills?: string[];
+}
+
+/** A suggested job carried by a skill's front matter (`GET /api/cron/blueprints`). */
+export interface CronBlueprint {
+  skill: string;
+  description: string;
+  schedule: string | null;
+  prompt: string | null;
 }
 
 export interface DeliveryTarget {
@@ -704,6 +719,14 @@ export interface PluginsResponse {
 export interface PluginInstallRequest {
   url: string;
   sha: string;
+  /** Replace an existing install of the same plugin. */
+  force?: boolean;
+}
+
+export interface PluginInstallResponse {
+  ok: boolean;
+  name?: string;
+  sha?: string | null;
 }
 
 export type McpTransport = "stdio" | "http";

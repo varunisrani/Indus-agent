@@ -84,6 +84,8 @@ function ReviewHost(props: { context: PaneRenderContext }) {
     <ReviewPane
       repo={workspace}
       hidden={context.hidden}
+      onPreview={(path) => openPreview(context, { kind: "file", path })}
+      {...(context.close === undefined ? {} : { onClose: () => context.close?.() })}
       lastTurnBase={base}
       {...(connection === null || sessionId === null
         ? {}
@@ -110,6 +112,9 @@ export const WORKING_PANES: readonly PaneDefinition[] = [
         mode={context.mode}
         hidden={context.hidden}
         onPreview={(path) => openPreview(context, { kind: "file", path })}
+        {...(context.addToChat === undefined
+          ? {}
+          : { addToChat: (text: string) => context.addToChat?.(text) })}
       />
     ),
   },

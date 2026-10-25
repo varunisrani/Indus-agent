@@ -154,7 +154,8 @@ function tokenOffer(token: string): string[] {
 
 async function pageToken(page: Page, url: string): Promise<string> {
   await page.goto(`${url}/sessions`);
-  await expect(page.getByRole("textbox", { name: "Search sessions" })).toBeVisible();
+  // A fresh stack: the empty state shows once the session list has loaded (W52-a).
+  await expect(page.getByText("No sessions yet")).toBeVisible();
   return page.evaluate(() => window.__INDUS_SESSION_TOKEN__ ?? "");
 }
 

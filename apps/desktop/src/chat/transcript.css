@@ -1,0 +1,788 @@
+/* The transcript column (W52-g): prompt box, indented reply, markdown blocks, tool rows, the turn
+   activity line, the approval card stack, the error card and the composer's notice strip.
+   Desk tokens only; the few in-between shades are mixed from them so presets follow. */
+
+:root {
+  /* faint step text: tool rows, the activity line, "Running …" */
+  --tx-scaffold: color-mix(in srgb, var(--desk-fg-3) 45%, var(--desk-fg-4));
+  /* inset boxes inside an open tool row */
+  --tx-inset: color-mix(in srgb, var(--desk-stroke-2) 35%, var(--desk-bg-canvas));
+  /* quiet chip and secondary button fill */
+  --tx-chip: color-mix(in srgb, var(--desk-stroke-2) 55%, var(--desk-bg-canvas));
+  /* the reply's indent under its prompt */
+  --tx-indent: 12px;
+  --tx-rejected: color-mix(in srgb, var(--desk-danger) 65%, var(--desk-bg-canvas));
+}
+
+/* -- layout --------------------------------------------------------------------------------- */
+
+.transcript-scroll {
+  padding: 9px 24px 24px;
+  line-height: 1.4;
+}
+
+.turn > .msg-user {
+  margin: 0;
+  padding: 0;
+}
+
+.msg {
+  margin: 6px 0;
+}
+
+.msg-user .msg-bubble {
+  padding: 8px 12px;
+  border-color: var(--desk-stroke-2);
+  border-radius: 3px;
+  line-height: 20px;
+  max-height: calc(4 * 20px + 16px);
+  overflow: hidden;
+}
+
+/* the time a prompt was sent here, on hover only */
+.msg-user-meta {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  transform: translateY(-50%);
+  padding-left: 12px;
+  background: var(--desk-bg-bubble);
+  color: var(--desk-fg-4);
+  font-size: var(--desk-text-micro);
+  font-variant-numeric: tabular-nums;
+  opacity: 0;
+  transition: opacity var(--indus-duration-fast, 120ms);
+}
+
+.msg-user:hover .msg-user-meta,
+.msg-user:focus-within .msg-user-meta {
+  opacity: 1;
+}
+
+.msg-text > .md > :first-child {
+  margin-top: 0;
+}
+
+.msg-text > .md > :last-child {
+  margin-bottom: 0;
+}
+
+/* -- markdown blocks ------------------------------------------------------------------------ */
+
+.msg-assistant .md h1,
+.msg-assistant .md h2,
+.msg-assistant .md h3,
+.msg-assistant .md h4,
+.msg-assistant .md h5,
+.msg-assistant .md h6 {
+  color: var(--desk-fg-1);
+  font-size: 16.5px;
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 12px 0 6px;
+}
+
+.msg-assistant .md li {
+  margin: 4px 0;
+}
+
+.md-code-wrap {
+  position: relative;
+  margin: 12px 0;
+}
+
+.md-code-wrap > .md-code {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--desk-bg-code) 55%, var(--desk-bg-canvas));
+  line-height: 20px;
+}
+
+.md-code-copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  opacity: 0;
+  color: var(--desk-fg-3);
+}
+
+.md-code-wrap:hover .md-code-copy,
+.md-code-copy:focus-visible {
+  opacity: 1;
+}
+
+.msg-assistant .md-table {
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.msg-assistant .md-table th {
+  height: 36px;
+  padding: 0 10px;
+  background: transparent;
+}
+
+.msg-assistant .md-table td {
+  height: 31px;
+  padding: 0 10px;
+}
+
+/* -- timeline rail -------------------------------------------------------------------------- */
+
+.timeline {
+  display: flex;
+  align-items: center;
+}
+
+.timeline-marker {
+  width: 8px;
+  background: var(--desk-stroke-strong);
+}
+
+.timeline-marker[data-current] {
+  background: var(--desk-accent);
+}
+
+/* -- tool rows ------------------------------------------------------------------------------ */
+
+.tool-row {
+  margin: 4px 0;
+  color: var(--tx-scaffold);
+  font-size: var(--desk-text-small);
+  line-height: 20px;
+}
+
+.tool-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 20px;
+}
+
+.tool-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  margin-right: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tool-summary:focus-visible {
+  outline: 1px solid var(--desk-accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.tool-icon {
+  flex: none;
+}
+
+.tool-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-target {
+  font: inherit;
+}
+
+.tool-caret {
+  flex: none;
+  opacity: 0;
+  transform: rotate(-90deg);
+  transition:
+    opacity var(--indus-duration-fast, 120ms),
+    transform var(--indus-duration-fast, 120ms);
+}
+
+.tool-row:hover .tool-caret,
+.tool-summary:focus-visible .tool-caret {
+  opacity: 1;
+}
+
+.tool-summary[aria-expanded="true"] .tool-caret {
+  opacity: 1;
+  transform: none;
+}
+
+.tool-duration,
+.tool-progress {
+  flex: none;
+  color: var(--desk-fg-4);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tool-dismiss {
+  display: inline-flex;
+  padding: 2px;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--desk-fg-4);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.tool-row:hover .tool-dismiss,
+.tool-dismiss:focus-visible {
+  opacity: 0.8;
+}
+
+.tool-row[data-state="failed"] {
+  color: var(--tx-rejected);
+}
+
+.tool-spin {
+  animation: indus-spin 1200ms linear infinite;
+}
+
+@keyframes indus-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* open: a thin shell with the header line on a rule */
+.tool-row[data-open] {
+  border: 1px solid var(--desk-stroke-field);
+  border-radius: 5px;
+}
+
+.tool-row[data-open] .tool-head {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--desk-stroke-field);
+}
+
+.tool-row[data-open] .tool-dismiss {
+  opacity: 0.8;
+}
+
+.tool-body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+}
+
+.tool-copy {
+  flex: none;
+  opacity: 0;
+}
+
+.tool-row:hover .tool-copy,
+.tool-copy:focus-visible {
+  opacity: 0.8;
+}
+
+.tool-command {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--desk-stroke-2);
+  border-radius: 4px;
+  background: var(--tx-inset);
+  font-family: var(--indus-font-mono);
+  font-size: var(--desk-text-micro);
+}
+
+.tool-prompt {
+  color: var(--desk-accent);
+}
+
+.tool-command-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: inherit;
+}
+
+.tool-exit {
+  flex: none;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--tx-chip);
+  color: var(--desk-attention);
+  font-size: 9.5px;
+  line-height: 14px;
+}
+
+.tool-exit[data-zero] {
+  color: var(--desk-success);
+}
+
+.tool-section-label {
+  margin: 2px 0 4px;
+  color: var(--tx-scaffold);
+  font-size: 10.4px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.tool-pre {
+  margin: 0;
+  max-height: 320px;
+  overflow: auto;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: var(--tx-inset);
+  color: var(--desk-fg-2);
+  font-family: var(--indus-font-mono);
+  font-size: var(--desk-text-micro);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.tool-pre[data-failed] {
+  color: var(--desk-danger);
+}
+
+.tool-empty {
+  margin: 0;
+  color: var(--tx-scaffold);
+}
+
+.tool-image {
+  max-width: 100%;
+  border-radius: 4px;
+}
+
+/* -- turn activity: a dithered accent square and the seconds ------------------------------- */
+
+.turn-activity {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 16px;
+  margin-top: 6px;
+  color: var(--tx-scaffold);
+  font-size: var(--desk-text-small);
+}
+
+.turn-dither {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  background: repeating-conic-gradient(var(--desk-accent) 0 25%, transparent 0 50%) 0 0 / 2px 2px;
+  opacity: 0.6;
+  animation: turn-breathe 1600ms ease-in-out infinite;
+}
+
+@keyframes turn-breathe {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.turn-elapsed {
+  color: color-mix(in srgb, var(--desk-accent) 40%, var(--desk-bg-canvas));
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* while an approval waits, its "Running …" line speaks for the turn: no second line, no
+   pending row for the same call */
+.transcript-scroll:has([data-card="approval"]) .msg-assistant[data-streaming="true"] .turn-activity,
+.transcript-scroll:has([data-card="approval"]) .tool-row[data-state="running"] {
+  display: none;
+}
+
+/* -- card stack and approval card ------------------------------------------------------------ */
+
+.card-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 576px;
+  padding: 8px 0;
+}
+
+.card-stack[data-empty] {
+  padding: 0;
+}
+
+.card-activity {
+  margin: 0 0 2px;
+  font-size: var(--desk-text-small);
+  color: var(--tx-scaffold);
+  background:
+    linear-gradient(90deg, var(--tx-scaffold) 40%, var(--desk-fg-2) 50%, var(--tx-scaffold) 60%) 0 0
+    / 200% 100%;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: tx-shimmer 2400ms linear infinite;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes tx-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+.approval-card {
+  border: 1px solid var(--desk-stroke-3);
+  border-radius: 3px;
+  background: var(--desk-bg-canvas);
+  color: var(--desk-fg-1);
+}
+
+.approval-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 10px 0;
+  color: var(--desk-fg-2);
+  font-size: var(--desk-text-small);
+}
+
+.approval-head > svg {
+  flex: none;
+  color: var(--desk-fg-3);
+}
+
+.approval-why {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--desk-fg-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.approval-why::before {
+  content: "·";
+  margin-right: 8px;
+}
+
+.approval-counter {
+  margin-left: auto;
+  color: var(--desk-fg-3);
+  font-size: var(--desk-text-micro);
+  font-variant-numeric: tabular-nums;
+}
+
+.approval-command {
+  max-height: 160px;
+  margin: 0;
+  overflow: auto;
+  padding: 8px 10px;
+  color: var(--desk-fg-1);
+  font-family: var(--indus-font-mono);
+  font-size: var(--desk-text-small);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: text;
+}
+
+.approval-reason {
+  display: flex;
+  gap: 6px;
+  padding: 0 10px 6px;
+}
+
+.approval-reason .desk-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.approval-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 4px 8px 8px;
+}
+
+.approval-reject,
+.approval-more,
+.approval-run {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 2px;
+  font: inherit;
+  font-size: var(--desk-text-ui);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.approval-reject {
+  background: transparent;
+  color: var(--desk-fg-3);
+  font-weight: 400;
+}
+
+.approval-reject:hover {
+  color: var(--desk-fg-1);
+}
+
+.approval-more {
+  background: var(--tx-chip);
+  color: var(--desk-fg-1);
+}
+
+.approval-more:hover {
+  background: color-mix(in srgb, var(--desk-stroke-2) 85%, var(--desk-bg-canvas));
+}
+
+.approval-run {
+  padding: 0 10px;
+  background: var(--desk-accent);
+  color: var(--desk-accent-fg);
+}
+
+.approval-run:hover {
+  background: color-mix(in srgb, var(--desk-accent) 88%, var(--desk-fg-1));
+}
+
+.approval-enter {
+  opacity: 0.6;
+}
+
+.approval-reject:focus-visible,
+.approval-more:focus-visible,
+.approval-run:focus-visible {
+  outline: 1px solid var(--desk-accent);
+  outline-offset: 1px;
+}
+
+.approval-note {
+  margin: 0;
+  padding: 0 10px 8px;
+  color: var(--desk-fg-3);
+  font-size: var(--desk-text-micro);
+}
+
+.approval-confirm {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: var(--z-overlay, 50);
+  width: min(440px, calc(100% - 32px));
+  transform: translate(-50%, -50%);
+  padding: 16px;
+  border: 1px solid var(--desk-stroke-3);
+  border-radius: var(--desk-radius-card);
+  background: var(--desk-bg-raised);
+  color: var(--desk-fg-1);
+  box-shadow: var(--desk-shadow-card);
+}
+
+.approval-confirm-title {
+  margin: 0 0 6px;
+  font-size: var(--desk-text-nav);
+  font-weight: 600;
+}
+
+.approval-confirm-body {
+  margin: 0 0 10px;
+  color: var(--desk-fg-2);
+  font-size: var(--desk-text-ui);
+}
+
+.approval-confirm-command {
+  margin-bottom: 8px;
+  border: 1px solid var(--desk-stroke-2);
+  border-radius: 4px;
+  background: var(--tx-inset);
+}
+
+.approval-confirm .approval-actions {
+  padding: 0;
+}
+
+/* -- error card ------------------------------------------------------------------------------ */
+
+.error-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+  margin-bottom: 6px;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--desk-danger) 35%, var(--desk-bg-canvas));
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--desk-danger) 7%, var(--desk-bg-canvas));
+  color: color-mix(in srgb, var(--desk-danger) 90%, var(--desk-fg-2));
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.error-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.error-title {
+  flex: 1;
+  margin: 0;
+  font-weight: 500;
+}
+
+.error-text {
+  margin: 0;
+}
+
+.error-dismiss {
+  display: inline-flex;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  opacity: 0.7;
+  cursor: pointer;
+}
+
+.error-dismiss:hover,
+.error-dismiss:focus-visible {
+  opacity: 1;
+}
+
+.error-details summary {
+  width: fit-content;
+  font-size: 11.5px;
+  opacity: 0.7;
+  cursor: pointer;
+}
+
+.error-details pre {
+  margin: 4px 0 0;
+  font-family: var(--indus-font-mono);
+  font-size: 11.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+
+.error-card .error-actions {
+  gap: 6px;
+  margin-top: 0;
+}
+
+.error-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 9px;
+  border: 1px solid color-mix(in srgb, var(--desk-danger) 30%, var(--desk-bg-canvas));
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.error-pill:hover {
+  background: color-mix(in srgb, var(--desk-danger) 10%, transparent);
+}
+
+/* -- composer notice strip ------------------------------------------------------------------- */
+
+.notice-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 26px;
+  margin: 0 3px -1px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--desk-stroke-1) 60%, var(--desk-stroke-strong));
+  border-bottom: 0;
+  border-radius: 5px 5px 0 0;
+  background: var(--desk-bg-input);
+  font-size: var(--desk-text-small);
+  white-space: nowrap;
+}
+
+.notice-strip-icon {
+  display: inline-flex;
+  color: var(--desk-fg-3);
+}
+
+.notice-strip-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.notice-strip-lead {
+  color: color-mix(in srgb, var(--desk-fg-1) 92%, transparent);
+  font-weight: 500;
+}
+
+.notice-strip-hint {
+  margin-left: 6px;
+  color: var(--desk-fg-3);
+}
+
+.notice-strip-action {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--desk-fg-1);
+  font: inherit;
+  cursor: pointer;
+}
+
+.notice-strip-action[data-quiet] {
+  color: var(--desk-fg-3);
+}
+
+.notice-strip-action:hover {
+  text-decoration: underline;
+}
+
+/* -- placement in the column (after the blocks so these win) ------------------------------- */
+
+.msg-assistant,
+.turn > .error-card,
+.turn > .msg-notice,
+.turn > .msg-async {
+  margin-left: var(--tx-indent);
+}
+
+.msg-text + .msg-text,
+.msg-text + .tool-row,
+.tool-row + .msg-text {
+  margin-top: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .turn-dither,
+  .card-activity,
+  .tool-spin {
+    animation: none;
+  }
+}

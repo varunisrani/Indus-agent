@@ -125,6 +125,49 @@ export function offlineCompletions(text: string): CompletionItem[] {
   return items.sort((a, b) => a.text.localeCompare(b.text));
 }
 
+/** Catalogue categories in their first-appearance order (the drawer's group order). */
+export const CATEGORY_ORDER: readonly string[] = [
+  ...new Set(OFFLINE_CATALOG.map((command) => command.category)),
+];
+
+/** The catalogue category of a command name or alias (`/reset` → `session`), or null. */
+export function categoryOf(word: string): string | null {
+  const name = normalizeName(word.split(/\s+/)[0] ?? "");
+  return BY_KEY.get(name)?.category ?? (LOCAL.has(name) ? "session" : null);
+}
+
+const CATALOG_INDEX = new Map(OFFLINE_CATALOG.map((command, index) => [command.name, index]));
+
+/** Aliases whose command is listed too (`/reset` beside `/new`) leave the list: one row each. */
+export function dropListedAliases(items: readonly CompletionItem[]): CompletionItem[] {
+  const names = new Set(items.map((item) => normalizeName(item.text.split(/\s+/)[0] ?? "")));
+  return items.filter((item) => {
+    const name = normalizeName(item.text.split(/\s+/)[0] ?? "");
+    const canonical = canonicalName(name);
+    return canonical === name || !names.has(canonical);
+  });
+}
+
+/** Slash candidates grouped by category (catalogue order), then in catalogue order; unknown last. */
+export function orderByCategory(items: readonly CompletionItem[]): CompletionItem[] {
+  const rank = (item: CompletionItem): [number, number] => {
+    const category = categoryOf(item.text);
+    const group = category === null ? -1 : CATEGORY_ORDER.indexOf(category);
+    const name = canonicalName(item.text.split(/\s+/)[0] ?? "");
+    return [group === -1 ? CATEGORY_ORDER.length : group, CATALOG_INDEX.get(name) ?? 1e6];
+  };
+  return items
+    .map((item, index) => ({ item, index, rank: rank(item) }))
+    .sort((a, b) => a.rank[0] - b.rank[0] || a.rank[1] - b.rank[1] || a.index - b.index)
+    .map((entry) => entry.item);
+}
+
+/** The catalogue's description of a command, cut at its first clause (for short lists). */
+export function shortDescription(name: string): string {
+  const text = BY_KEY.get(normalizeName(name))?.description ?? "";
+  return text.split(/[;—]/)[0]?.trim() ?? "";
+}
+
 /** A command line, not a path such as `/usr/bin/env` and not a lone `/`. */
 export function isSlashLine(text: string): boolean {
   const trimmed = text.trim();

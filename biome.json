@@ -10,6 +10,7 @@
       "**",
       "!**/dist",
       "!**/node_modules",
+      "!.agents",
       "!packages/protocol/src/generated",
       "!src/indus/foundation/config/defaults.json",
       "!src/indus/learning/skills/shipped_frontmatter.json",

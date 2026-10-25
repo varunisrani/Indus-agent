@@ -5,13 +5,11 @@
 // shows the other profile's list at once and keeps this one.
 
 import {
-  Archive,
-  ArchiveRestore,
   FolderPlus,
   GitBranch,
-  PictureInPicture2,
+  ListFilter,
+  MessageSquareDashed,
   Pin,
-  PinOff,
   Plus,
   Search,
   X,
@@ -19,6 +17,7 @@ import {
 import {
   type FormEvent,
   type ReactNode,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -26,9 +25,21 @@ import {
   useSyncExternalStore,
 } from "react";
 import { desktopBridge } from "../app/bridge.ts";
+import { copyText } from "../app/clipboard.ts";
 import { Loader } from "../app/Loader.tsx";
 import { type MessageKey, type Translate, useT } from "../i18n/index.tsx";
 import { browserStorage, type StorageLike } from "../profiles/storageFamilies.ts";
+import {
+  Button,
+  EmptyState,
+  GroupGlyph,
+  MenuLabel,
+  MenuPanel,
+  MenuRow,
+  MenuSeparator,
+  SmallDialog,
+  useHoverTip,
+} from "../ui/components.tsx";
 import {
   groupByProject,
   type ListDir,
@@ -38,6 +49,7 @@ import {
   ProjectStore,
   scanRepos,
 } from "./projects.ts";
+import { SessionRowMenu } from "./SessionRowMenu.tsx";
 import {
   type ApiRequest,
   type ListView,
@@ -150,7 +162,8 @@ export function relativeTime(t: Translate, then: number, now: number): string {
   return t("sidebar.time.days", { n: Math.floor(hours / 24) });
 }
 
-function rowTitle(t: Translate, row: SessionRow): string {
+/** A row's display title (also the chat tab's label, W51-b). */
+export function rowTitle(t: Translate, row: SessionRow): string {
   return row.title ?? row.preview ?? t("sidebar.untitled");
 }
 
@@ -161,110 +174,150 @@ function useStore<S>(store: { subscribe(listener: () => void): () => void; getSt
   );
 }
 
-function SessionItem(props: {
-  row: SessionRow;
-  list: SessionListStore;
-  activeSessionId: string | null;
-  running: boolean;
-  now: number;
-  onOpen(id: string): void;
-  onPopOut?: ((id: string) => void) | undefined;
-}) {
-  const t = useT();
-  const { row, list } = props;
-  const title = rowTitle(t, row);
-  const current = props.activeSessionId !== null && row.ids.includes(props.activeSessionId);
-  const unread = list.unread.isUnread(row, props.activeSessionId);
-  const running = props.running || row.active;
-  return (
-    <li className="session-row" data-current={current ? "true" : undefined}>
-      <button
-        type="button"
-        className="session-open"
-        aria-current={current ? "page" : undefined}
-        onClick={() => props.onOpen(row.id)}
-        title={row.cwd ?? undefined}
-      >
-        <span className="session-dots" aria-hidden="true">
-          {running ? (
-            <span className="session-dot" data-kind="running" />
-          ) : unread ? (
-            <span className="session-dot" data-kind="unread" />
-          ) : null}
-        </span>
-        {row.branch && <GitBranch aria-hidden="true" size={12} className="session-branch" />}
-        <span className="session-title">{title}</span>
-        {unread && <span className="sr-only">{t("sidebar.unread")}</span>}
-        {running && <span className="sr-only">{t("sidebar.running")}</span>}
-        {row.branch && <span className="sr-only">{t("sidebar.branch")}</span>}
-        <span className="session-time">{relativeTime(t, row.lastActive, props.now)}</span>
-      </button>
-      <span className="session-actions">
-        {props.onPopOut !== undefined && (
-          <button
-            type="button"
-            className="icon-button"
-            aria-label={t("sidebar.popOut", { title })}
-            title={t("sidebar.popOut", { title })}
-            onClick={() => props.onPopOut?.(row.id)}
-          >
-            <PictureInPicture2 aria-hidden="true" size={14} />
-          </button>
-        )}
-        <button
-          type="button"
-          className="icon-button"
-          aria-label={t(row.pinned ? "sidebar.unpin" : "sidebar.pin", { title })}
-          title={t(row.pinned ? "sidebar.unpin" : "sidebar.pin", { title })}
-          aria-pressed={row.pinned}
-          onClick={() => void list.setPinned(row, !row.pinned)}
-        >
-          {row.pinned ? (
-            <PinOff aria-hidden="true" size={14} />
-          ) : (
-            <Pin aria-hidden="true" size={14} />
-          )}
-        </button>
-        <button
-          type="button"
-          className="icon-button"
-          aria-label={t(row.archived ? "sidebar.unarchive" : "sidebar.archive", { title })}
-          title={t(row.archived ? "sidebar.unarchive" : "sidebar.archive", { title })}
-          onClick={() => void list.setArchived(row, !row.archived)}
-        >
-          {row.archived ? (
-            <ArchiveRestore aria-hidden="true" size={14} />
-          ) : (
-            <Archive aria-hidden="true" size={14} />
-          )}
-        </button>
-      </span>
-    </li>
-  );
-}
-
-function RowList(props: {
-  rows: readonly SessionRow[];
+/** What a row asks the sidebar to do (the delete confirmation lives at the sidebar level). */
+interface RowHost {
   list: SessionListStore;
   running: ReadonlySet<string>;
   activeSessionId: string | null;
   now: number;
   onOpen(id: string): void;
   onPopOut?: ((id: string) => void) | undefined;
-  label: string;
-}) {
+  onDelete(row: SessionRow): void;
+}
+
+function SessionItem(props: Omit<RowHost, "running"> & { row: SessionRow; running: boolean }) {
+  const t = useT();
+  const { row, list } = props;
+  const title = rowTitle(t, row);
+  const current = props.activeSessionId !== null && row.ids.includes(props.activeSessionId);
+  const unread = list.unread.isUnread(row, props.activeSessionId);
+  const running = props.running || row.active;
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [renaming, setRenaming] = useState(false);
+  const button = useRef<HTMLButtonElement>(null);
+  const titleRef = useRef<HTMLSpanElement>(null);
+  const [truncated, setTruncated] = useState(false);
+  const tip = useHoverTip(truncated ? title : null);
+  const closeMenu = useCallback(() => setMenu(null), []);
+  const openMenuAtRow = () => {
+    const rect = button.current?.getBoundingClientRect();
+    setMenu({ x: (rect?.left ?? 0) + 24, y: rect?.bottom ?? 0 });
+  };
+  if (renaming) {
+    return (
+      <li className="session-row" data-current={current ? "true" : undefined}>
+        <input
+          className="session-rename"
+          aria-label={t("sidebar.renameField")}
+          defaultValue={row.title ?? title}
+          // biome-ignore lint/a11y/noAutofocus: the person just asked to rename this row
+          autoFocus
+          onFocus={(event) => event.currentTarget.select()}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              void list.setTitle(row, event.currentTarget.value);
+              setRenaming(false);
+            } else if (event.key === "Escape") {
+              event.preventDefault();
+              setRenaming(false);
+            }
+          }}
+          onBlur={() => setRenaming(false)}
+        />
+      </li>
+    );
+  }
   return (
-    <ul className="session-list" aria-label={props.label}>
-      {props.rows.map((row) => (
+    <li className="session-row" data-current={current ? "true" : undefined}>
+      <button
+        ref={button}
+        type="button"
+        className="session-open"
+        aria-current={current ? "page" : undefined}
+        aria-haspopup="menu"
+        onClick={(event) => {
+          // Shift-click pins (or unpins) without opening the chat
+          if (event.shiftKey) {
+            void list.setPinned(row, !row.pinned);
+            return;
+          }
+          props.onOpen(row.id);
+        }}
+        onContextMenu={(event) => {
+          // ours instead of Electron's native menu (a prevented event never reaches main)
+          event.preventDefault();
+          setMenu({ x: event.clientX, y: event.clientY });
+        }}
+        onKeyDown={(event) => {
+          if ((event.key === "F10" && event.shiftKey) || event.key === "ContextMenu") {
+            event.preventDefault();
+            openMenuAtRow();
+          }
+        }}
+        onMouseEnter={(event) => {
+          const node = titleRef.current;
+          setTruncated(node !== null && node.scrollWidth > node.clientWidth);
+          tip.bind.onMouseEnter(event);
+        }}
+        onMouseLeave={tip.bind.onMouseLeave}
+      >
+        <span className="session-dots" aria-hidden="true">
+          <span
+            className="session-dot"
+            data-kind={running ? "running" : unread ? "unread" : "idle"}
+          />
+        </span>
+        {row.branch && <GitBranch aria-hidden="true" size={12} className="session-branch" />}
+        <span ref={titleRef} className="session-title">
+          {title}
+        </span>
+        {unread && <span className="sr-only">{t("sidebar.unread")}</span>}
+        {running && <span className="sr-only">{t("sidebar.running")}</span>}
+        {row.branch && <span className="sr-only">{t("sidebar.branch")}</span>}
+        <span className="session-time">{relativeTime(t, row.lastActive, props.now)}</span>
+      </button>
+      {truncated ? tip.tip : null}
+      {menu !== null && (
+        <SessionRowMenu
+          x={menu.x}
+          y={menu.y}
+          title={title}
+          pinned={row.pinned}
+          unread={unread}
+          archived={row.archived}
+          onClose={closeMenu}
+          actions={{
+            popOut: props.onPopOut === undefined ? undefined : () => props.onPopOut?.(row.id),
+            rename: () => setRenaming(true),
+            togglePin: () => void list.setPinned(row, !row.pinned),
+            toggleUnread: () => (unread ? list.markSeen(row) : list.markUnread(row)),
+            copyId: () => void copyText(row.durableId),
+            toggleArchive: () => void list.setArchived(row, !row.archived),
+            remove: () => props.onDelete(row),
+          }}
+        />
+      )}
+    </li>
+  );
+}
+
+function RowList(
+  props: Omit<RowHost, "running"> & {
+    rows: readonly SessionRow[];
+    running: ReadonlySet<string>;
+    label: string;
+  },
+) {
+  const { rows, label, running, ...host } = props;
+  return (
+    <ul className="session-list" aria-label={label}>
+      {rows.map((row) => (
         <SessionItem
           key={row.durableId}
+          {...host}
           row={row}
-          list={props.list}
-          running={row.ids.some((id) => props.running.has(id))}
-          activeSessionId={props.activeSessionId}
-          now={props.now}
-          onOpen={props.onOpen}
-          onPopOut={props.onPopOut}
+          running={row.ids.some((id) => running.has(id))}
         />
       ))}
     </ul>
@@ -274,9 +327,12 @@ function RowList(props: {
 function Section(props: { title: string; actions?: ReactNode; children: ReactNode }) {
   return (
     <section className="sidebar-section" aria-label={props.title}>
-      <header className="sidebar-section-header">
+      <header className="sidebar-section-header desk-section-label">
+        <GroupGlyph />
         <h2>{props.title}</h2>
-        {props.actions}
+        {props.actions !== undefined && (
+          <span className="desk-section-label-actions">{props.actions}</span>
+        )}
       </header>
       {props.children}
     </section>
@@ -407,6 +463,10 @@ export function Sidebar(props: SidebarProps) {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const [creating, setCreating] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  const [deleting, setDeleting] = useState<SessionRow | null>(null);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const filterButton = useRef<HTMLButtonElement>(null);
+  const closeFilter = useCallback(() => setFilterOpen(false), []);
 
   // load the profile's list; refresh after turns end
   useEffect(() => {
@@ -478,12 +538,20 @@ export function Sidebar(props: SidebarProps) {
     now,
     onOpen: openSession,
     onPopOut: props.onPopOut,
+    onDelete: (row: SessionRow) => setDeleting(row),
+  };
+  const confirmDelete = async () => {
+    const row = deleting;
+    setDeleting(null);
+    if (row === null) return;
+    const open = props.activeSessionId !== null && row.ids.includes(props.activeSessionId);
+    if ((await list.remove(row)) && open) props.onNewChat();
   };
 
   return (
     <div className="sidebar-sessions">
-      <div className="sidebar-search">
-        <Search aria-hidden="true" size={14} />
+      <div className="sidebar-search desk-search">
+        <Search aria-hidden="true" size={13} />
         <input
           type="search"
           value={query}
@@ -505,25 +573,6 @@ export function Sidebar(props: SidebarProps) {
           </button>
         )}
       </div>
-      <div
-        className="segmented sidebar-views"
-        role="radiogroup"
-        aria-label={t("sidebar.view.label")}
-      >
-        {(["live", "archived"] as const).map((view) => (
-          // biome-ignore lint/a11y/useSemanticElements: a segmented control, not a native radio
-          <button
-            key={view}
-            type="button"
-            role="radio"
-            aria-checked={state.view === view}
-            className="segmented-option segmented-text"
-            onClick={() => list.setView(view)}
-          >
-            {t(VIEW_KEYS[view])}
-          </button>
-        ))}
-      </div>
       {state.error !== null && (
         <p className="sidebar-error" role="alert">
           {t("sidebar.loadFailed")}{" "}
@@ -537,34 +586,32 @@ export function Sidebar(props: SidebarProps) {
         {trimmed !== "" ? (
           <Section title={t("sidebar.results")}>
             {results.length === 0 ? (
-              <p className="sidebar-note">{hits === null ? <Loader /> : t("sidebar.noResults")}</p>
+              hits === null ? (
+                <Loader />
+              ) : (
+                // W52-l: a quiet caption, no icon (reference look)
+                <p className="sidebar-no-match">{t("sidebar.noMatch", { query: trimmed })}</p>
+              )
             ) : (
               <RowList rows={results} label={t("sidebar.results")} {...common} />
             )}
           </Section>
         ) : (
           <>
-            {pinned.length > 0 && (
+            {(pinned.length > 0 || (state.view === "live" && state.rows.length > 0)) && (
               <Section title={t("sidebar.pinned")}>
-                <RowList rows={pinned} label={t("sidebar.pinned")} {...common} />
+                {pinned.length > 0 ? (
+                  <RowList rows={pinned} label={t("sidebar.pinned")} {...common} />
+                ) : (
+                  <p className="sidebar-hint">
+                    <Pin aria-hidden="true" size={12} />
+                    {t("sidebar.pinnedHint")}
+                  </p>
+                )}
               </Section>
             )}
-            {state.view === "live" && (
-              <Section
-                title={t("sidebar.projects")}
-                actions={
-                  <button
-                    type="button"
-                    className="icon-button"
-                    aria-label={t("sidebar.project.new")}
-                    title={t("sidebar.project.new")}
-                    aria-expanded={creating}
-                    onClick={() => setCreating(!creating)}
-                  >
-                    <FolderPlus aria-hidden="true" size={14} />
-                  </button>
-                }
-              >
+            {state.view === "live" && (creating || grouping.projects.length > 0) && (
+              <Section title={t("sidebar.projects")}>
                 {creating && (
                   <NewProjectForm
                     projects={projectStore}
@@ -631,10 +678,93 @@ export function Sidebar(props: SidebarProps) {
             )}
             <Section
               title={state.view === "archived" ? t("sidebar.view.archived") : t("sidebar.chats")}
+              actions={
+                <>
+                  {state.view === "live" && (state.rows.length > 0 || state.loading) && (
+                    <button
+                      type="button"
+                      className="desk-icon-btn"
+                      data-size="sm"
+                      aria-label={t("sidebar.project.new")}
+                      aria-expanded={creating}
+                      onClick={() => setCreating(!creating)}
+                    >
+                      <FolderPlus aria-hidden="true" />
+                    </button>
+                  )}
+                  <span className="desk-menu-root">
+                    <button
+                      ref={filterButton}
+                      type="button"
+                      className="desk-icon-btn"
+                      data-size="sm"
+                      aria-label={t("sidebar.filter")}
+                      aria-haspopup="menu"
+                      aria-expanded={filterOpen}
+                      onClick={() => setFilterOpen(!filterOpen)}
+                    >
+                      <ListFilter aria-hidden="true" />
+                    </button>
+                    {filterOpen && (
+                      <MenuPanel
+                        label={t("sidebar.filter")}
+                        onClose={closeFilter}
+                        keepOpenFor={filterButton}
+                        className="sidebar-filter-menu"
+                      >
+                        <MenuLabel>{t("sidebar.view.label")}</MenuLabel>
+                        {(["live", "archived"] as const).map((view) => (
+                          <MenuRow
+                            key={view}
+                            kind="radio"
+                            label={t(VIEW_KEYS[view])}
+                            checked={state.view === view}
+                            onSelect={() => {
+                              setFilterOpen(false);
+                              list.setView(view);
+                            }}
+                          />
+                        ))}
+                        <MenuSeparator />
+                        <MenuLabel>{t("sidebar.sort.label")}</MenuLabel>
+                        <MenuRow
+                          kind="radio"
+                          label={t("sidebar.sort.recent")}
+                          checked
+                          onSelect={() => setFilterOpen(false)}
+                        />
+                      </MenuPanel>
+                    )}
+                  </span>
+                </>
+              }
             >
               {(state.view === "archived" ? state.rows : grouping.chats).length === 0 &&
               !state.loading ? (
-                <p className="sidebar-note">{t("sidebar.empty")}</p>
+                state.rows.length === 0 ? (
+                  <EmptyState
+                    icon={<MessageSquareDashed aria-hidden="true" size={18} />}
+                    title={
+                      state.view === "archived" ? t("sidebar.emptyArchived") : t("sidebar.empty")
+                    }
+                    action={
+                      state.view === "live" && !creating ? (
+                        <button
+                          type="button"
+                          className="desk-btn sidebar-empty-action"
+                          data-variant="ghost"
+                          data-size="sm"
+                          onClick={() => setCreating(true)}
+                        >
+                          <Plus aria-hidden="true" size={13} />
+                          {t("sidebar.project.new")}
+                        </button>
+                      ) : undefined
+                    }
+                  />
+                ) : (
+                  <p className="sidebar-note">{t("sidebar.allInProjects")}</p>
+                )
               ) : (
                 <RowList
                   rows={state.view === "archived" ? state.rows : grouping.chats}
@@ -648,6 +778,23 @@ export function Sidebar(props: SidebarProps) {
           </>
         )}
       </div>
+      {deleting !== null && (
+        <SmallDialog
+          title={t("sidebar.delete.title")}
+          description={t("sidebar.delete.body", { title: rowTitle(t, deleting) })}
+          onClose={() => setDeleting(null)}
+          actions={
+            <>
+              <Button variant="ghost" onClick={() => setDeleting(null)}>
+                {t("sidebar.cancel")}
+              </Button>
+              <Button variant="danger" onClick={() => void confirmDelete()}>
+                {t("sidebar.delete.confirm")}
+              </Button>
+            </>
+          }
+        />
+      )}
     </div>
   );
 }

@@ -70,26 +70,33 @@ async function card() {
   return within(await screen.findByTestId("platform-telegram"));
 }
 
+/** The platform's fields live in the Configure dialog opened from its row. */
+async function configure() {
+  const row = await card();
+  fireEvent.click(row.getByRole("button", { name: "Configure" }));
+  return within(await screen.findByRole("dialog", { name: "Configure Telegram" }));
+}
+
 describe("channels page", () => {
   it("starts every credential input empty and shows only the masked preview", async () => {
     renderPage(<ChannelsPage />, "/channels");
-    const row = await card();
-    const token = row.getByLabelText(/^TELEGRAM_BOT_TOKEN/) as HTMLInputElement;
+    expect((await card()).getByText("Connected")).toBeTruthy();
+    const dialog = await configure();
+    const token = dialog.getByLabelText(/^TELEGRAM_BOT_TOKEN/) as HTMLInputElement;
     expect(token.type).toBe("password");
     expect(token.value).toBe("");
-    expect(row.getByText(/Stored \(1234…ab\)\. Leave blank to keep it\./)).toBeTruthy();
+    expect(dialog.getByText(/Stored \(1234…ab\)\. Leave blank to keep it\./)).toBeTruthy();
     // Settings are not secrets and show their value.
-    expect((row.getByLabelText(/^TELEGRAM_ALLOWED_USERS/) as HTMLInputElement).value).toBe("42");
-    expect(row.getByText("Connected")).toBeTruthy();
+    expect((dialog.getByLabelText(/^TELEGRAM_ALLOWED_USERS/) as HTMLInputElement).value).toBe("42");
   });
 
   it("sends only the fields that were typed into", async () => {
     renderPage(<ChannelsPage />, "/channels");
-    const row = await card();
-    fireEvent.change(row.getByLabelText(/^TELEGRAM_HOME_CHANNEL/), {
+    const dialog = await configure();
+    fireEvent.change(dialog.getByLabelText(/^TELEGRAM_HOME_CHANNEL/), {
       target: { value: "-100200" },
     });
-    fireEvent.click(row.getByRole("button", { name: "Save" }));
+    fireEvent.click(dialog.getByRole("button", { name: "Save" }));
     await waitFor(() =>
       expect(mock.callsTo("PUT", "/api/messaging/platforms/telegram")).toHaveLength(1),
     );
@@ -101,12 +108,15 @@ describe("channels page", () => {
 
   it("clears the typed credential after a save and never shows it", async () => {
     renderPage(<ChannelsPage />, "/channels");
-    const row = await card();
     const value = ["typed", "bot", "value"].join("-");
-    const token = row.getByLabelText(/^TELEGRAM_BOT_TOKEN/) as HTMLInputElement;
+    const dialog = await configure();
+    const token = dialog.getByLabelText(/^TELEGRAM_BOT_TOKEN/) as HTMLInputElement;
     fireEvent.change(token, { target: { value } });
-    fireEvent.click(row.getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(token.value).toBe(""));
+    fireEvent.click(dialog.getByRole("button", { name: "Save" }));
+    // A successful save closes the dialog; opened again, the credential input starts empty.
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    const again = await configure();
+    expect((again.getByLabelText(/^TELEGRAM_BOT_TOKEN/) as HTMLInputElement).value).toBe("");
     expect(mock.callsTo("PUT", "/api/messaging/platforms/telegram")[0]?.body).toEqual({
       env: { TELEGRAM_BOT_TOKEN: value },
     });
@@ -115,21 +125,25 @@ describe("channels page", () => {
 
   it("refuses an empty save without a request", async () => {
     renderPage(<ChannelsPage />, "/channels");
-    const row = await card();
-    fireEvent.click(row.getByRole("button", { name: "Save" }));
-    expect((await row.findByRole("alert")).textContent).toContain("Nothing to save");
+    const dialog = await configure();
+    fireEvent.click(dialog.getByRole("button", { name: "Save" }));
+    expect((await dialog.findByRole("alert")).textContent).toContain("Nothing to save");
     expect(mock.callsTo("PUT", "/api/messaging/platforms/telegram")).toHaveLength(0);
   });
 
   it("clears a stored field and switches the platform", async () => {
     renderPage(<ChannelsPage />, "/channels");
-    const row = await card();
-    fireEvent.click(row.getByRole("button", { name: "Clear TELEGRAM_ALLOWED_USERS" }));
+    const dialog = await configure();
+    fireEvent.click(dialog.getByRole("button", { name: "Clear TELEGRAM_ALLOWED_USERS" }));
     await waitFor(() =>
       expect(mock.callsTo("PUT", "/api/messaging/platforms/telegram")[0]?.body).toEqual({
         clear_env: ["TELEGRAM_ALLOWED_USERS"],
       }),
     );
+    // Clearing keeps the dialog open; Cancel closes it without sending anything else.
+    fireEvent.click(dialog.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    const row = await card();
     fireEvent.click(row.getByRole("switch", { name: "Enable Telegram" }));
     await waitFor(() =>
       expect(mock.callsTo("PUT", "/api/messaging/platforms/telegram")[1]?.body).toEqual({
@@ -171,11 +185,13 @@ describe("channels page", () => {
     ];
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     renderPage(<ChannelsPage />, "/channels");
-    const row = await card();
+    await card();
     await waitFor(() => expect(mock.callsTo("GET", "/api/daemon").length).toBeGreaterThan(0));
-    fireEvent.change(row.getByLabelText(/^TELEGRAM_HOME_CHANNEL/), { target: { value: "7" } });
-    fireEvent.click(row.getByRole("button", { name: "Save" }));
+    const dialog = await configure();
+    fireEvent.change(dialog.getByLabelText(/^TELEGRAM_HOME_CHANNEL/), { target: { value: "7" } });
+    fireEvent.click(dialog.getByRole("button", { name: "Save" }));
     const banner = await screen.findByTestId("restart-banner");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(readRestartMark("")).toEqual({ pid: 4242 });
 
     // Pressing restart does not clear it; the action's log is tailed.

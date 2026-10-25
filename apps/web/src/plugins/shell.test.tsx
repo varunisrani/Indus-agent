@@ -2,7 +2,8 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockApi, type MockApi } from "../testing/mockApi.ts";
-import { currentLocation, renderApp } from "../testing/render.tsx";
+import { currentLocation } from "../testing/render.tsx";
+import { renderApp } from "../testing/renderApp.tsx";
 import { type PluginManifest, pluginRegistry } from "./registry.ts";
 
 let mock: MockApi;

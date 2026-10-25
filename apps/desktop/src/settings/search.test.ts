@@ -46,13 +46,18 @@ describe("settings pages", () => {
       "appearance",
       "workspace",
       "safety",
+      "browser",
+      "passwords",
       "memory",
+      "voice",
       "advanced",
+      "notifications",
       "providers",
       "gateways",
       "keyboard",
-      "notifications",
+      "tools",
       "sessions",
+      "plugins",
       "about",
     ]);
     for (const view of VIEWS) expect(view.pages.length).toBeGreaterThan(0);
@@ -67,11 +72,18 @@ describe("settings pages", () => {
     const keys = Object.keys(SCHEMA);
     expect(workspace && fieldsOnPage(workspace, keys)).toEqual(["terminal.cwd"]);
     expect(advanced && fieldsOnPage(advanced, keys)).toEqual(["terminal.docker_image"]);
-    // a page may also show a field owned elsewhere
-    const directory = VIEWS.find((v) => v.id === "sessions")?.pages.find(
-      (p) => p.id === "directory",
-    );
-    expect(directory && fieldsOnPage(directory, keys)).toEqual(["terminal.cwd"]);
+    // terminal backend fields and the tool output limit live on Advanced (W52-B-3)
+    expect(pageForField("terminal.backend")?.page.id).toBe("terminal");
+    expect(pageForField("tool_output.max_chars")?.page.id).toBe("output");
+    // a page may also show a field owned elsewhere: Output limits shows the checkpoint limit
+    const output = VIEWS.find((v) => v.id === "advanced")?.pages.find((p) => p.id === "output");
+    expect(
+      output && fieldsOnPage(output, ["checkpoints.max_snapshots", "tool_output.max_chars"]),
+    ).toEqual(["checkpoints.max_snapshots", "tool_output.max_chars"]);
+    expect(pageForField("checkpoints.max_snapshots")?.page.id).toBe("checkpoints");
+    // voice.read_aloud lands on Text to speech, the other voice.* rows on Voice conversation
+    expect(pageForField("voice.read_aloud")?.page.id).toBe("speech");
+    expect(pageForField("voice.record_key")?.page.id).toBe("conversation");
   });
 });
 
@@ -91,8 +103,33 @@ describe("settings links", () => {
       view: "safety",
       page: "approvals",
     });
-    expect(resolveTarget("view=billing")).toMatchObject({ view: "model", page: "main" });
+    expect(resolveTarget("view=nope")).toMatchObject({ view: "model", page: "main" });
     expect(resolveTarget("")).toMatchObject({ view: "model", page: "main" });
+  });
+
+  it("an old page id still lands: workspace/desktop is Projects & discovery now (W52-i)", () => {
+    expect(resolveTarget("view=workspace&page=desktop")).toMatchObject({
+      view: "workspace",
+      page: "projects",
+    });
+    expect(resolveTarget("row=default-directory")).toMatchObject({
+      view: "workspace",
+      page: "projects",
+    });
+    expect(resolveTarget("row=data-url-limit")).toMatchObject({ view: "workspace", page: "files" });
+  });
+
+  it("browser fields are split between Browser profile and Local & private URLs (W52-i)", () => {
+    expect(pageForField("browser.real_profile")?.page.id).toBe("profile");
+    expect(pageForField("browser.engine")?.page.id).toBe("profile");
+    expect(pageForField("browser.route_private_local")?.page.id).toBe("network");
+    expect(pageForField("browser.vault_sources")?.page.id).toBe("sources");
+    expect(pageForField("security.allow_private_urls")?.page.id).toBe("privacy");
+    const network = VIEWS.find((v) => v.id === "browser")?.pages.find((p) => p.id === "network");
+    expect(
+      network &&
+        fieldsOnPage(network, ["security.allow_private_urls", "browser.route_private_local"]),
+    ).toEqual(["security.allow_private_urls", "browser.route_private_local"]);
   });
 
   it("a hand-built row link finds its page; the query round-trips", () => {
@@ -121,7 +158,7 @@ describe("settings search", () => {
       field: "security.fake_ip_ranges",
       row: null,
     });
-    expect(first?.context).toBe("Safety › Privacy and network");
+    expect(first?.context).toBe("Safety › Privacy & network");
   });
 
   it("finds hand-built rows by their keywords and labels", () => {
@@ -132,11 +169,11 @@ describe("settings search", () => {
     });
     expect(search(entries, "keychain")[0]?.target).toMatchObject({
       view: "gateways",
-      page: "storage",
+      page: "connection",
     });
     expect(search(entries, "canary")[0]?.target).toMatchObject({
-      view: "advanced",
-      page: "desktop",
+      view: "about",
+      page: "version",
     });
   });
 
@@ -150,5 +187,25 @@ describe("settings search", () => {
 
   it("fields no page shows are not offered", () => {
     expect(search(entries, "telegram")).toEqual([]);
+  });
+});
+
+describe("settings-b rows land on their new pages (W52-j)", () => {
+  const entries = buildEntries(SCHEMA, translate);
+
+  it.each([
+    ["quick entry", "advanced", "desktop"],
+    ["completion sound", "notifications", "sounds"],
+    ["archived", "sessions", "archived"],
+    ["uninstall", "about", "uninstall"],
+    ["wake word", "voice", "conversation"],
+    ["global shortcuts", "keyboard", "global"],
+    ["local model servers", "providers", "local"],
+  ])('"%s" opens %s › %s', (query, view, page) => {
+    expect(search(entries, query)[0]?.target).toMatchObject({ view, page });
+  });
+
+  it("curated schema labels are searchable by the page's wording and by the key's words", () => {
+    expect(search(entries, "persistent memory")[0]?.target.field).toBe("memory.notes_enabled");
   });
 });

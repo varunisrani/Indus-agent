@@ -164,6 +164,34 @@ describe("palette-command area", () => {
     fireEvent.keyDown(screen.getByRole("combobox"), { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
   });
+
+  it("opens on Ctrl+K with grouped rows, key caps and search-only chats (W52-h)", () => {
+    render(
+      createElement(CommandPalette, {
+        builtIn: [
+          { id: "app.new", title: "New session", keys: "CommandOrControl+N", run: () => {} },
+          { id: "app.proj", title: "Indus", group: "projects", run: () => {} },
+          { id: "app.chat", title: "Lunch", group: "chats", searchOnly: true, run: () => {} },
+        ],
+        registry: new ContributionRegistry(),
+      }),
+    );
+    act(() => {
+      window.dispatchEvent(key({ key: "k", ctrlKey: true }));
+    });
+    const dialog = screen.getByRole("dialog", { name: "Commands" });
+    expect([...dialog.querySelectorAll(".desk-hud-heading")].map((h) => h.textContent)).toEqual([
+      "Go to",
+      "Projects",
+    ]);
+    expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual([
+      "New session",
+      "Indus",
+    ]);
+    expect(dialog.querySelectorAll('.desk-kbd[data-key="Ctrl"]').length).toBe(1);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "lun" } });
+    expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual(["Lunch"]);
+  });
 });
 
 describe("theme area", () => {

@@ -7,10 +7,30 @@
 // provider in a session that already has messages, or the daemon's `CONFIRM_REQUIRED` — asks first.
 
 import type { MethodName, MethodTypes, ModelOptionsResult } from "@indus/protocol";
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  LoaderCircle,
+  Plus,
+  RefreshCw,
+  Search,
+  Settings2,
+  Star,
+} from "lucide-react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import type { ChatConnection, RequestOptions } from "../gateway/connectionStore.ts";
 import { useGatewayConnection } from "../gateway/react.tsx";
 import { useT } from "../i18n/index.tsx";
+import { Button, Chip, MenuLabel, MenuRow, MenuSeparator } from "../ui/components.tsx";
+import { EffortChip, EffortOptions } from "./EffortChip.tsx";
 import type { StorageLike } from "./inflightJournal.ts";
 import { errorMessage, errorName } from "./rpcErrors.ts";
 
@@ -31,7 +51,16 @@ export interface ModelPreset {
   readonly fast?: boolean;
 }
 
-export const EFFORTS = ["minimal", "low", "medium", "high", "xhigh", "none"] as const;
+export const EFFORTS = [
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+  "ultra",
+  "none",
+] as const;
 
 export const STICKY_PREFIX = "indus.desktop.model.";
 export const PRESETS_KEY = "indus.desktop.model-presets";
@@ -281,6 +310,27 @@ export async function applyModelPick(
 
 // -- the component -------------------------------------------------------------------------------
 
+interface ReadySource {
+  subscribe(listener: () => void): () => void;
+  getState(): { ready: boolean };
+}
+
+function hasReady(connection: unknown): connection is ReadySource {
+  const candidate = connection as Partial<ReadySource> | null;
+  return typeof candidate?.subscribe === "function" && typeof candidate.getState === "function";
+}
+
+/** Whether the backend answers yet (connections without a state, such as fakes, always do). */
+function useConnectionReady(connection: ChatConnection | null): boolean {
+  return useSyncExternalStore(
+    (listener) => (hasReady(connection) ? connection.subscribe(listener) : () => undefined),
+    () => {
+      if (connection === null) return false;
+      return hasReady(connection) ? connection.getState().ready : true;
+    },
+  );
+}
+
 export interface ModelPickerProps {
   sessionId: string | null;
   profile: string | null;
@@ -292,9 +342,38 @@ export interface ModelPickerProps {
   /** Opened from outside (the `/model` command). */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /** "Edit models…": open the model settings (no row without it). */
+  onEditModels?: () => void;
 }
 
 type Confirming = { message: string; resolve: (ok: boolean) => void };
+
+interface Group {
+  readonly key: string;
+  readonly label: string;
+  readonly rows: readonly ModelEntry[];
+}
+
+/** Favourites first (when any), then one group per provider in catalogue order. */
+export function groupEntries(
+  entries: readonly ModelEntry[],
+  favourites: ReadonlySet<string>,
+  favouritesLabel: string,
+): Group[] {
+  const groups: Group[] = [];
+  const fav = entries.filter((entry) => favourites.has(modelKey(entry)));
+  if (fav.length > 0) groups.push({ key: "fav", label: favouritesLabel, rows: fav });
+  const byProvider = new Map<string, ModelEntry[]>();
+  for (const entry of entries) {
+    const list = byProvider.get(entry.provider) ?? [];
+    list.push(entry);
+    byProvider.set(entry.provider, list);
+  }
+  for (const [provider, rows] of byProvider) {
+    groups.push({ key: `p:${provider}`, label: rows[0]?.providerName ?? provider, rows });
+  }
+  return groups;
+}
 
 export function ModelPicker(props: ModelPickerProps) {
   const t = useT();
@@ -317,11 +396,13 @@ export function ModelPicker(props: ModelPickerProps) {
   const [confirming, setConfirming] = useState<Confirming | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [chosen, setChosen] = useState<ModelChoice | null>(null);
-  const [focusKey, setFocusKey] = useState<string | null>(null);
+  const [detail, setDetail] = useState<ModelEntry | null>(null);
+  const [custom, setCustom] = useState(false);
   const [, setPresetVersion] = useState(0);
   const bumpPresets = () => setPresetVersion((v) => v + 1);
   const listId = useId();
   const searchRef = useRef<HTMLInputElement>(null);
+  const root = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     if (connection === null) return;
@@ -337,8 +418,39 @@ export function ModelPicker(props: ModelPickerProps) {
     if (open) {
       void load();
       searchRef.current?.focus();
+    } else {
+      setDetail(null);
+      setCustom(false);
     }
   }, [open, load]);
+
+  // click-away closes (the trigger toggles itself)
+  useEffect(() => {
+    if (!open) return;
+    const away = (event: PointerEvent) => {
+      if (!root.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", away);
+    return () => document.removeEventListener("pointerdown", away);
+  }, [open, setOpen]);
+
+  // W51-b: ask once up front so the chip names the configured model before the picker is opened
+  // (it said "Choose a model" while the status bar already named one). Asked again when the
+  // backend becomes ready; a failure leaves the chip as it was and the picker asks on open.
+  const ready = useConnectionReady(connection);
+  useEffect(() => {
+    if (!ready || connection === null || props.current) return;
+    let live = true;
+    connection.request("model.options", { session_id: props.sessionId }).then(
+      (result) => {
+        if (live) setOptions((now) => now ?? result);
+      },
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [ready, connection, props.sessionId, props.current]);
 
   const current: ModelChoice | null =
     chosen ??
@@ -348,6 +460,10 @@ export function ModelPicker(props: ModelPickerProps) {
   const entries = useMemo(
     () => orderEntries(searchModels(options ? entriesFrom(options) : [], query), favourites),
     [options, query, favourites],
+  );
+  const groups = useMemo(
+    () => groupEntries(entries, favourites, t("model.favourites")),
+    [entries, favourites, t],
   );
 
   const pick = async (entry: ModelEntry) => {
@@ -382,150 +498,255 @@ export function ModelPicker(props: ModelPickerProps) {
     setOpen(false);
   };
 
+  const pickCustom = () => {
+    const id = query.trim();
+    if (id === "") return;
+    const provider = current?.provider ?? options?.provider ?? "";
+    const known = options?.providers.find((p) => p.slug === provider);
+    void pick({
+      provider,
+      providerName: known?.name ?? provider,
+      model: id,
+      authenticated: true,
+    });
+  };
+
   const effort =
     props.current?.effort ?? (current ? prefs.preset(modelKey(current)).effort : undefined);
-  const focused = entries.find((entry) => modelKey(entry) === focusKey) ?? null;
-  const focusedPreset = focused ? prefs.preset(modelKey(focused)) : {};
+  const setEffort = (key: string, value: string | null) => {
+    const { effort: _previous, ...rest } = prefs.preset(key);
+    prefs.setPreset(key, value === null ? rest : { ...rest, effort: value });
+    bumpPresets();
+  };
+
+  const onMenuKey = (event: React.KeyboardEvent) => {
+    if (event.key === "Escape") {
+      event.stopPropagation();
+      if (detail !== null) setDetail(null);
+      else setOpen(false);
+      return;
+    }
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    const rows = [
+      ...(root.current?.querySelectorAll<HTMLElement>(
+        ".model-menu .model-row-name, .model-menu [role^='menuitem']",
+      ) ?? []),
+    ];
+    if (rows.length === 0) return;
+    const at = rows.indexOf(document.activeElement as HTMLElement);
+    const step = event.key === "ArrowDown" ? 1 : -1;
+    rows[
+      at === -1 ? (step === 1 ? 0 : rows.length - 1) : (at + step + rows.length) % rows.length
+    ]?.focus();
+    event.preventDefault();
+  };
+
+  const detailPreset = detail ? prefs.preset(modelKey(detail)) : {};
 
   return (
-    <div className="relative inline-block" data-testid="model-picker">
-      <button
-        type="button"
+    <div className="model-picker" data-testid="model-picker" ref={root}>
+      <Chip
         aria-haspopup="dialog"
         aria-expanded={open}
-        className="rounded-full border border-line px-2 py-0.5 text-xs hover:bg-raised"
+        aria-label={current ? undefined : t("model.loading")}
         onClick={() => setOpen(!open)}
       >
-        {current ? current.model : t("model.none")}
-        {effort ? ` · ${effort}` : ""}
-      </button>
-      {note !== null ? <span className="ml-2 text-xs text-muted">{note}</span> : null}
+        {current ? current.model : <LoaderCircle aria-hidden="true" size={12} className="spin" />}
+      </Chip>
+      {current !== null && (
+        <EffortChip
+          effort={effort ?? null}
+          onPick={(value) => {
+            setEffort(modelKey(current), value);
+            if (connection !== null && props.sessionId !== null && value !== null) {
+              void connection
+                .request("config.set", {
+                  key: "reasoning",
+                  value,
+                  session_id: props.sessionId,
+                })
+                .catch(() => {});
+            }
+          }}
+        />
+      )}
+      {note !== null ? <span className="model-picker-note">{note}</span> : null}
       {open ? (
         <div
           role="dialog"
           aria-label={t("model.title")}
-          className="absolute bottom-full z-30 mb-1 w-80 rounded-lg border border-line bg-raised p-2 shadow-lg"
-          onKeyDown={(event) => {
-            if (event.key === "Escape") setOpen(false);
-          }}
+          className="desk-menu model-menu"
+          onKeyDown={onMenuKey}
         >
-          <input
-            ref={searchRef}
-            type="search"
-            aria-label={t("model.search")}
-            aria-controls={listId}
-            placeholder={t("model.search")}
-            className="mb-2 w-full rounded border border-line bg-bg px-2 py-1 text-sm"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-          {loadError !== null ? (
-            <p role="alert" className="text-xs text-danger">
-              {t("model.loadFailed", { message: loadError })}{" "}
-              <button type="button" className="underline" onClick={() => void load()}>
-                {t("model.retry")}
-              </button>
-            </p>
-          ) : null}
-          <ul id={listId} aria-label={t("model.title")} className="max-h-64 overflow-auto">
-            {entries.map((entry) => {
-              const key = modelKey(entry);
-              const selected = current !== null && modelKey(current) === key;
-              return (
-                <li
-                  key={key}
-                  data-model={key}
-                  className="flex items-center gap-2 rounded px-1 text-sm hover:bg-bg"
-                >
-                  <button
-                    type="button"
-                    aria-label={t(favourites.has(key) ? "model.unfavourite" : "model.favourite", {
-                      model: entry.model,
-                    })}
-                    aria-pressed={favourites.has(key)}
-                    className="text-xs"
-                    onClick={() => setFavourites(prefs.toggleFavourite(key))}
-                  >
-                    {favourites.has(key) ? "★" : "☆"}
-                  </button>
-                  <button
-                    type="button"
-                    className="flex-1 truncate text-left py-1"
-                    aria-current={selected ? "true" : undefined}
-                    onFocus={() => setFocusKey(key)}
-                    onMouseEnter={() => setFocusKey(key)}
-                    onClick={() => void pick(entry)}
-                  >
-                    {entry.model}
-                    <span className="ml-2 text-xs text-muted">{entry.providerName}</span>
-                  </button>
-                </li>
-              );
-            })}
-            {options !== null && entries.length === 0 ? (
-              <li className="px-1 py-1 text-xs text-muted">{t("model.noMatch")}</li>
-            ) : null}
-          </ul>
-          {focused !== null ? (
-            <div className="mt-2 flex items-center gap-2 border-t border-line pt-2 text-xs">
-              <label className="flex items-center gap-1">
-                {t("model.effort")}
-                <select
-                  aria-label={t("model.effortFor", { model: focused.model })}
-                  value={focusedPreset.effort ?? ""}
-                  onChange={(event) => {
-                    const { effort: _previous, ...rest } = focusedPreset;
-                    const value = event.target.value;
-                    prefs.setPreset(
-                      modelKey(focused),
-                      value === "" ? rest : { ...rest, effort: value },
-                    );
-                    bumpPresets();
-                  }}
-                >
-                  <option value="">{t("model.effortKeep")}</option>
-                  {EFFORTS.map((level) => (
-                    <option key={level} value={level}>
-                      {level}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex items-center gap-1">
+          {detail !== null ? (
+            <div role="menu" aria-label={t("model.optionsFor", { model: detail.model })}>
+              <MenuRow
+                icon={<ChevronLeft aria-hidden="true" />}
+                label={detail.model}
+                ariaLabel={t("model.back")}
+                onSelect={() => setDetail(null)}
+              />
+              <MenuSeparator />
+              <EffortOptions
+                effort={detailPreset.effort ?? null}
+                onPick={(value) => setEffort(modelKey(detail), value)}
+              />
+              <MenuSeparator />
+              <MenuRow
+                kind="switch"
+                label={t("model.fast")}
+                ariaLabel={t("model.fastFor", { model: detail.model })}
+                checked={detailPreset.fast === true}
+                onSelect={() => {
+                  prefs.setPreset(modelKey(detail), {
+                    ...detailPreset,
+                    fast: detailPreset.fast !== true,
+                  });
+                  bumpPresets();
+                }}
+              />
+            </div>
+          ) : (
+            <>
+              <div className="model-menu-search">
+                {custom ? (
+                  <Plus aria-hidden="true" size={13} />
+                ) : (
+                  <Search aria-hidden="true" size={13} />
+                )}
                 <input
-                  type="checkbox"
-                  aria-label={t("model.fastFor", { model: focused.model })}
-                  checked={focusedPreset.fast === true}
-                  onChange={(event) => {
-                    prefs.setPreset(modelKey(focused), {
-                      ...focusedPreset,
-                      fast: event.target.checked,
-                    });
-                    bumpPresets();
+                  ref={searchRef}
+                  type="search"
+                  aria-label={t(custom ? "model.custom" : "model.search")}
+                  aria-controls={listId}
+                  placeholder={t(custom ? "model.customPlaceholder" : "model.search")}
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && custom) {
+                      event.preventDefault();
+                      pickCustom();
+                    }
                   }}
                 />
-                {t("model.fast")}
-              </label>
-            </div>
-          ) : null}
+              </div>
+              {loadError !== null ? (
+                <p role="alert" className="model-menu-note">
+                  {t("model.loadFailed", { message: loadError })}{" "}
+                  <button
+                    type="button"
+                    className="desk-btn"
+                    data-variant="text"
+                    onClick={() => void load()}
+                  >
+                    {t("model.retry")}
+                  </button>
+                </p>
+              ) : null}
+              <div id={listId}>
+                {groups.map((group) => (
+                  <div key={group.key} className="model-group">
+                    <MenuLabel>{group.label}</MenuLabel>
+                    <ul aria-label={group.label} className="model-menu-list">
+                      {group.rows.map((entry) => {
+                        const key = modelKey(entry);
+                        const selected = current !== null && modelKey(current) === key;
+                        const starred = favourites.has(key);
+                        return (
+                          <li
+                            key={key}
+                            data-model={key}
+                            className="model-row"
+                            data-dim={entry.authenticated ? undefined : "true"}
+                          >
+                            <button
+                              type="button"
+                              className="model-star"
+                              aria-label={t(starred ? "model.unfavourite" : "model.favourite", {
+                                model: entry.model,
+                              })}
+                              aria-pressed={starred}
+                              onClick={() => setFavourites(prefs.toggleFavourite(key))}
+                            >
+                              <Star aria-hidden="true" />
+                            </button>
+                            <button
+                              type="button"
+                              className="model-row-name"
+                              aria-current={selected ? "true" : undefined}
+                              onClick={() => void pick(entry)}
+                              onKeyDown={(event) => {
+                                if (event.key === "ArrowRight") {
+                                  event.preventDefault();
+                                  setDetail(entry);
+                                } else if (event.key === "Enter" && event.shiftKey) {
+                                  event.preventDefault();
+                                  setFavourites(prefs.toggleFavourite(key));
+                                }
+                              }}
+                            >
+                              {entry.model}
+                            </button>
+                            {!entry.authenticated && (
+                              <span className="model-row-note">{t("model.signIn")}</span>
+                            )}
+                            <button
+                              type="button"
+                              className="model-row-more"
+                              aria-label={t("model.optionsFor", { model: entry.model })}
+                              onClick={() => setDetail(entry)}
+                            >
+                              <ChevronRight aria-hidden="true" />
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                ))}
+                {options !== null && entries.length === 0 && !custom ? (
+                  <p className="model-menu-note">{t("model.noMatch")}</p>
+                ) : null}
+              </div>
+              <MenuSeparator />
+              <div role="menu" aria-label={t("model.title")}>
+                <MenuRow
+                  icon={<RefreshCw aria-hidden="true" />}
+                  label={t("model.refresh")}
+                  onSelect={() => void load()}
+                />
+                <MenuRow
+                  icon={<Plus aria-hidden="true" />}
+                  label={t("model.addCustom")}
+                  onSelect={() => {
+                    setCustom(true);
+                    setQuery("");
+                    searchRef.current?.focus();
+                  }}
+                />
+                {props.onEditModels !== undefined && (
+                  <MenuRow
+                    icon={<Settings2 aria-hidden="true" />}
+                    label={t("model.edit")}
+                    onSelect={() => {
+                      setOpen(false);
+                      props.onEditModels?.();
+                    }}
+                  />
+                )}
+              </div>
+            </>
+          )}
           {confirming !== null ? (
-            <div
-              role="alertdialog"
-              aria-label={t("model.confirmTitle")}
-              className="mt-2 rounded border border-warn p-2 text-xs"
-            >
+            <div role="alertdialog" aria-label={t("model.confirmTitle")} className="model-confirm">
               <p>{confirming.message}</p>
-              <div className="mt-1 flex justify-end gap-2">
-                <button type="button" onClick={() => confirming.resolve(false)}>
+              <div className="model-confirm-actions">
+                <Button variant="ghost" size="sm" onClick={() => confirming.resolve(false)}>
                   {t("model.keep")}
-                </button>
-                <button
-                  type="button"
-                  className="rounded bg-accent px-2 text-accent-fg"
-                  onClick={() => confirming.resolve(true)}
-                >
+                </Button>
+                <Button variant="primary" size="sm" onClick={() => confirming.resolve(true)}>
                   {t("model.switch")}
-                </button>
+                </Button>
               </div>
             </div>
           ) : null}

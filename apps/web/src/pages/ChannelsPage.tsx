@@ -1,10 +1,21 @@
-// Channels (P18-23): one card per messaging platform the gateway knows. Each card shows the state
-// the server works out, an on/off switch, that platform's own fields and a Test button. Credentials
-// are password inputs that always start empty: the stored value never reaches the browser, only a
-// masked preview, and a field left blank keeps what is stored. Any change needs a daemon restart;
-// the banner saying so stays until the daemon itself reports a new process.
+// Channels (P18-23): one row per messaging platform the gateway knows. Each row shows the state
+// the server works out, an on/off switch, a Test button and Configure, which opens that platform's
+// own fields in a dialog. Credentials are password inputs that always start empty: the stored value
+// never reaches the browser, only a masked preview, and a field left blank keeps what is stored.
+// Any change needs a daemon restart; the banner saying so stays until the daemon itself reports a
+// new process. Look (W52-d): single column of short outlined rows, notices as bordered cards.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  CircleCheck,
+  LoaderCircle,
+  PlugZap,
+  Radio,
+  RotateCw,
+  SlidersHorizontal,
+  TriangleAlert,
+  WifiOff,
+} from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useId, useState } from "react";
 import { api } from "../lib/api.ts";
 import type {
@@ -23,26 +34,28 @@ import {
   Badge,
   type BadgeTone,
   Button,
-  Card,
-  Field,
-  inputClass,
-  Notice,
+  Callout,
+  CodeChip,
+  EmptyCard,
+  Input,
+  PageSpinner,
   QueryState,
 } from "../ui/controls.tsx";
+import { DialogActions, Modal } from "../ui/Dialog.tsx";
 import { Switch } from "../ui/Switch.tsx";
 
 export const DAEMON_POLL_MS = 5_000;
 const RESTART_KEY_PREFIX = "indus.channels.restart.";
 
 const STATES: Record<string, [string, BadgeTone]> = {
-  disabled: ["Switched off", "neutral"],
-  not_configured: ["Needs setup", "warn"],
-  daemon_stopped: ["Daemon stopped", "neutral"],
+  disabled: ["Switched off", "secondary"],
+  not_configured: ["Needs setup", "neutral"],
+  daemon_stopped: ["Daemon stopped", "warn"],
   pending_restart: ["Restart to apply", "warn"],
   connected: ["Connected", "ok"],
   retrying: ["Reconnecting", "warn"],
   fatal: ["Failed", "danger"],
-  paused: ["Paused", "neutral"],
+  paused: ["Paused", "secondary"],
 };
 
 export function stateBadge(state: string): [string, BadgeTone] {
@@ -124,20 +137,28 @@ function RestartBanner({
 }) {
   const stopped = daemon ? !daemon.running : mark.pid === null;
   return (
-    <div
+    <Callout
       role="status"
       data-testid="restart-banner"
-      className="flex flex-wrap items-center gap-3 rounded-md border border-warn px-3 py-2 text-sm text-warn"
+      tone="warning"
+      icon={TriangleAlert}
+      action={
+        <Button
+          tone="primary"
+          size="sm"
+          className="uppercase"
+          icon={<RotateCw />}
+          onClick={onRestart}
+          disabled={busy}
+        >
+          {stopped ? "Start daemon" : "Restart daemon"}
+        </Button>
+      }
     >
-      <span className="flex-1">
-        {stopped
-          ? "Settings saved. Start the daemon to connect with them."
-          : "Settings saved. Restart the daemon to apply them; this notice stays until it has restarted."}
-      </span>
-      <Button tone="primary" onClick={onRestart} disabled={busy}>
-        {stopped ? "Start daemon" : "Restart daemon"}
-      </Button>
-    </div>
+      {stopped
+        ? "Settings saved. Start the daemon to connect with them."
+        : "Settings saved. Restart the daemon to apply them; this notice stays until it has restarted."}
+    </Callout>
   );
 }
 
@@ -170,11 +191,15 @@ const KIND_HINT: Record<PlatformField["kind"], string> = {
   policy: "access rule",
 };
 
-function PlatformCard({
+function ConfigureForm({
   platform,
+  onSaved,
+  onCancel,
   onChanged,
 }: {
   platform: MessagingPlatform;
+  onSaved: () => void;
+  onCancel: () => void;
   onChanged: () => void;
 }) {
   const toast = useToast();
@@ -182,14 +207,12 @@ function PlatformCard({
   const ids = useId();
   const [drafts, setDrafts] = useState(() => initialDrafts(platform.fields));
   const [problem, setProblem] = useState("");
-  const [result, setResult] = useState<PlatformTestResult | null>(null);
 
   const save = useMutation({
     mutationFn: (body: PlatformUpdate) => api.messaging.update(platform.id, body),
     onSuccess: (reply, body) => {
       setProblem("");
-      // Credential inputs go back to empty; a cleared field's input empties too. Settings keep
-      // what was typed, which is now what is stored.
+      // A cleared field's input empties; credentials never keep what was typed.
       setDrafts((all) => {
         const next = { ...all };
         for (const field of platform.fields) {
@@ -200,13 +223,9 @@ function PlatformCard({
       if (reply.restart_needed) onChanged();
       toast.show(`${platform.name} saved.`, "success");
       void client.invalidateQueries({ queryKey: ["messaging"] });
+      if (body.env) onSaved();
     },
     onError: (error) => setProblem(errorText(error)),
-  });
-  const test = useMutation({
-    mutationFn: () => api.messaging.test(platform.id),
-    onSuccess: setResult,
-    onError: (error) => setResult({ ok: false, state: "error", message: errorText(error) }),
   });
 
   const submit = (event: FormEvent) => {
@@ -219,86 +238,202 @@ function PlatformCard({
     save.mutate({ env });
   };
 
+  return (
+    <form className="flex flex-col gap-4" onSubmit={submit} noValidate>
+      {platform.fields.map((field) => {
+        const id = `${ids}-${field.key}`;
+        const hint = field.is_secret
+          ? field.is_set
+            ? `Stored (${field.preview ?? "hidden"}). Leave blank to keep it.`
+            : "Not set."
+          : undefined;
+        return (
+          <div key={field.key} className="flex flex-col gap-1.5">
+            <div className="flex items-baseline gap-2">
+              <label htmlFor={id} className="font-mono text-[0.75rem] font-medium text-ink">
+                {field.key}
+                {field.required ? " *" : ""}
+              </label>
+              <span className="text-[0.75rem] text-ink-soft">{KIND_HINT[field.kind]}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Input
+                id={id}
+                type={field.is_secret ? "password" : "text"}
+                autoComplete={field.is_secret ? "new-password" : "off"}
+                className="min-w-0 flex-1"
+                placeholder={field.is_secret && field.is_set ? (field.preview ?? "") : field.key}
+                value={drafts[field.key] ?? ""}
+                onChange={(e) => {
+                  const value = e.currentTarget.value;
+                  setDrafts((all) => ({ ...all, [field.key]: value }));
+                }}
+              />
+              {field.is_set ? (
+                <Button
+                  size="sm"
+                  aria-label={`Clear ${field.key}`}
+                  disabled={save.isPending}
+                  onClick={() => save.mutate({ clear_env: [field.key] })}
+                >
+                  Clear
+                </Button>
+              ) : null}
+            </div>
+            {hint ? <p className="m-0 text-[0.75rem] text-ink-soft">{hint}</p> : null}
+          </div>
+        );
+      })}
+      {problem ? (
+        <p role="alert" className="m-0 text-[0.75rem] text-danger">
+          {problem}
+        </p>
+      ) : null}
+      <DialogActions>
+        <Button tone="ghost" size="lg" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button
+          type="submit"
+          tone="primary"
+          size="lg"
+          disabled={save.isPending}
+          icon={save.isPending ? <LoaderCircle className="animate-spin" /> : null}
+        >
+          Save
+        </Button>
+      </DialogActions>
+    </form>
+  );
+}
+
+function StateIcon({ state }: { state: string }) {
+  if (state === "connected")
+    return <CircleCheck aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-success" />;
+  if (state === "fatal")
+    return <TriangleAlert aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-danger" />;
+  return <Radio aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-ink-soft" />;
+}
+
+function PlatformRow({
+  platform,
+  onChanged,
+}: {
+  platform: MessagingPlatform;
+  onChanged: () => void;
+}) {
+  const toast = useToast();
+  const client = useQueryClient();
+  const [configuring, setConfiguring] = useState(false);
+  const [result, setResult] = useState<PlatformTestResult | null>(null);
+
+  const toggle = useMutation({
+    mutationFn: (enabled: boolean) => api.messaging.update(platform.id, { enabled }),
+    onSuccess: (reply) => {
+      if (reply.restart_needed) onChanged();
+      toast.show(`${platform.name} saved.`, "success");
+      void client.invalidateQueries({ queryKey: ["messaging"] });
+    },
+    onError: (error) => toast.show(errorText(error), "error"),
+  });
+  const test = useMutation({
+    mutationFn: () => api.messaging.test(platform.id),
+    onSuccess: (reply) => {
+      setResult(reply);
+      toast.show(reply.message, reply.ok ? "success" : "info");
+    },
+    onError: (error) => {
+      const message = errorText(error);
+      setResult({ ok: false, state: "error", message });
+      toast.show(message, "error");
+    },
+  });
+
   const [label, tone] = stateBadge(platform.state);
   return (
-    <li data-testid={`platform-${platform.id}`}>
-      <Card className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <h2 className="flex-1 text-sm font-semibold">{platform.name}</h2>
-          <Badge tone={tone}>{label}</Badge>
+    <li
+      data-testid={`platform-${platform.id}`}
+      className="flex flex-wrap items-center gap-x-4 gap-y-3 border border-line p-4"
+    >
+      <div className="flex min-w-0 flex-1 items-start gap-2.5">
+        <StateIcon state={platform.state} />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="type-serif m-0 text-[0.9375rem] font-normal text-ink">
+              {platform.name}
+            </h2>
+            <Badge tone={tone}>{label}</Badge>
+          </div>
+          {platform.description ? (
+            <p className="m-0 mt-1 text-[0.75rem] text-ink-muted">{platform.description}</p>
+          ) : null}
+          {!platform.installed ? (
+            <p className="m-0 mt-1 text-[0.75rem] text-warning">
+              Library not installed{platform.install_hint ? `: ${platform.install_hint}` : "."}
+            </p>
+          ) : null}
+          {/* "not configured" only repeats the badge; other reasons say something new. */}
+          {platform.reason && platform.state !== "not_configured" ? (
+            <p className="m-0 mt-1 text-[0.75rem] text-ink-soft">{platform.reason}</p>
+          ) : null}
+          {result ? (
+            <p
+              data-testid={`test-result-${platform.id}`}
+              className={`m-0 mt-1 text-[0.75rem] ${result.ok ? "text-success" : "text-warning"}`}
+            >
+              {result.message}
+            </p>
+          ) : null}
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        {toggle.isPending ? (
+          <span className="inline-flex h-[1.125rem] w-[2.125rem] items-center justify-center">
+            <LoaderCircle aria-label="Saving" className="size-4 animate-spin text-ink-soft" />
+          </span>
+        ) : (
           <Switch
             checked={platform.enabled && !platform.explicitly_disabled}
-            onCheckedChange={(enabled) => save.mutate({ enabled })}
+            onCheckedChange={(enabled) => toggle.mutate(enabled)}
             label={`Enable ${platform.name}`}
-            disabled={save.isPending}
           />
-        </div>
-        {platform.description ? <p className="text-xs text-muted">{platform.description}</p> : null}
-        {!platform.installed ? (
-          <Notice tone="warn">
-            Its library is not installed{platform.install_hint ? `: ${platform.install_hint}` : "."}
-          </Notice>
+        )}
+        <Button
+          tone="ghost"
+          size="sm"
+          icon={<PlugZap />}
+          onClick={() => test.mutate()}
+          disabled={test.isPending}
+        >
+          {test.isPending ? "Testing…" : "Test"}
+        </Button>
+        {platform.fields.length ? (
+          <Button
+            tone="primary"
+            size="sm"
+            className="uppercase"
+            icon={<SlidersHorizontal />}
+            onClick={() => setConfiguring(true)}
+          >
+            Configure
+          </Button>
         ) : null}
-        {platform.reason ? <p className="text-xs text-muted">{platform.reason}</p> : null}
-        <form className="flex flex-col gap-3" onSubmit={submit} noValidate>
-          {platform.fields.map((field) => {
-            const id = `${ids}-${field.key}`;
-            const hint = field.is_secret
-              ? field.is_set
-                ? `Stored (${field.preview ?? "hidden"}). Leave blank to keep it.`
-                : "Not set."
-              : undefined;
-            return (
-              <div key={field.key} className="flex items-end gap-2">
-                <div className="flex-1">
-                  <Field
-                    label={`${field.key}${field.required ? " (required)" : ""} · ${KIND_HINT[field.kind]}`}
-                    htmlFor={id}
-                    {...(hint ? { hint } : {})}
-                  >
-                    <input
-                      id={id}
-                      type={field.is_secret ? "password" : "text"}
-                      autoComplete={field.is_secret ? "new-password" : "off"}
-                      className={`${inputClass} font-mono`}
-                      value={drafts[field.key] ?? ""}
-                      onChange={(e) => {
-                        const value = e.currentTarget.value;
-                        setDrafts((all) => ({ ...all, [field.key]: value }));
-                      }}
-                    />
-                  </Field>
-                </div>
-                {field.is_set ? (
-                  <Button
-                    aria-label={`Clear ${field.key}`}
-                    disabled={save.isPending}
-                    onClick={() => save.mutate({ clear_env: [field.key] })}
-                  >
-                    Clear
-                  </Button>
-                ) : null}
-              </div>
-            );
-          })}
-          {problem ? <Notice tone="danger">{problem}</Notice> : null}
-          <div className="flex gap-2">
-            {platform.fields.length ? (
-              <Button type="submit" tone="primary" disabled={save.isPending}>
-                Save
-              </Button>
-            ) : null}
-            <Button onClick={() => test.mutate()} disabled={test.isPending}>
-              {test.isPending ? "Testing…" : "Test"}
-            </Button>
-          </div>
-        </form>
-        {result ? (
-          <Notice tone={result.ok ? "neutral" : "warn"}>
-            <span data-testid={`test-result-${platform.id}`}>{result.message}</span>
-          </Notice>
-        ) : null}
-      </Card>
+      </div>
+      <Modal
+        open={configuring}
+        onOpenChange={setConfiguring}
+        title={`Configure ${platform.name}`}
+        description={
+          platform.description || `Credentials and settings ${platform.name} needs to connect.`
+        }
+      >
+        <ConfigureForm
+          platform={platform}
+          onChanged={onChanged}
+          onSaved={() => setConfiguring(false)}
+          onCancel={() => setConfiguring(false)}
+        />
+      </Modal>
     </li>
   );
 }
@@ -320,11 +455,19 @@ export function ChannelsPage() {
   }, DAEMON_POLL_MS);
 
   const list = platforms.data?.platforms ?? [];
+  const configured = list.filter((p) => p.configured).length;
   return (
-    <div className="flex flex-col gap-4 p-4">
+    <div className="flex flex-col gap-6 px-4 py-[1.375rem] lg:pr-8 lg:pl-[1.4375rem]">
       <HeaderActions>
-        <Button onClick={() => restart.start()} disabled={restart.pending}>
-          Restart daemon
+        <Button
+          tone="primary"
+          size="sm"
+          className="uppercase"
+          icon={restart.pending ? <LoaderCircle className="animate-spin" /> : <RotateCw />}
+          onClick={() => restart.start()}
+          disabled={restart.pending}
+        >
+          {restart.pending ? "Restarting…" : "Restart daemon"}
         </Button>
       </HeaderActions>
       {mark ? (
@@ -339,27 +482,41 @@ export function ChannelsPage() {
         <ActionLog name="daemon-restart" run={restart.run} title="Daemon restart" />
       ) : null}
       {platforms.data && !platforms.data.daemon_running && !mark ? (
-        <Notice>
-          The daemon is not running. Enabled channels connect when it starts (System page, or `indus
-          gateway start`).
-        </Notice>
+        <Callout icon={WifiOff}>
+          <span className="text-ink-muted">
+            The daemon is not running. Set channels up here, then start it with{" "}
+            <CodeChip>indus gateway start</CodeChip> (or the button above).
+          </span>
+        </Callout>
       ) : null}
-      <QueryState
-        loading={platforms.isPending}
-        error={platforms.error}
-        empty={list.length === 0}
-        emptyText="No messaging platforms are available in this install."
-      >
-        <ul className="grid gap-3 lg:grid-cols-2" aria-label="Messaging platforms">
-          {list.map((platform) => (
-            <PlatformCard
-              key={platform.id}
-              platform={platform}
-              onChanged={() => raise(daemon.data)}
-            />
-          ))}
-        </ul>
-      </QueryState>
+      {platforms.isPending ? (
+        <PageSpinner />
+      ) : (
+        <QueryState loading={false} error={platforms.error}>
+          {list.length === 0 ? (
+            <EmptyCard>No messaging platforms in this install.</EmptyCard>
+          ) : (
+            <div className="flex flex-col gap-3">
+              <p className="m-0 text-[0.75rem] text-ink-muted">
+                {configured} of {list.length} channels configured. Credentials are kept in this
+                profile's secret store; enabled channels connect on the daemon's next start.
+              </p>
+              <ul
+                className="m-0 flex list-none flex-col gap-3 p-0"
+                aria-label="Messaging platforms"
+              >
+                {list.map((platform) => (
+                  <PlatformRow
+                    key={platform.id}
+                    platform={platform}
+                    onChanged={() => raise(daemon.data)}
+                  />
+                ))}
+              </ul>
+            </div>
+          )}
+        </QueryState>
+      )}
     </div>
   );
 }

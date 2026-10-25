@@ -1,0 +1,216 @@
+/* Layout editor card and edit mode (W52-l, spec 3.14). */
+
+.pane-shell[data-layout-editing="true"] .pane-zone {
+  position: relative;
+  outline: 1px dashed color-mix(in srgb, var(--desk-accent) 60%, transparent);
+  outline-offset: -2px;
+}
+
+.pane-shell[data-layout-editing="true"] .pane-body {
+  opacity: 0.55;
+  filter: blur(2px);
+}
+
+.lay-card {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: var(--z-overlay);
+  width: min(416px, calc(100vw - 32px));
+  border: 1px solid var(--desk-stroke-3);
+  border-radius: 12px;
+  background: var(--desk-bg-raised);
+  box-shadow: var(--desk-shadow-card);
+  color: var(--desk-fg-1);
+  -webkit-app-region: no-drag;
+}
+
+.lay-card:focus-visible {
+  outline: none;
+}
+
+.lay-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 12px 16px 8px;
+  cursor: grab;
+  user-select: none;
+}
+
+.lay-head-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.lay-head h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.lay-head p {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 0;
+  color: var(--desk-fg-3);
+  font-size: var(--desk-text-small);
+}
+
+.lay-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 0 16px 16px;
+}
+
+.lay-label {
+  margin: 0 0 6px;
+  color: var(--desk-fg-4);
+  font-size: 9.6px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.lay-modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.lay-option,
+.lay-template {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--desk-stroke-card);
+  border-radius: var(--desk-radius-control);
+  background: var(--desk-bg-card);
+  color: var(--desk-fg-1);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lay-option[aria-checked="true"],
+.lay-template[aria-checked="true"] {
+  border-color: var(--desk-accent);
+  background: var(--desk-accent-tint);
+}
+
+.lay-option-title {
+  font-size: var(--desk-text-micro);
+  font-weight: 500;
+}
+
+.lay-option-text {
+  color: var(--desk-fg-3);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.lay-note {
+  margin: 6px 0 0;
+  color: var(--desk-fg-4);
+  font-size: 10px;
+}
+
+.lay-templates {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.lay-template {
+  align-items: stretch;
+  padding: 6px;
+}
+
+.lay-template:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.lay-template-name {
+  overflow: hidden;
+  font-size: var(--desk-text-micro);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lay-option[aria-checked="true"] .lay-option-title,
+.lay-template[aria-checked="true"] .lay-template-name {
+  color: var(--desk-accent);
+}
+
+.lay-mini {
+  display: flex;
+  height: 48px;
+}
+
+.lay-mini-split {
+  display: flex;
+  flex: 1;
+  gap: 2px;
+}
+
+.lay-mini-split[data-orientation="column"] {
+  flex-direction: column;
+}
+
+.lay-mini-cell {
+  display: flex;
+  flex-basis: 0;
+  min-width: 0;
+  min-height: 0;
+}
+
+.lay-mini-zone {
+  flex: 1;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--desk-fg-4) 55%, transparent);
+}
+
+.lay-mini-zone[data-optional="true"] {
+  border: 1px dashed color-mix(in srgb, var(--desk-fg-4) 90%, transparent);
+  background: transparent;
+}
+
+.lay-new {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 32px;
+  border: 1px dashed var(--desk-stroke-card);
+  border-radius: var(--desk-radius-control);
+  background: transparent;
+  color: var(--desk-fg-3);
+  font: inherit;
+  font-size: var(--desk-text-small);
+}
+
+.lay-save {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--desk-fg-3);
+  font: inherit;
+  font-size: var(--desk-text-small);
+}
+
+.lay-new:disabled,
+.lay-save:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

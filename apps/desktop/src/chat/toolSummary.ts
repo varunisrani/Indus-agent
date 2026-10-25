@@ -51,8 +51,11 @@ const EXPLICIT_FAILURE =
   /\b(error|exception|traceback|failed|failure|denied|refused|not found|no such file|permission|timed out|cancell?ed|forbidden|fatal|panic)\b/i;
 const EXIT_ONE = /(?:exit(?:ed)?(?: with)?(?: code| status)?\s*[:=]?\s*|"exit_code"\s*:\s*)1\b/i;
 
-/** The row's colour state once the tool finished. */
+const BLOCKED = /"status"\s*:\s*"blocked"/;
+
+/** The row's colour state once the tool finished. A refused call (`status: "blocked"`) is red. */
 export function toolOutcome(ok: boolean, result: string): "ok" | "failed" | "neutral" {
+  if (BLOCKED.test(result)) return "failed";
   if (ok) return "ok";
   // Empty error fields of a structured result say nothing.
   const said = result.replace(/"(error|stderr|exception)"\s*:\s*(null|""|\[\])/gi, "");
@@ -68,4 +71,33 @@ export function toolImages(result: string | null): string[] {
     /(data:image\/(?:png|jpe?g|gif|webp);base64,[A-Za-z0-9+/=]+|indus-media:\/\/[^\s"')]+)/g,
   );
   return found === null ? [] : [...new Set(found)].slice(0, 8);
+}
+
+/** What a terminal tool's structured result says (W52-g): the parts the expanded row shows. */
+export interface TerminalResult {
+  readonly output: string;
+  readonly exitCode: number | null;
+  readonly error: string;
+  readonly blocked: boolean;
+}
+
+/** Read a terminal result safely: JSON with `output` / `exit_code`, else null (show it raw). */
+export function terminalResult(result: string | null): TerminalResult | null {
+  if (result === null || result.trim() === "") return null;
+  let data: unknown;
+  try {
+    data = JSON.parse(result);
+  } catch {
+    return null;
+  }
+  if (typeof data !== "object" || data === null || Array.isArray(data)) return null;
+  const record = data as Record<string, unknown>;
+  if (!("output" in record) && !("exit_code" in record)) return null;
+  const text = (value: unknown) => (typeof value === "string" ? value : "");
+  return {
+    output: text(record.output),
+    exitCode: typeof record.exit_code === "number" ? record.exit_code : null,
+    error: text(record.error),
+    blocked: record.status === "blocked",
+  };
 }

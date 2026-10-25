@@ -1,0 +1,459 @@
+/* Capabilities tabs (W52-k), on the desk tokens; the frame is in ../masterDetail.css. */
+
+.md-tabpanel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.md-tab-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* -- skills hub ------------------------------------------------------------------------------ */
+
+.cap-hub-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--desk-stroke-2);
+}
+
+.cap-hub-status {
+  padding: 6px 10px 0;
+}
+
+.cap-hub-empty {
+  margin: 0;
+  padding: 16px 10px;
+  color: var(--desk-fg-4);
+  font-size: 12px;
+  text-align: center;
+}
+
+.cap-hub-results {
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+}
+
+.cap-hub-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+}
+
+.cap-hub-row + .cap-hub-row {
+  border-top: 1px solid var(--desk-stroke-2);
+}
+
+.cap-hub-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.cap-hub-name {
+  color: var(--desk-fg-1);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.cap-hub-desc {
+  overflow: hidden;
+  color: var(--desk-fg-3);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cap-hub-source,
+.cap-hub-installed {
+  flex: none;
+  color: var(--desk-fg-4);
+  font-size: 11px;
+}
+
+/* -- tools: execution backend ---------------------------------------------------------------- */
+
+.cap-backend {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cap-backend-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--desk-fg-1);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.cap-backend-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cap-backend-card:hover {
+  background: var(--desk-row-hover);
+}
+
+.cap-backend-card[aria-pressed="true"] {
+  border-color: var(--desk-stroke-active);
+  background: var(--desk-row-active-soft);
+}
+
+.cap-backend-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--desk-fg-1);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.cap-backend-desc {
+  color: var(--desk-fg-3);
+  font-size: 12px;
+}
+
+/* -- connectors ------------------------------------------------------------------------------ */
+
+.cap-connectors {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  padding: 4px 16px 16px;
+  overflow-y: auto;
+}
+
+.cap-connectors-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cap-connectors-title h2 {
+  margin: 0;
+  color: var(--desk-fg-1);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.cap-connectors-search {
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--desk-stroke-2);
+}
+
+.cap-group {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  color: var(--desk-fg-1);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.cap-group-count {
+  color: var(--desk-fg-3);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.cap-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cap-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 66px;
+  padding: 12px;
+  border: 1px solid var(--desk-stroke-1);
+  border-radius: 8px;
+  background: var(--desk-bg-canvas);
+}
+
+.cap-card:hover {
+  background: var(--desk-row-hover);
+}
+
+.cap-card[data-selected="true"] {
+  border-color: var(--desk-accent);
+  background: var(--desk-row-active-soft);
+}
+
+.cap-card-main {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.cap-tile {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--desk-stroke-card) 60%, var(--desk-bg-canvas));
+  color: var(--desk-fg-3);
+  font-size: 14px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.cap-card-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  pointer-events: none;
+}
+
+.cap-card-line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.cap-card-name {
+  color: var(--desk-fg-1);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.cap-card-kind {
+  color: var(--desk-fg-3);
+  font-size: 11px;
+}
+
+.cap-card-desc {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--desk-fg-2);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.cap-card-lane {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  width: 124px;
+}
+
+.cap-card-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--desk-fg-2);
+  font-size: 11px;
+}
+
+.cap-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--desk-success);
+}
+
+.cap-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.cap-form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--desk-fg-2);
+  font-size: 12px;
+}
+
+.cap-form-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--desk-fg-2);
+  font-size: 12px;
+}
+
+.cap-mono {
+  font-family: var(--indus-font-mono, ui-monospace, monospace);
+}
+
+.cap-dialog-gap {
+  flex: 1;
+}
+
+/* -- plugins --------------------------------------------------------------------------------- */
+
+.cap-plugins {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.cap-plugins-top {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 12px 8px;
+}
+
+.cap-blurb {
+  flex: 1;
+  margin: 0;
+  color: var(--desk-fg-3);
+  font-size: 12px;
+}
+
+.cap-toolbar {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+
+.cap-table-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.cap-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.cap-table thead th {
+  height: 28px;
+  padding: 0 12px;
+  border-top: 1px solid var(--desk-stroke-card);
+  border-bottom: 1px solid var(--desk-stroke-card);
+  background: var(--desk-bg-card);
+  color: var(--desk-fg-3);
+  font-size: 11px;
+  font-weight: 400;
+  text-align: left;
+}
+
+.cap-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--desk-stroke-2);
+  vertical-align: top;
+}
+
+.cap-col {
+  width: 144px;
+}
+
+.cap-col-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 144px;
+}
+
+.cap-col-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cap-plugin-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.cap-plugin-name {
+  color: var(--desk-fg-1);
+  font-weight: 500;
+}
+
+.cap-plugin-version {
+  color: var(--desk-fg-4);
+  font-size: 12px;
+}
+
+.cap-kind-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 4px;
+  border: 1px solid var(--desk-fg-4);
+  border-radius: 4px;
+  color: var(--desk-fg-3);
+  font-size: 10.4px;
+  line-height: 15px;
+}
+
+.cap-plugin-desc {
+  max-width: 730px;
+  margin: 2px 0 0;
+  color: var(--desk-fg-3);
+  font-size: 12px;
+}
+
+.cap-dash {
+  display: inline-block;
+  width: 36px;
+  color: var(--desk-fg-4);
+  text-align: center;
+}
+
+.cap-plugins-empty {
+  padding: 12px;
+  color: var(--desk-fg-3);
+  font-size: 12px;
+}
+
+.cap-plugins-empty p {
+  margin: 0;
+}

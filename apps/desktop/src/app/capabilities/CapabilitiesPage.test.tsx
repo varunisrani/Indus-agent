@@ -77,7 +77,7 @@ describe("capabilities page", () => {
     const desktop = new StubDesktopPlugins([{ id: "d1", name: "weather", enabled: true }]);
     wrap(<CapabilitiesPage api={api} desktopPlugins={desktop} profile="default" />);
     await flush();
-    expect(screen.getByText("brew-tea")).toBeTruthy();
+    expect(screen.getAllByText("brew-tea").length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("tab", { name: /Plugins/ }));
     await flush();
     const pluginCalls = () => api.calls.filter((c) => c.path === "/api/plugins");
@@ -90,7 +90,7 @@ describe("capabilities page", () => {
     expect(desktop.calls).toBe(1); // app-level: never re-read on a switch
     fireEvent.click(screen.getByRole("tab", { name: /Skills/ }));
     await flush();
-    expect(screen.getByText("work-notes")).toBeTruthy();
+    expect(screen.getAllByText("work-notes").length).toBeGreaterThan(0);
     const skillProfiles = api.calls.filter((c) => c.path === "/api/skills").map((c) => c.profile);
     expect(skillProfiles).toEqual(["default", "work"]);
     expect(api.calls.filter((c) => c.path === "/api/profiles")).toHaveLength(1);
@@ -165,6 +165,8 @@ describe("capabilities page", () => {
     api.route("POST", "/api/plugins/install", { ok: true, name: "x", sha: SHA });
     wrap(<CapabilitiesPage api={api} profile="default" initialTab="plugins" />);
     await flush();
+    // the form lives in the "Install from Git" dialog (W52-k)
+    fireEvent.click(screen.getByRole("button", { name: "Install from Git" }));
     fireEvent.change(screen.getByRole("textbox", { name: /Repository/ }), {
       target: { value: "acme/tool" },
     });
@@ -195,7 +197,10 @@ describe("capabilities page", () => {
     }));
     wrap(<CapabilitiesPage api={api} profile="default" summary={summary} />);
     await flush();
-    expect(screen.getByRole("tab", { name: /Skills/ }).textContent).toContain("2 of 3 on");
+    // W52-k: one number per tab, the total, as a superscript after the label
+    expect(screen.getByRole("tab", { name: /Skills/ }).querySelector("sup")?.textContent).toBe("3");
+    expect(screen.getByRole("tab", { name: /Tools/ }).querySelector("sup")?.textContent).toBe("9");
+    expect(screen.getByRole("tab", { name: /Connectors/ }).querySelector("sup")).toBeNull();
     fireEvent.click(screen.getByRole("switch", { name: "brew-tea is on" }));
     await flush();
     expect(api.calls.find((c) => c.path === "/api/skills/toggle")?.body).toEqual({
@@ -216,5 +221,50 @@ describe("capabilities page", () => {
       ["a", "desktop"],
       ["b", "both"],
     ]);
+  });
+
+  it("joins usage and the learned origin, archives after a confirm, reverts a failed toggle", async () => {
+    const api = backend();
+    api.route("GET", "/api/learning/graph", {
+      nodes: [{ id: "skill:brew-tea", useCount: 4, createdBy: "agent" }],
+      edges: [],
+    });
+    api.route("POST", "/api/skills/toggle", () => ({ status: 500, body: { detail: "nope" } }));
+    api.route("DELETE", "/api/learning/nodes/skill%3Abrew-tea", { ok: true, message: "archived" });
+    wrap(<CapabilitiesPage api={api} profile="default" />);
+    await flush();
+    expect(screen.getByText("\u00d74")).toBeTruthy();
+    expect(screen.getAllByText("learned").length).toBeGreaterThan(0);
+    const toggle = screen.getByRole("switch", { name: "brew-tea is on" }) as HTMLInputElement;
+    fireEvent.click(toggle);
+    await flush();
+    expect(toggle.checked).toBe(true); // the failed write flipped it back
+    fireEvent.click(screen.getByRole("button", { name: "Archive" }));
+    expect(api.calls.some((c) => c.method === "DELETE")).toBe(false);
+    fireEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", { name: "Archive" }),
+    );
+    await flush();
+    expect(api.calls.find((c) => c.method === "DELETE")?.path).toBe(
+      "/api/learning/nodes/skill%3Abrew-tea",
+    );
+  });
+
+  it("a connector card opens its dialog; Test reports the tools", async () => {
+    const api = backend();
+    api.route("GET", "/api/mcp/servers", {
+      servers: [{ name: "files", enabled: true, command: "mcp-files" }],
+    });
+    api.route("POST", "/api/mcp/servers/files/test", { tools: [{}, {}] });
+    wrap(<CapabilitiesPage api={api} profile="default" initialTab="connectors" />);
+    await flush();
+    expect(screen.getByText("Local")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Details: files" }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Test" }));
+    await flush();
+    expect(within(screen.getByRole("dialog")).getByRole("status").textContent).toBe(
+      "2 tools answer.",
+    );
   });
 });

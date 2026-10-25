@@ -1,14 +1,26 @@
 // Pairing (P18-23): who may talk to the agent over messaging platforms that ask strangers to pair.
 // Pending requests can be approved (or all cleared); a person who received a code can be approved
 // by that code; approved users can be revoked. Codes are never listed, only typed in.
+// Look (W52-d): headed sections with counts, one outlined card per person, 80 px empty cards.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Check, KeyRound, ShieldCheck, Trash2, Users, X } from "lucide-react";
 import { type FormEvent, useId, useState } from "react";
 import { api } from "../lib/api.ts";
 import type { PairingApproved, PairingPending } from "../lib/restTypes.ts";
 import { HeaderActions } from "../shell/PageHeader.tsx";
 import { errorText, useToast } from "../shell/Toasts.tsx";
-import { Button, Card, Field, inputClass, Notice, QueryState } from "../ui/controls.tsx";
+import {
+  Badge,
+  Button,
+  EmptyCard,
+  Field,
+  IconButton,
+  Input,
+  PageSpinner,
+  QueryState,
+  SectionHeading,
+} from "../ui/controls.tsx";
 import { ConfirmDialog } from "../ui/Dialog.tsx";
 
 function who(user: { user_id: string; user_name: string | null }): string {
@@ -20,6 +32,8 @@ export function ageText(seconds: number): string {
   if (seconds < 3600) return `${Math.floor(seconds / 60)} min ago`;
   return `${Math.floor(seconds / 3600)} h ago`;
 }
+
+const rowClass = "flex items-center gap-3 border border-line p-4";
 
 function ApproveByCode({ platforms }: { platforms: string[] }) {
   const toast = useToast();
@@ -47,42 +61,54 @@ function ApproveByCode({ platforms }: { platforms: string[] }) {
     approve.mutate();
   };
   return (
-    <Card>
-      <h2 className="mb-3 text-sm font-semibold">Approve by code</h2>
-      <form className="flex flex-wrap items-end gap-3" onSubmit={submit} noValidate>
-        <Field label="Platform" htmlFor={`${ids}-platform`}>
-          <input
-            id={`${ids}-platform`}
-            className={inputClass}
-            list={`${ids}-platforms`}
-            value={platform}
-            onChange={(e) => setPlatform(e.currentTarget.value)}
-          />
-        </Field>
-        <datalist id={`${ids}-platforms`}>
-          {platforms.map((name) => (
-            <option key={name} value={name} />
-          ))}
-        </datalist>
-        <Field label="Pairing code" htmlFor={`${ids}-code`}>
-          <input
-            id={`${ids}-code`}
-            className={`${inputClass} font-mono`}
-            autoComplete="off"
-            value={code}
-            onChange={(e) => setCode(e.currentTarget.value)}
-          />
-        </Field>
-        <Button type="submit" tone="primary" disabled={approve.isPending}>
-          Approve
-        </Button>
-      </form>
-      {problem ? (
-        <div className="mt-2">
-          <Notice tone="danger">{problem}</Notice>
-        </div>
-      ) : null}
-    </Card>
+    <section aria-labelledby={`${ids}-heading`} className="flex flex-col gap-3">
+      <SectionHeading icon={KeyRound} id={`${ids}-heading`}>
+        Approve by code
+      </SectionHeading>
+      <div className="flex flex-col gap-2 border border-line p-4">
+        <p className="m-0 text-[0.75rem] text-ink-soft">
+          Someone who messaged the bot got a short code; type it here to let them in.
+        </p>
+        <form className="flex flex-wrap items-end gap-3" onSubmit={submit} noValidate>
+          <Field label="Platform" htmlFor={`${ids}-platform`}>
+            <Input
+              id={`${ids}-platform`}
+              list={`${ids}-platforms`}
+              value={platform}
+              onChange={(e) => setPlatform(e.currentTarget.value)}
+            />
+          </Field>
+          <datalist id={`${ids}-platforms`}>
+            {platforms.map((name) => (
+              <option key={name} value={name} />
+            ))}
+          </datalist>
+          <Field label="Pairing code" htmlFor={`${ids}-code`}>
+            <Input
+              id={`${ids}-code`}
+              autoComplete="off"
+              value={code}
+              onChange={(e) => setCode(e.currentTarget.value)}
+            />
+          </Field>
+          <Button
+            type="submit"
+            tone="primary"
+            size="sm"
+            className="mb-0.5 uppercase"
+            icon={<Check />}
+            disabled={approve.isPending}
+          >
+            Approve
+          </Button>
+        </form>
+        {problem ? (
+          <p role="alert" className="m-0 text-[0.75rem] text-danger">
+            {problem}
+          </p>
+        ) : null}
+      </div>
+    </section>
   );
 }
 
@@ -99,14 +125,26 @@ function PendingRow({ request }: { request: PairingPending }) {
     onError: (error) => toast.show(errorText(error), "error"),
   });
   return (
-    <li
-      data-testid={`pending-${request.request_id}`}
-      className="flex flex-wrap items-center gap-2 rounded-md border border-line bg-raised p-2 text-sm"
-    >
-      <span className="flex-1">
-        <strong>{who(request)}</strong> on {request.platform} · {ageText(request.age_seconds)}
-      </span>
-      <Button tone="primary" onClick={() => approve.mutate()} disabled={approve.isPending}>
+    <li data-testid={`pending-${request.request_id}`} className={rowClass}>
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 items-center gap-2">
+          <Badge>{request.platform}</Badge>
+          <span className="truncate text-[0.875rem] font-medium text-ink">
+            {request.user_name ?? request.user_id}
+          </span>
+        </div>
+        <p className="m-0 mt-1 text-[0.75rem] text-ink-muted">
+          {request.user_id} · {ageText(request.age_seconds)}
+        </p>
+      </div>
+      <Button
+        tone="primary"
+        size="sm"
+        className="uppercase"
+        icon={<Check />}
+        onClick={() => approve.mutate()}
+        disabled={approve.isPending}
+      >
         Approve
       </Button>
     </li>
@@ -115,16 +153,19 @@ function PendingRow({ request }: { request: PairingPending }) {
 
 function ApprovedRow({ user, onRevoke }: { user: PairingApproved; onRevoke: () => void }) {
   return (
-    <li
-      data-testid={`approved-${user.platform}-${user.user_id}`}
-      className="flex flex-wrap items-center gap-2 rounded-md border border-line bg-raised p-2 text-sm"
-    >
-      <span className="flex-1">
-        <strong>{who(user)}</strong> on {user.platform}
-      </span>
-      <Button tone="danger" onClick={onRevoke}>
-        Revoke
-      </Button>
+    <li data-testid={`approved-${user.platform}-${user.user_id}`} className={rowClass}>
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 items-center gap-2">
+          <Badge>{user.platform}</Badge>
+          <span className="truncate text-[0.875rem] font-medium text-ink">{user.user_id}</span>
+        </div>
+        {user.user_name ? (
+          <p className="m-0 mt-1 text-[0.75rem] text-ink-muted">{user.user_name}</p>
+        ) : null}
+      </div>
+      <IconButton label="Revoke" tone="danger" onClick={onRevoke}>
+        <X />
+      </IconButton>
     </li>
   );
 }
@@ -165,42 +206,53 @@ export function PairingPage() {
     ...pending.map((p) => p.platform),
   ]);
   return (
-    <div className="flex flex-col gap-4 p-4">
+    <div className="flex flex-col gap-6 px-4 py-[1.375rem] lg:pr-8 lg:pl-[1.4375rem]">
       <HeaderActions>
-        <Button onClick={() => setClearing(true)} disabled={pending.length === 0}>
+        <Button
+          tone="primary"
+          size="sm"
+          className="uppercase"
+          icon={<Trash2 />}
+          onClick={() => setClearing(true)}
+          disabled={pending.length === 0}
+        >
           Clear pending
         </Button>
       </HeaderActions>
-      <QueryState loading={pairing.isPending} error={pairing.error}>
-        <section aria-label="Pending requests" className="flex flex-col gap-2">
-          <h2 className="text-sm font-semibold">Pending requests ({pending.length})</h2>
-          {pending.length === 0 ? (
-            <p className="text-sm text-muted">Nobody is waiting to be paired.</p>
-          ) : (
-            <ul className="flex flex-col gap-1">
-              {pending.map((request) => (
-                <PendingRow key={`${request.platform}-${request.request_id}`} request={request} />
-              ))}
-            </ul>
-          )}
-        </section>
-        <section aria-label="Approved users" className="flex flex-col gap-2">
-          <h2 className="text-sm font-semibold">Approved users ({approved.length})</h2>
-          {approved.length === 0 ? (
-            <p className="text-sm text-muted">No approved users yet.</p>
-          ) : (
-            <ul className="flex flex-col gap-1">
-              {approved.map((user) => (
-                <ApprovedRow
-                  key={`${user.platform}-${user.user_id}`}
-                  user={user}
-                  onRevoke={() => setRevoking(user)}
-                />
-              ))}
-            </ul>
-          )}
-        </section>
-      </QueryState>
+      {pairing.isPending ? (
+        <PageSpinner />
+      ) : (
+        <QueryState loading={false} error={pairing.error}>
+          <section aria-label="Pending requests" className="flex flex-col gap-3">
+            <SectionHeading icon={Users}>Pending requests ({pending.length})</SectionHeading>
+            {pending.length === 0 ? (
+              <EmptyCard>Nobody is waiting to be paired.</EmptyCard>
+            ) : (
+              <ul className="m-0 flex list-none flex-col gap-3 p-0">
+                {pending.map((request) => (
+                  <PendingRow key={`${request.platform}-${request.request_id}`} request={request} />
+                ))}
+              </ul>
+            )}
+          </section>
+          <section aria-label="Approved users" className="flex flex-col gap-3">
+            <SectionHeading icon={ShieldCheck}>Approved users ({approved.length})</SectionHeading>
+            {approved.length === 0 ? (
+              <EmptyCard>No approved users yet.</EmptyCard>
+            ) : (
+              <ul className="m-0 flex list-none flex-col gap-3 p-0">
+                {approved.map((user) => (
+                  <ApprovedRow
+                    key={`${user.platform}-${user.user_id}`}
+                    user={user}
+                    onRevoke={() => setRevoking(user)}
+                  />
+                ))}
+              </ul>
+            )}
+          </section>
+        </QueryState>
+      )}
       <ApproveByCode platforms={[...known].sort()} />
       <ConfirmDialog
         open={revoking !== null}

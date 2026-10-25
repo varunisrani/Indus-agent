@@ -46,7 +46,22 @@ afterEach(() => {
   restore();
 });
 
+async function openAdd() {
+  fireEvent.click(screen.getByRole("button", { name: "Add server" }));
+  await screen.findByRole("dialog", { name: "Add MCP server" });
+}
+
 describe("mcp page", () => {
+  it("shows an empty servers section that points at the catalog", async () => {
+    mock.state.mcpServers = [];
+    renderPage(<McpPage />, "/mcp");
+    expect(
+      await screen.findByRole("button", { name: "Browse catalog" }, { timeout: 5_000 }),
+    ).toBeTruthy();
+    expect(screen.getByText("Your MCP servers (0)")).toBeTruthy();
+    expect(screen.getByText("Catalog (0)")).toBeTruthy();
+  });
+
   it("renders the tool list from a test", async () => {
     renderPage(<McpPage />, "/mcp");
     const row = within(await screen.findByTestId("mcp-files"));
@@ -56,8 +71,8 @@ describe("mcp page", () => {
       within(tools)
         .getAllByRole("listitem")
         .map((li) => li.textContent),
-    ).toEqual(["read_file — Read a file", "list_dir — List a folder"]);
-    expect(row.getByText(/Connected\. 2 tools/)).toBeTruthy();
+    ).toEqual(["read_file, ", "list_dir"]);
+    expect(row.getByTitle("Read a file").textContent).toBe("read_file");
   });
 
   it("shows a failed test's reason", async () => {
@@ -70,12 +85,14 @@ describe("mcp page", () => {
   it("shows env values only as the server redacted them", async () => {
     renderPage(<McpPage />, "/mcp");
     const row = within(await screen.findByTestId("mcp-files"));
-    expect(row.getByText("FILES_TOKEN=****")).toBeTruthy();
+    expect(row.getByText(/1 env var/).getAttribute("title")).toBe("FILES_TOKEN=****");
   });
 
   it("adds a stdio server with command, args and env", async () => {
     renderPage(<McpPage />, "/mcp");
     await screen.findByTestId("mcp-files");
+    await openAdd();
+    fireEvent.change(screen.getByLabelText("Transport"), { target: { value: "stdio" } });
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "notes" } });
     fireEvent.change(screen.getByLabelText("Command"), { target: { value: "notes-server" } });
     fireEvent.change(screen.getByLabelText("Arguments"), {
@@ -84,7 +101,7 @@ describe("mcp page", () => {
     fireEvent.change(screen.getByLabelText("Environment (KEY=value per line)"), {
       target: { value: "NOTES_MODE=fast\n" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Add server" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
     await waitFor(() => expect(mock.callsTo("POST", "/api/mcp/servers")).toHaveLength(1));
     expect(mock.callsTo("POST", "/api/mcp/servers")[0]?.body).toEqual({
       name: "notes",
@@ -98,6 +115,9 @@ describe("mcp page", () => {
   it("adds an HTTP server and clears stdio fields when switching", async () => {
     renderPage(<McpPage />, "/mcp");
     await screen.findByTestId("mcp-files");
+    await openAdd();
+    expect((screen.getByLabelText("Transport") as HTMLSelectElement).value).toBe("http");
+    fireEvent.change(screen.getByLabelText("Transport"), { target: { value: "stdio" } });
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "web" } });
     fireEvent.change(screen.getByLabelText("Command"), { target: { value: "leftover" } });
     fireEvent.change(screen.getByLabelText("Transport"), { target: { value: "http" } });
@@ -106,7 +126,7 @@ describe("mcp page", () => {
       target: { value: "https://mcp.example.org/web" },
     });
     fireEvent.change(screen.getByLabelText("Authentication"), { target: { value: "header" } });
-    fireEvent.click(screen.getByRole("button", { name: "Add server" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
     await waitFor(() =>
       expect(mock.callsTo("POST", "/api/mcp/servers")[0]?.body).toEqual({
         name: "web",
@@ -119,12 +139,14 @@ describe("mcp page", () => {
   it("refuses a malformed env line before sending", async () => {
     renderPage(<McpPage />, "/mcp");
     await screen.findByTestId("mcp-files");
+    await openAdd();
+    fireEvent.change(screen.getByLabelText("Transport"), { target: { value: "stdio" } });
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "bad" } });
     fireEvent.change(screen.getByLabelText("Command"), { target: { value: "x" } });
     fireEvent.change(screen.getByLabelText("Environment (KEY=value per line)"), {
       target: { value: "no equals sign" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Add server" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
     expect((await screen.findByRole("alert")).textContent).toContain("KEY=value");
     expect(mock.callsTo("POST", "/api/mcp/servers")).toHaveLength(0);
     expect(parseEnvLines("A=1\nB=x=y")).toEqual({ A: "1", B: "x=y" });
@@ -134,7 +156,7 @@ describe("mcp page", () => {
   it("switches a server and removes one after confirming", async () => {
     renderPage(<McpPage />, "/mcp");
     const remote = within(await screen.findByTestId("mcp-remote"));
-    fireEvent.click(remote.getByRole("switch", { name: "Enable remote" }));
+    fireEvent.click(remote.getByRole("button", { name: "Enable" }));
     await waitFor(() =>
       expect(mock.callsTo("PUT", "/api/mcp/servers/remote/enabled")[0]?.body).toEqual({
         enabled: true,

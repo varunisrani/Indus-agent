@@ -96,7 +96,7 @@ describe("sessions sidebar", () => {
     const { api } = mount();
     const pinned = await screen.findByRole("list", { name: "Pinned" });
     expect(within(pinned).getByText("Pinned chat")).toBeTruthy();
-    const chats = screen.getByRole("list", { name: "Chats" });
+    const chats = screen.getByRole("list", { name: "Sessions" });
     expect(
       within(chats).getAllByRole("button", { name: /^(Try another way|Parser work|Lunch)/ }),
     ).toHaveLength(3);
@@ -110,9 +110,10 @@ describe("sessions sidebar", () => {
     expect(onOpenSession).toHaveBeenCalledWith("s-tip");
   });
 
-  it("pins on the durable id", async () => {
+  it("pins on the durable id (row menu)", async () => {
     const { api } = mount();
-    fireEvent.click(await screen.findByRole("button", { name: "Pin Parser work" }));
+    fireEvent.contextMenu(await screen.findByRole("button", { name: /^Parser work/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Pin" }));
     await waitFor(() =>
       expect(api.mock.calls.at(-1)?.[0]).toMatchObject({
         method: "PATCH",
@@ -122,6 +123,48 @@ describe("sessions sidebar", () => {
     );
     const pinned = screen.getByRole("list", { name: "Pinned" });
     expect(within(pinned).getByText("Parser work")).toBeTruthy();
+  });
+
+  it("shift-click pins without opening the chat (W52-h)", async () => {
+    const { api, onOpenSession } = mount();
+    fireEvent.click(await screen.findByRole("button", { name: /^Lunch/ }), { shiftKey: true });
+    expect(onOpenSession).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(api.mock.calls.at(-1)?.[0]).toMatchObject({
+        method: "PATCH",
+        path: "/api/sessions/s-plain",
+        body: { pinned: true },
+      }),
+    );
+  });
+
+  it("the row menu renames inline and deletes after a confirmation (W52-h)", async () => {
+    const { api } = mount();
+    const row = await screen.findByRole("button", { name: /^Lunch/ });
+    fireEvent.keyDown(row, { key: "F10", shiftKey: true });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Rename…" }));
+    const field = screen.getByRole("textbox", { name: "Session title" });
+    fireEvent.change(field, { target: { value: "Lunch plans" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+    await waitFor(() =>
+      expect(api.mock.calls.at(-1)?.[0]).toMatchObject({
+        method: "PATCH",
+        path: "/api/sessions/s-plain",
+        body: { title: "Lunch plans" },
+      }),
+    );
+    fireEvent.contextMenu(await screen.findByRole("button", { name: /^Lunch plans/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
+    const dialog = screen.getByRole("dialog", { name: "Delete this session?" });
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+    });
+    await waitFor(() => {
+      const call = api.mock.calls.at(-1)?.[0];
+      expect(call?.method).toBe("DELETE");
+      expect(call?.path.startsWith("/api/sessions/s-plain?")).toBe(true);
+    });
+    expect(screen.queryByRole("button", { name: /^Lunch plans/ })).toBeNull();
   });
 
   it("search finds a pasted id at once and adds the server's hits", async () => {
@@ -135,6 +178,22 @@ describe("sessions sidebar", () => {
     expect(await screen.findByRole("button", { name: /^Far away/ })).toBeTruthy();
     fireEvent.keyDown(screen.getByRole("searchbox"), { key: "Escape" });
     expect(screen.queryByRole("list", { name: "Results" })).toBeNull();
+  });
+
+  it("a search with no match says so, with one clear button (W51-b)", async () => {
+    const base = fakeApi();
+    const api = vi.fn<ApiRequest>(async (request) =>
+      request.path.startsWith("/api/sessions/search")
+        ? { kind: "response", status: 200, body: { results: [] } }
+        : base(request),
+    );
+    mount({ api });
+    await screen.findByRole("button", { name: /^Lunch/ });
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search conversations" }), {
+      target: { value: "zzqx storyboard" },
+    });
+    expect(await screen.findByText("No sessions match \u201czzqx storyboard\u201d.")).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "Clear search" })).toHaveLength(1);
   });
 
   it("a project groups its sessions and its new chat starts in its folder", async () => {
@@ -237,8 +296,10 @@ describe("sessions sidebar", () => {
       };
     });
     mount({ api });
-    fireEvent.click(screen.getByRole("radio", { name: "Archived" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Restore Old one" }));
+    fireEvent.click(screen.getByRole("button", { name: "Filter sessions" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Archived" }));
+    fireEvent.contextMenu(await screen.findByRole("button", { name: /^Old one/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Unarchive" }));
     await waitFor(() =>
       expect(api.mock.calls.at(-1)?.[0]).toMatchObject({
         path: "/api/sessions/old",
@@ -273,9 +334,9 @@ describe("sessions sidebar", () => {
   it("relative times", () => {
     const now = 1_000_000_000_000;
     expect(relativeTime(translate, now - 10_000, now)).toBe("now");
-    expect(relativeTime(translate, now - 5 * 60_000, now)).toBe("5 min");
-    expect(relativeTime(translate, now - 3 * 3_600_000, now)).toBe("3 h");
-    expect(relativeTime(translate, now - 50 * 3_600_000, now)).toBe("2 d");
+    expect(relativeTime(translate, now - 5 * 60_000, now)).toBe("5m");
+    expect(relativeTime(translate, now - 3 * 3_600_000, now)).toBe("3h");
+    expect(relativeTime(translate, now - 50 * 3_600_000, now)).toBe("2d");
     expect(relativeTime(translate, 0, now)).toBe("");
   });
 });

@@ -1,10 +1,14 @@
-// One approval request (P20-22): the command in full, the reason, and exactly the choices the
-// backend allows. A choice is granted only by an explicit activation: a click whose press started
+// One approval request (P20-22; W52-g look): the command in full and exactly the choices the
+// backend allows — Reject · Always allow… ▾ · Run ↵. The menu holds the remaining choices, a
+// reject with a reason, and a permanent "always" that asks once more before it applies. A choice is granted only by an explicit activation: a click whose press started
 // on that same button, or the keyboard. Dragging onto a button, a press that began elsewhere, or a
 // click already in flight when the card appeared (the arming delay) does nothing.
 
 import type { ApprovalChoice, ApprovalRequest } from "@indus/protocol";
+import * as Dialog from "@radix-ui/react-dialog";
+import { ChevronDown, CornerDownLeft, SquareTerminal } from "lucide-react";
 import {
+  type FormEvent,
   type KeyboardEvent,
   type MouseEvent,
   type PointerEvent,
@@ -14,6 +18,7 @@ import {
 } from "react";
 import type { OpenServerRequest } from "../../gateway/serverRequests.ts";
 import { type MessageKey, useT } from "../../i18n/index.tsx";
+import { Button, Menu, type MenuItem } from "../../ui/components.tsx";
 
 /** Clicks within this long after a card appears are ignored. */
 export const ARM_DELAY_MS = 250;
@@ -88,35 +93,34 @@ export function useExplicitPress(onActivate: () => void, armed: boolean) {
   };
 }
 
-function ChoiceButton(props: {
-  choice: ApprovalChoice;
-  armed: boolean;
-  onChoose: (choice: ApprovalChoice) => void;
-}) {
-  const t = useT();
-  const press = useExplicitPress(() => props.onChoose(props.choice), props.armed);
-  const danger = props.choice === "deny";
-  return (
-    <button
-      type="button"
-      data-choice={props.choice}
-      aria-keyshortcuts={SHORTCUT[props.choice]}
-      className={`rounded px-3 py-1 text-sm border ${
-        danger ? "border-danger text-danger" : "border-line"
-      } hover:bg-raised focus-visible:outline-2 focus-visible:outline-focus`}
-      {...press}
-    >
-      {t(LABEL[props.choice])}
-    </button>
-  );
+/** The choice the primary button grants: `once` when offered, else the first non-deny one. */
+export function primaryChoice(choices: readonly ApprovalChoice[]): ApprovalChoice | null {
+  if (choices.includes("once")) return "once";
+  return choices.find((choice) => choice !== "deny") ?? null;
 }
 
-export function ApprovalCard(props: { open: OpenServerRequest; armMs?: number }) {
+function useChoicePress(
+  choice: ApprovalChoice,
+  armed: boolean,
+  onChoose: (choice: ApprovalChoice) => void,
+) {
+  return useExplicitPress(() => onChoose(choice), armed);
+}
+
+export function ApprovalCard(props: {
+  open: OpenServerRequest;
+  armMs?: number;
+  /** Position in the stack when several approvals wait ("2 / 3"). */
+  index?: number;
+  total?: number;
+}) {
   const t = useT();
   const request = props.open.request as ApprovalRequest;
   const choices = allowedChoices(request);
   const armed = useArmed(props.armMs ?? ARM_DELAY_MS);
   const [reason, setReason] = useState("");
+  const [asking, setAsking] = useState(false);
+  const [confirmAlways, setConfirmAlways] = useState(false);
   const host = useRevealOnOpen<HTMLElement>();
 
   const choose = (choice: ApprovalChoice) => {
@@ -128,6 +132,11 @@ export function ApprovalCard(props: { open: OpenServerRequest; armMs?: number })
     );
   };
 
+  const primary = primaryChoice(choices);
+  const runPress = useChoicePress(primary ?? "once", armed, choose);
+  const rejectPress = useChoicePress("deny", armed, choose);
+  const sendRejectPress = useExplicitPress(() => choose("deny"), armed);
+
   const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.target instanceof HTMLInputElement) return;
     if (event.ctrlKey || event.metaKey || event.altKey) return;
@@ -137,34 +146,154 @@ export function ApprovalCard(props: { open: OpenServerRequest; armMs?: number })
     choose(choice);
   };
 
+  const later = (run: () => void) => () => {
+    if (armed) run();
+  };
+  const menuItems: MenuItem[] = [
+    ...choices
+      .filter((choice) => choice !== "deny" && choice !== primary)
+      .map(
+        (choice): MenuItem => ({
+          id: choice,
+          label: t(LABEL[choice]),
+          data: { "data-choice": choice },
+          run: later(() => (choice === "always" ? setConfirmAlways(true) : choose(choice))),
+        }),
+      ),
+    {
+      id: "reason",
+      label: t("approval.rejectWithReason"),
+      run: () => setAsking(true),
+    },
+    {
+      id: "deny",
+      label: t("approval.reject"),
+      tone: "danger",
+      data: { "data-choice": "deny" },
+      run: later(() => choose("deny")),
+    },
+  ];
+
+  const command = request.command?.trim() ?? "";
+  const description = request.description?.trim() ?? "";
+  const counted = (props.total ?? 1) > 1;
+
   return (
     <section
       ref={host}
       aria-label={t("approval.title")}
       data-card="approval"
       data-request-id={props.open.id}
-      className="rounded-lg border border-warn bg-raised p-3 space-y-2"
+      className="approval-card"
       onKeyDown={onKeyDown}
     >
-      <header className="text-sm font-semibold">{t("approval.title")}</header>
-      <p className="text-sm text-muted">{request.description}</p>
-      <pre className="font-mono text-xs whitespace-pre-wrap break-all select-text bg-code rounded p-2">
-        {request.command}
-      </pre>
-      <div className="flex flex-wrap items-center gap-2">
-        {choices.map((choice) => (
-          <ChoiceButton key={choice} choice={choice} armed={armed} onChoose={choose} />
-        ))}
-        <input
-          type="text"
-          aria-label={t("approval.denyReason")}
-          placeholder={t("approval.denyReason")}
-          className="flex-1 min-w-32 rounded border border-line bg-bg px-2 py-1 text-sm"
-          value={reason}
-          onChange={(event) => setReason(event.target.value)}
+      <header className="approval-head">
+        <SquareTerminal aria-hidden="true" size={14} />
+        <span className="approval-kind">
+          {t(command !== "" ? "approval.command" : "approval.commandDetails")}
+        </span>
+        {command !== "" && description !== "" && (
+          <span className="approval-why">{description}</span>
+        )}
+        {counted && (
+          <span className="approval-counter">
+            {t("approval.counter", { index: (props.index ?? 0) + 1, total: props.total ?? 1 })}
+          </span>
+        )}
+      </header>
+      <pre className="approval-command">{command !== "" ? command : description}</pre>
+      {asking && (
+        <form
+          className="approval-reason"
+          onSubmit={(event: FormEvent) => {
+            event.preventDefault();
+            if (armed) choose("deny");
+          }}
+        >
+          <input
+            type="text"
+            className="desk-input"
+            aria-label={t("approval.denyReason")}
+            placeholder={t("approval.denyReason")}
+            value={reason}
+            // biome-ignore lint/a11y/noAutofocus: the person just asked to type a reason
+            autoFocus
+            onChange={(event) => setReason(event.target.value)}
+          />
+          <Button variant="danger" size="sm" {...sendRejectPress}>
+            {t("approval.sendReject")}
+          </Button>
+        </form>
+      )}
+      <div className="approval-actions">
+        <button
+          type="button"
+          className="approval-reject"
+          data-choice="deny"
+          aria-keyshortcuts="Escape d"
+          {...rejectPress}
+        >
+          {t("approval.reject")}
+        </button>
+        <Menu
+          label={t("approval.moreChoices")}
+          side="down"
+          align="end"
+          triggerClassName="approval-more"
+          trigger={
+            <>
+              <span>{t("approval.alwaysMenu")}</span>
+              <ChevronDown aria-hidden="true" size={12} />
+            </>
+          }
+          items={menuItems}
         />
+        {primary !== null && (
+          <button
+            type="button"
+            className="approval-run"
+            data-choice={primary}
+            aria-keyshortcuts={`Enter ${SHORTCUT[primary]}`}
+            {...runPress}
+          >
+            {primary === "once" ? t("approval.run") : t(LABEL[primary])}
+            <CornerDownLeft aria-hidden="true" size={12} className="approval-enter" />
+          </button>
+        )}
       </div>
-      {props.open.replayed ? <p className="text-xs text-muted">{t("approval.replayed")}</p> : null}
+      {props.open.replayed ? <p className="approval-note">{t("approval.replayed")}</p> : null}
+      <Dialog.Root open={confirmAlways} onOpenChange={setConfirmAlways}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="overlay-backdrop" />
+          <Dialog.Content className="approval-confirm" aria-describedby={undefined}>
+            <Dialog.Title className="approval-confirm-title">
+              {t("approval.alwaysConfirmTitle")}
+            </Dialog.Title>
+            <p className="approval-confirm-body">{t("approval.alwaysConfirmBody")}</p>
+            <pre className="approval-command approval-confirm-command">
+              {command !== "" ? command : description}
+            </pre>
+            <div className="approval-actions">
+              <Dialog.Close asChild>
+                <Button variant="ghost" size="sm">
+                  {t("approval.alwaysConfirmCancel")}
+                </Button>
+              </Dialog.Close>
+              <Button
+                variant="danger"
+                size="sm"
+                data-choice="always"
+                onClick={() => {
+                  setConfirmAlways(false);
+                  choose("always");
+                }}
+              >
+                {t("approval.alwaysConfirmOk")}
+              </Button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </section>
   );
 }

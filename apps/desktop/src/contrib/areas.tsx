@@ -4,8 +4,9 @@
 // - Title bar: the area's items in a strip at the top right of the window band (left of the
 //   window controls; on macOS at the right edge), each inside its own error boundary. Nothing is
 //   drawn while the area is empty, so the window looks as before until something contributes.
-// - Palette: Ctrl/⌘+Shift+P opens a command list — the built-in "go to" entries the shell passes
-//   plus every `palette-command` — filtered as you type; Enter runs the selected one.
+// - Palette: Ctrl/⌘+K (or Ctrl/⌘+Shift+P) opens a command card at the top of the window — the
+//   shell's grouped entries (pages, projects, chats) plus every `palette-command` — filtered as
+//   you type; Enter runs the selected one (W52-h look: groups, icons, key caps).
 // - Keybinds: a `keybind` runs when its accelerator is pressed. A plugin never takes a key the app
 //   already uses (the pane shortcuts, the rebindable actions' defaults, the palette's own key);
 //   such a keybind is ignored. `Mod` means Ctrl, or ⌘ on macOS.
@@ -17,14 +18,17 @@
 // else happens.
 
 import { type SemanticName, type SemanticTheme, semanticNames, userTheme } from "@indus/ui";
+import { ChevronRight, Search } from "lucide-react";
 import {
+  Fragment,
   type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
-import { useT } from "../i18n/index.tsx";
+import { type MessageKey, useT } from "../i18n/index.tsx";
 import { actionForKey, isMac, type KeyLike } from "../panes/shortcuts.ts";
 import {
   acceleratorFromEvent,
@@ -32,6 +36,7 @@ import {
   normalizeAccelerator,
 } from "../settings/keybindings.ts";
 import { type AppearanceStore, appearance, type ContributedTheme } from "../theme/themeStore.ts";
+import { FloatingHud, KeyHint, keyCaps } from "../ui/components.tsx";
 import { ContributionArea, useContributionRegistry, useContributions } from "./react.tsx";
 import { type Contribution, type ContributionRegistry, contributions } from "./registry.ts";
 
@@ -80,8 +85,10 @@ export function ContributedTitleBar(props: {
 
 // -- keybinds ------------------------------------------------------------------------------------
 
-/** The palette's own accelerator. */
-export const PALETTE_KEYS = "CommandOrControl+Shift+P";
+/** The palette's own accelerator (W52-h: Ctrl/⌘+K, as in the reference). */
+export const PALETTE_KEYS = "CommandOrControl+K";
+/** The older accelerator, kept as an alias. */
+export const PALETTE_ALIAS_KEYS = "CommandOrControl+Shift+P";
 
 const fold = (accelerator: string) =>
   accelerator.replace(/\b(Command|Control)\b/g, "CommandOrControl");
@@ -95,7 +102,7 @@ export function keysOf(c: Contribution): string | null {
 
 /** The accelerators the app keeps for itself (the rebindable actions' defaults, the palette). */
 function reservedKeys(): ReadonlySet<string> {
-  const out = new Set<string>([PALETTE_KEYS]);
+  const out = new Set<string>([PALETTE_KEYS, PALETTE_ALIAS_KEYS]);
   for (const value of Object.values(effectiveBindings({}))) {
     const normal = normalizeAccelerator(value);
     if (normal !== null) out.add(fold(normal));
@@ -139,12 +146,42 @@ export function useContributedKeybinds(platform: string, registry?: Contribution
 
 // -- palette -------------------------------------------------------------------------------------
 
+export type PaletteGroup = "goto" | "projects" | "chats" | "commands";
+
 /** One row of the palette: a built-in entry from the shell, or a `palette-command`. */
 export interface PaletteEntry {
   readonly id: string;
   readonly title: string;
   readonly hint?: string;
+  /** Searched too, never shown. */
+  readonly keywords?: string;
+  readonly icon?: ReactNode;
+  /** Defaults: built-in entries "goto", contributed commands "commands". */
+  readonly group?: PaletteGroup;
+  /** An accelerator (`CommandOrControl+Shift+N`) shown as key caps. */
+  readonly keys?: string;
+  /** The row leads somewhere deeper (a chevron). */
+  readonly deeper?: boolean;
+  /** Listed only while the person is searching (chats). */
+  readonly searchOnly?: boolean;
   run(): void;
+}
+
+const GROUP_ORDER: readonly PaletteGroup[] = ["goto", "projects", "chats", "commands"];
+const GROUP_TEXT: Readonly<Record<PaletteGroup, MessageKey>> = {
+  goto: "palette.group.goto",
+  projects: "palette.group.projects",
+  chats: "palette.group.chats",
+  commands: "palette.group.commands",
+};
+
+/** Entries in display order: grouped, groups in a fixed order, entries in their given order. */
+export function groupPalette(entries: readonly PaletteEntry[]): PaletteEntry[] {
+  const rank = (entry: PaletteEntry) => GROUP_ORDER.indexOf(entry.group ?? "commands");
+  return entries
+    .map((entry, index) => ({ entry, index }))
+    .sort((a, b) => rank(a.entry) - rank(b.entry) || a.index - b.index)
+    .map((item) => item.entry);
 }
 
 /** The entries whose title (or hint) holds every word of `query`, in the given order. */
@@ -152,7 +189,7 @@ export function filterPalette(entries: readonly PaletteEntry[], query: string): 
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   if (words.length === 0) return [...entries];
   return entries.filter((entry) => {
-    const text = `${entry.title} ${entry.hint ?? ""}`.toLowerCase();
+    const text = `${entry.title} ${entry.hint ?? ""} ${entry.keywords ?? ""}`.toLowerCase();
     return words.every((word) => text.includes(word));
   });
 }
@@ -162,14 +199,17 @@ function entryOf(c: Contribution): PaletteEntry {
     id: c.id,
     title: String(c.title),
     ...(typeof c.hint === "string" && c.hint.length <= 128 ? { hint: c.hint } : {}),
+    group: "commands",
     run: () => runContribution(c),
   };
 }
 
-/** Ctrl/⌘+Shift+P: the built-in entries, then the registry's commands. */
+/** Ctrl/⌘+K (alias Ctrl/⌘+Shift+P): the built-in entries, then the registry's commands. */
 export function CommandPalette(props: {
   builtIn: readonly PaletteEntry[];
   registry?: ContributionRegistry;
+  /** Key caps in macOS symbols. */
+  mac?: boolean;
 }) {
   const t = useT();
   const commands = useContributions("palette-command", props.registry);
@@ -181,7 +221,8 @@ export function CommandPalette(props: {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (fold(acceleratorFromEvent(event)) !== PALETTE_KEYS) return;
+      const pressed = fold(acceleratorFromEvent(event));
+      if (pressed !== PALETTE_KEYS && pressed !== PALETTE_ALIAS_KEYS) return;
       event.preventDefault();
       setOpen((was) => {
         if (!was) back.current = document.activeElement;
@@ -198,10 +239,13 @@ export function CommandPalette(props: {
     if (open) input.current?.focus();
   }, [open]);
 
-  const entries = useMemo(
-    () => filterPalette([...props.builtIn, ...commands.map(entryOf)], query),
-    [props.builtIn, commands, query],
-  );
+  const entries = useMemo(() => {
+    const all = [...props.builtIn, ...commands.map(entryOf)].map((entry) =>
+      entry.group === undefined ? { ...entry, group: "goto" as const } : entry,
+    );
+    const shown = query.trim() === "" ? all.filter((entry) => !entry.searchOnly) : all;
+    return groupPalette(filterPalette(shown, query));
+  }, [props.builtIn, commands, query]);
   if (!open) return null;
 
   const close = () => {
@@ -232,21 +276,9 @@ export function CommandPalette(props: {
   };
 
   return (
-    <div className="command-palette-layer">
-      <button
-        type="button"
-        className="command-palette-backdrop"
-        tabIndex={-1}
-        aria-label={t("palette.close")}
-        onClick={close}
-      />
-      <div
-        className="command-palette"
-        role="dialog"
-        aria-modal="true"
-        aria-label={t("palette.label")}
-        onKeyDown={onKey}
-      >
+    <FloatingHud label={t("palette.label")} width={544} onClose={close} className="command-palette">
+      <div className="command-palette-search">
+        <Search aria-hidden="true" size={16} />
         <input
           ref={input}
           role="combobox"
@@ -255,39 +287,64 @@ export function CommandPalette(props: {
           aria-label={t("palette.search")}
           placeholder={t("palette.search")}
           value={query}
+          onKeyDown={onKey}
           onChange={(event) => {
             setQuery(event.target.value);
             setSelected(0);
           }}
         />
-        {entries.length === 0 ? (
-          <p className="command-palette-empty">{t("palette.empty")}</p>
-        ) : (
-          <div id="command-palette-list" role="listbox" aria-label={t("palette.label")}>
-            {entries.map((entry, index) => (
-              <div
-                key={entry.id}
-                role="option"
-                tabIndex={-1}
-                aria-selected={index === current}
-                className="command-palette-option"
-                data-contribution={entry.id}
-                onMouseEnter={() => setSelected(index)}
-                onMouseDown={(event) => {
-                  event.preventDefault();
-                  choose(entry);
-                }}
-              >
-                <span>{entry.title}</span>
-                {entry.hint === undefined ? null : (
-                  <span className="command-palette-hint">{entry.hint}</span>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
       </div>
-    </div>
+      {entries.length === 0 ? (
+        <p className="command-palette-empty">{t("palette.empty")}</p>
+      ) : (
+        <div
+          id="command-palette-list"
+          role="listbox"
+          aria-label={t("palette.label")}
+          className="command-palette-list"
+        >
+          {entries.map((entry, index) => {
+            const group = entry.group ?? "commands";
+            const heading = index === 0 || (entries[index - 1]?.group ?? "commands") !== group;
+            return (
+              <Fragment key={entry.id}>
+                {heading && (
+                  <div className="desk-hud-heading" role="presentation">
+                    {t(GROUP_TEXT[group])}
+                  </div>
+                )}
+                <div
+                  role="option"
+                  tabIndex={-1}
+                  aria-selected={index === current}
+                  className="desk-hud-row command-palette-option"
+                  data-contribution={entry.id}
+                  ref={(node) => {
+                    if (node !== null && index === current)
+                      node.scrollIntoView?.({ block: "nearest" });
+                  }}
+                  onMouseEnter={() => setSelected(index)}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    choose(entry);
+                  }}
+                >
+                  {entry.icon ?? null}
+                  <span className="command-palette-title">{entry.title}</span>
+                  {entry.hint === undefined ? null : (
+                    <span className="command-palette-hint">{entry.hint}</span>
+                  )}
+                  {entry.keys !== undefined && (
+                    <KeyHint keys={keyCaps(entry.keys, props.mac === true)} />
+                  )}
+                  {entry.deeper && <ChevronRight aria-hidden="true" />}
+                </div>
+              </Fragment>
+            );
+          })}
+        </div>
+      )}
+    </FloatingHud>
   );
 }
 

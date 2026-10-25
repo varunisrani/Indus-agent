@@ -1,14 +1,17 @@
-// The admin console modal (P24-36): one line of input, a log of what came back, and the confirm
-// step for commands that change something. It talks to `/api/console` (purpose `web-console`)
-// through the shared socket helper, so the credential rides the subprotocol list and never the
-// URL. Frames are JSON both ways; the server decides everything (which commands exist, what needs
+// The admin console modal (P24-36; W52-f look): a large panel with a real terminal (xterm) whose
+// prompt line is the input — Enter runs, Ctrl+C cancels, the confirm step asks "[y/N]". It talks
+// to `/api/console` (purpose `web-console`) through the shared socket helper, so the credential
+// rides the subprotocol list and never the URL. Frames are JSON both ways; the server decides everything (which commands exist, what needs
 // confirmation, the limits), the modal only shows it.
 
-import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import * as RadixDialog from "@radix-ui/react-dialog";
+import { SquareTerminal, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { activeProfile } from "../lib/api.ts";
 import { openDashboardSocket } from "../lib/wsUrl.ts";
-import { Button } from "../ui/controls.tsx";
-import { Modal } from "../ui/Dialog.tsx";
+import { Badge, type BadgeTone, Button, IconButton } from "../ui/controls.tsx";
+import { type ConsolePhase, ConsoleSession, type ConsoleTerminal } from "./consoleSession.ts";
+import { type ConsoleTerminalFactory, createConsoleTerminal } from "./consoleTerminal.ts";
 
 export const CONSOLE_PATH = "/api/console";
 export const CONSOLE_PURPOSE = "web-console";
@@ -30,19 +33,6 @@ export const connectConsole: ConnectConsole = async (profile) =>
     profile: profile || undefined,
   })) as unknown as ConsoleSocket;
 
-interface LogLine {
-  key: number;
-  kind: "input" | "stdout" | "stderr" | "error" | "note";
-  text: string;
-}
-
-interface Pending {
-  command: string;
-  message: string;
-}
-
-type Phase = "connecting" | "ready" | "running" | "closed";
-
 const CLOSE_TEXT: Readonly<Record<number, string>> = {
   1000: "The console closed.",
   4401: "The console needs you to be signed in.",
@@ -53,6 +43,14 @@ const CLOSE_TEXT: Readonly<Record<number, string>> = {
   1011: "The console could not start.",
 };
 
+const PHASE_TONE: Record<ConsolePhase, BadgeTone> = {
+  connecting: "neutral",
+  ready: "ok",
+  running: "warn",
+  closed: "danger",
+  error: "danger",
+};
+
 function textOf(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
@@ -61,74 +59,68 @@ export function ConsoleModal({
   open,
   onClose,
   connect = connectConsole,
+  createTerminal = createConsoleTerminal,
 }: {
   open: boolean;
   onClose: () => void;
   connect?: ConnectConsole;
+  createTerminal?: ConsoleTerminalFactory;
 }) {
-  const [lines, setLines] = useState<LogLine[]>([]);
-  const [phase, setPhase] = useState<Phase>("connecting");
-  const [prompt, setPrompt] = useState("indus> ");
-  const [profile, setProfile] = useState("");
-  const [pending, setPending] = useState<Pending | null>(null);
-  const [draft, setDraft] = useState("");
+  const [, setTick] = useState(0);
+  const [attempt, setAttempt] = useState(0);
+  const [host, setHost] = useState<HTMLDivElement | null>(null);
   const socket = useRef<ConsoleSocket | null>(null);
-  const counter = useRef(0);
-
-  const add = useCallback((kind: LogLine["kind"], text: string) => {
-    if (!text) return;
-    counter.current += 1;
-    const key = counter.current;
-    setLines((was) => [...was, { key, kind, text }]);
-  }, []);
-
-  const handle = useCallback(
-    (frame: Record<string, unknown>) => {
-      switch (frame.type) {
-        case "ready":
-          setPhase("ready");
-          setProfile(textOf(frame.profile));
-          if (typeof frame.prompt === "string") setPrompt(frame.prompt);
-          return;
-        case "output":
-          add(frame.stream === "stderr" ? "stderr" : "stdout", textOf(frame.data));
-          return;
-        case "error":
-          add("error", textOf(frame.message));
-          return;
-        case "confirm_required":
-          setPending({ command: textOf(frame.command), message: textOf(frame.message) });
-          return;
-        case "clear":
-          setLines([]);
-          return;
-        case "complete":
-          if (typeof frame.prompt === "string") setPrompt(frame.prompt);
-          if (frame.status === "exit") {
-            setPhase("closed");
-            onClose();
-            return;
-          }
-          if (frame.status === "cancelled") {
-            setPending(null);
-            add("note", "Cancelled.");
-          }
-          if (frame.status !== "confirm_required") setPending(null);
-          setPhase("ready");
-          return;
-        default:
-          return;
-      }
-    },
-    [add, onClose],
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  const session = useMemo(
+    () =>
+      new ConsoleSession(
+        (frame) => socket.current?.send(JSON.stringify(frame)),
+        () => setTick((n) => n + 1),
+        () => closeRef.current(),
+      ),
+    [],
   );
 
+  // The screen: created once the panel's body is in the page, fitted to it on every resize.
+  useEffect(() => {
+    if (!open || !host) return;
+    let live = true;
+    let term: ConsoleTerminal | null = null;
+    let unsubscribe: (() => void) | null = null;
+    let observer: ResizeObserver | null = null;
+    createTerminal()
+      .then((made) => {
+        if (!live) {
+          made.dispose();
+          return;
+        }
+        term = made;
+        made.open(host);
+        made.fit();
+        session.attach(made);
+        unsubscribe = made.onData((data) => session.input(data));
+        made.focus();
+        if (typeof ResizeObserver === "function") {
+          observer = new ResizeObserver(() => made.fit());
+          observer.observe(host);
+        }
+      })
+      .catch(() => session.fail("The terminal could not start in this browser.", "error"));
+    return () => {
+      live = false;
+      observer?.disconnect();
+      unsubscribe?.();
+      term?.dispose();
+    };
+  }, [open, host, createTerminal, session]);
+
+  // The connection: dialled on open and on every Reconnect.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `attempt` re-dials on Reconnect
   useEffect(() => {
     if (!open) return;
     let live = true;
-    setLines([]);
-    setPending(null);
-    setPhase("connecting");
+    session.reset();
     connect(activeProfile())
       .then((ws) => {
         if (!live) {
@@ -139,7 +131,7 @@ export function ConsoleModal({
         ws.onmessage = (event) => {
           try {
             const frame: unknown = JSON.parse(textOf(event.data));
-            if (frame && typeof frame === "object") handle(frame as Record<string, unknown>);
+            if (frame && typeof frame === "object") session.frame(frame as Record<string, unknown>);
           } catch {
             // the server only sends JSON; anything else is ignored
           }
@@ -147,122 +139,104 @@ export function ConsoleModal({
         ws.onclose = (event) => {
           if (!live) return;
           socket.current = null;
-          setPhase("closed");
-          add("note", CLOSE_TEXT[event.code] ?? `The console closed (${event.code}).`);
+          session.fail(CLOSE_TEXT[event.code] ?? `The console closed (${event.code}).`);
         };
         ws.onerror = () => undefined;
       })
       .catch((error: unknown) => {
         if (!live) return;
-        setPhase("closed");
-        add("error", error instanceof Error ? error.message : "The console could not connect.");
+        session.fail(
+          error instanceof Error ? error.message : "The console could not connect.",
+          "error",
+        );
       });
     return () => {
       live = false;
       socket.current?.close(1000);
       socket.current = null;
     };
-  }, [open, connect, handle, add]);
+  }, [open, connect, session, attempt]);
 
-  const send = (frame: Record<string, unknown>) => socket.current?.send(JSON.stringify(frame));
-
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    const line = draft.trim();
-    if (!line || phase !== "ready" || pending !== null) return;
-    add("input", `${prompt}${line}`);
-    setDraft("");
-    setPhase("running");
-    send({ type: "input", line });
-  };
-
+  const phase = session.phase;
   return (
-    <Modal
+    <RadixDialog.Root
       open={open}
       onOpenChange={(next) => {
         if (!next) onClose();
       }}
-      title="Admin console"
-      description={
-        profile
-          ? `Curated indus commands for ${profile}, one per line. Type help for the list.`
-          : "Curated indus commands, one per line. Type help for the list."
-      }
     >
-      <div
-        role="log"
-        aria-live="polite"
-        aria-label="Console output"
-        className="mb-3 h-64 overflow-auto rounded-md border border-line bg-code p-2 font-mono text-xs whitespace-pre-wrap"
-      >
-        {lines.map((line) => (
-          <div
-            key={line.key}
-            data-kind={line.kind}
-            className={
-              line.kind === "error" || line.kind === "stderr"
-                ? "text-danger"
-                : line.kind === "note"
-                  ? "text-muted"
-                  : ""
-            }
-          >
-            {line.text}
+      <RadixDialog.Portal>
+        <RadixDialog.Overlay className="fixed inset-0 z-40 bg-canvas/85 backdrop-blur-[1px] [animation:indus-fade-in_160ms_ease-out]" />
+        <RadixDialog.Content
+          onOpenAutoFocus={(event) => event.preventDefault()}
+          className="fixed top-1/2 left-1/2 z-50 flex h-[min(82vh,47.5rem)] w-[min(60rem,94vw)] -translate-x-1/2 -translate-y-1/2 flex-col border border-line-strong bg-surface text-ink shadow-2xl [animation:indus-pop-in_180ms_ease-out]"
+        >
+          <div className="flex h-[4.5rem] shrink-0 items-center gap-3 border-b border-line-strong px-4 py-3">
+            <span className="inline-flex size-[2.125rem] shrink-0 items-center justify-center border border-line-strong bg-canvas">
+              <SquareTerminal aria-hidden="true" className="size-4 text-ink" />
+            </span>
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
+              <RadixDialog.Title className="type-serif m-0 text-[1rem] leading-tight tracking-[0.03em] text-ink uppercase">
+                Indus console
+              </RadixDialog.Title>
+              <RadixDialog.Description asChild>
+                <div className="flex items-center gap-2">
+                  <Badge tone={PHASE_TONE[phase]}>{phase}</Badge>
+                  {session.profile ? (
+                    <span className="font-mono text-[0.75rem] text-ink-muted">
+                      {session.profile}
+                    </span>
+                  ) : null}
+                  {phase === "closed" || phase === "error" ? (
+                    <Button size="sm" className="h-6" onClick={() => setAttempt((n) => n + 1)}>
+                      Reconnect
+                    </Button>
+                  ) : null}
+                </div>
+              </RadixDialog.Description>
+            </div>
+            <RadixDialog.Close asChild>
+              <IconButton label="Close console">
+                <X />
+              </IconButton>
+            </RadixDialog.Close>
           </div>
-        ))}
-      </div>
-      {pending !== null ? (
-        <div role="alertdialog" aria-label="Confirm command" className="mb-3 text-sm">
-          <p className="mb-2">
-            {pending.message} <code>{pending.command}</code>
-          </p>
-          <span className="inline-flex gap-2">
-            <Button
-              tone="primary"
-              onClick={() => send({ type: "confirm", command: pending.command })}
-            >
-              Run it
-            </Button>
-            <Button onClick={() => send({ type: "cancel" })}>Cancel</Button>
-          </span>
-        </div>
-      ) : null}
-      <form onSubmit={submit} className="flex items-center gap-2">
-        <label className="flex flex-1 items-center gap-1 font-mono text-sm">
-          <span aria-hidden="true">{prompt}</span>
-          <input
-            aria-label="Console command"
-            className="flex-1 rounded-md border border-line bg-bg px-2 py-1"
-            value={draft}
-            disabled={phase !== "ready" || pending !== null}
-            onChange={(event) => setDraft(event.target.value)}
-            autoComplete="off"
-            spellCheck={false}
-          />
-        </label>
-        {phase === "running" ? (
-          <Button tone="danger" onClick={() => send({ type: "cancel" })}>
-            Stop
-          </Button>
-        ) : (
-          <Button type="submit" disabled={phase !== "ready" || pending !== null}>
-            Run
-          </Button>
-        )}
-      </form>
-    </Modal>
+          <div className="min-h-0 flex-1 bg-black p-2">
+            <div
+              ref={setHost}
+              data-testid="console-screen"
+              className="h-full w-full"
+              data-phase={phase}
+            />
+          </div>
+        </RadixDialog.Content>
+      </RadixDialog.Portal>
+    </RadixDialog.Root>
   );
 }
 
 /** The shell's entry: a button that opens the modal (only when the backend serves the console). */
-export function ConsoleEntry({ enabled }: { enabled: boolean }) {
+export function ConsoleEntry({
+  enabled,
+  compact = false,
+}: {
+  enabled: boolean;
+  compact?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   if (!enabled) return null;
   return (
     <>
-      <Button tone="ghost" className="w-full justify-start" onClick={() => setOpen(true)}>
-        Admin console
-      </Button>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-label={compact ? "Admin console" : undefined}
+        title={compact ? "Admin console" : undefined}
+        className={`flex h-8 items-center gap-3 text-[0.75rem] tracking-[0.06em] text-ink-muted hover:text-ink ${compact ? "justify-center" : "px-5"}`}
+      >
+        <SquareTerminal aria-hidden="true" className="size-3.5 shrink-0" />
+        {compact ? null : "Admin console"}
+      </button>
       {open ? <ConsoleModal open onClose={() => setOpen(false)} /> : null}
     </>
   );

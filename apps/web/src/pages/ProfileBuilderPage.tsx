@@ -1,28 +1,33 @@
-// The profile builder (P18-24): a stepped create flow — name, description, model, skills, MCP
-// servers, review. Nothing is written until "Create profile" on the review step; then the profile
-// is made (`POST /api/profiles`) and the chosen model, switched-off skills and new MCP servers are
-// written into it, each with `?profile=<new name>`. A refused follow-up is listed; the profile stays.
+// The profile builder (P18-24, five steps since W52-e): identity (name, description, start from),
+// model, skills (bundled set and hub picks), MCP servers, review. Nothing is written until "Create
+// profile" on the review step; then the profile is made (`POST /api/profiles`) and the chosen model,
+// switched-off skills, hub skills and new MCP servers are written into it, each with
+// `?profile=<new name>`. A refused follow-up is listed; the profile stays.
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { X } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
 import { Link } from "react-router";
 import { api } from "../lib/api.ts";
-import type { McpServerCreate, ProfileCreate } from "../lib/restTypes.ts";
+import type { HubResult, McpAuth, McpServerCreate, ProfileCreate } from "../lib/restTypes.ts";
 import { useProfileScope } from "../shell/ProfileScope.tsx";
 import { errorText } from "../shell/Toasts.tsx";
-import { Button, Card, Field, inputClass, Notice } from "../ui/controls.tsx";
+import { Badge, Button, Checkbox, inputClass, Notice, Segmented, Select } from "../ui/controls.tsx";
+import { cx } from "../ui/cx.ts";
 import { parseEnvLines, splitArgs } from "./McpPage.tsx";
 import { normaliseProfileName, profileNameProblem } from "./profiles/profileName.ts";
 
-export const STEPS = [
-  { id: "name", label: "Name" },
-  { id: "description", label: "Description" },
-  { id: "model", label: "Model" },
-  { id: "skills", label: "Skills" },
-  { id: "mcp", label: "MCP servers" },
-  { id: "review", label: "Review" },
-] as const;
-type StepId = (typeof STEPS)[number]["id"];
+/** The builder's steps in order; the pill shows "<n>. <title>". */
+export const STEP_ORDER = ["identity", "model", "skills", "mcp", "review"] as const;
+type StepId = (typeof STEP_ORDER)[number];
+const STEP_TITLE: Record<StepId, string> = {
+  review: "Review",
+  mcp: "MCPs",
+  skills: "Skills",
+  model: "Model",
+  identity: "Identity",
+};
+export const STEPS = STEP_ORDER.map((id) => ({ id, title: STEP_TITLE[id] }));
 
 interface McpDraft {
   name: string;
@@ -31,15 +36,17 @@ interface McpDraft {
   args: string;
   env: string;
   url: string;
+  auth?: McpAuth;
 }
 
 const EMPTY_MCP: McpDraft = {
   name: "",
-  transport: "stdio",
+  transport: "http",
   command: "",
   args: "",
   env: "",
   url: "",
+  auth: "none",
 };
 
 /** The add body for a drafted server, or why it cannot be added. */
@@ -48,7 +55,9 @@ export function mcpBody(draft: McpDraft): McpServerCreate | string {
   if (!/^[A-Za-z0-9._-]{1,64}$/.test(name)) return "Name the server with letters and digits.";
   if (draft.transport === "http") {
     if (!/^https?:\/\/\S+$/.test(draft.url.trim())) return "Give the server's http(s) URL.";
-    return { name, url: draft.url.trim() };
+    const body: McpServerCreate = { name, url: draft.url.trim() };
+    if (draft.auth && draft.auth !== "none") body.auth = draft.auth;
+    return body;
   }
   if (!draft.command.trim()) return "Give the command that starts the server.";
   const env = parseEnvLines(draft.env);
@@ -62,26 +71,76 @@ interface Outcome {
   message: string;
 }
 
+const labelClass = "type-label text-[0.6875rem] tracking-[0.1em] text-ink";
+const fieldClass = cx(inputClass, "h-[33px] w-full text-[0.8125rem]");
+const mutedLine = "m-0 text-[0.8125rem] text-ink-soft";
+/** Back / Next / Create: tall, bold, tracked, not uppercase; disabled shows the muted fill. */
+const navClass =
+  "inline-flex h-[37px] min-w-[73px] items-center justify-center px-4 text-[0.875rem] font-bold tracking-[0.15em] transition-colors disabled:cursor-not-allowed disabled:bg-selected disabled:text-ink";
+
+function Label({ htmlFor, children }: { htmlFor: string; children: ReactNode }) {
+  return (
+    <label htmlFor={htmlFor} className={labelClass}>
+      {children}
+    </label>
+  );
+}
+
 function Step({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section aria-label={`${title} step`} className="flex flex-col gap-3">
-      <h2 className="text-sm font-semibold">{title}</h2>
+    <section aria-label={`${title} step`} className="flex flex-col gap-4">
       {children}
     </section>
+  );
+}
+
+function Pill({
+  index,
+  label,
+  state,
+  disabled,
+  onClick,
+}: {
+  index: number;
+  label: string;
+  state: "current" | "visited" | "future";
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-current={state === "current" ? "step" : undefined}
+      disabled={disabled}
+      onClick={onClick}
+      className={cx(
+        "h-[26px] rounded-full px-3 text-[0.8125rem] whitespace-nowrap transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+        state === "current" && "bg-ink text-on-ink",
+        state === "visited" && "bg-selected text-ink hover:bg-hover",
+        state === "future" && "text-ink-faint hover:text-ink-muted",
+      )}
+    >
+      {index + 1}. {label}
+    </button>
   );
 }
 
 export function ProfileBuilderPage() {
   const scope = useProfileScope();
   const ids = useId();
-  const [step, setStep] = useState<StepId>("name");
+  const [step, setStep] = useState<StepId>("identity");
   const [name, setName] = useState("");
   const [cloneFrom, setCloneFrom] = useState("");
   const [description, setDescription] = useState("");
+  const [providerFilter, setProviderFilter] = useState("");
   const [provider, setProvider] = useState("");
   const [model, setModel] = useState("");
-  const [keepSkills, setKeepSkills] = useState(true);
+  const [keepAll, setKeepAll] = useState(true);
+  const [noSkills, setNoSkills] = useState(false);
+  const [skillFilter, setSkillFilter] = useState("");
   const [skillsOff, setSkillsOff] = useState<string[]>([]);
+  const [hubQuery, setHubQuery] = useState("");
+  const [hubPicks, setHubPicks] = useState<HubResult[]>([]);
   const [servers, setServers] = useState<McpServerCreate[]>([]);
   const [draft, setDraft] = useState<McpDraft>(EMPTY_MCP);
   const [draftProblem, setDraftProblem] = useState("");
@@ -98,16 +157,19 @@ export function ProfileBuilderPage() {
   const skills = useQuery({
     queryKey: ["builder", "skills"],
     queryFn: () => api.skills.list(),
-    enabled: step === "skills",
+    enabled: step === "skills" && !keepAll,
   });
+  const hub = useMutation({ mutationFn: (q: string) => api.skills.hubSearch(q) });
 
-  const at = STEPS.findIndex((s) => s.id === step);
+  const at = STEP_ORDER.indexOf(step);
   const modelProblem = provider && !model.trim() ? "Name the model for that provider." : null;
-  const blocked = (step === "name" && nameProblem !== null) || (step === "model" && !!modelProblem);
+  const blocked =
+    (step === "identity" && nameProblem !== null) || (step === "model" && !!modelProblem);
   const go = (delta: number) => {
-    const next = STEPS[Math.min(Math.max(at + delta, 0), STEPS.length - 1)];
-    if (next) setStep(next.id);
+    const next = STEP_ORDER[Math.min(Math.max(at + delta, 0), STEP_ORDER.length - 1)];
+    if (next) setStep(next);
   };
+  const trimSkills = !noSkills && !keepAll;
 
   const addServer = () => {
     const body = mcpBody(draft);
@@ -120,8 +182,12 @@ export function ProfileBuilderPage() {
       return;
     }
     setServers((all) => [...all, body]);
-    setDraft(EMPTY_MCP);
+    setDraft({ ...EMPTY_MCP, transport: draft.transport });
     setDraftProblem("");
+  };
+
+  const searchHub = () => {
+    if (hubQuery.trim()) hub.mutate(hubQuery.trim());
   };
 
   const create = async () => {
@@ -131,7 +197,7 @@ export function ProfileBuilderPage() {
     const body: ProfileCreate = { name: id };
     if (cloneFrom) body.clone_from = cloneFrom;
     if (description.trim()) body.description = description.trim();
-    if (!keepSkills) body.no_skills = true;
+    if (noSkills) body.no_skills = true;
     try {
       const reply = await api.profile.create(body);
       done.push({ label: `Profile ${reply.name}`, ok: true, message: "created" });
@@ -151,10 +217,13 @@ export function ProfileBuilderPage() {
     if (provider && model.trim()) {
       await follow(`Model ${model.trim()}`, () => api.profile.setModel(id, provider, model.trim()));
     }
-    if (keepSkills) {
+    if (trimSkills) {
       for (const skill of skillsOff) {
         await follow(`Skill ${skill} off`, () => api.skills.toggle(skill, false, id));
       }
+    }
+    for (const pick of hubPicks) {
+      await follow(`Hub skill ${pick.name}`, () => api.skills.hubInstall(pick.identifier, id));
     }
     for (const server of servers) {
       await follow(`MCP server ${server.name}`, () => api.mcp.add(server, id));
@@ -164,75 +233,114 @@ export function ProfileBuilderPage() {
     setCreating(false);
   };
 
+  const shell = (children: ReactNode) => (
+    <div className="px-4 py-[1.4375rem]">
+      <div className="mx-auto flex w-full max-w-[690px] flex-col gap-6">{children}</div>
+    </div>
+  );
+
   if (outcomes) {
     const made = outcomes[0]?.ok === true;
-    return (
-      <div className="flex flex-col gap-4 p-4">
-        <Card className="flex flex-col gap-2">
-          <h2 className="text-sm font-semibold">
-            {made ? "Profile created" : "The profile was not created"}
-          </h2>
-          <ul aria-label="Create results" className="flex flex-col gap-1 text-sm">
-            {outcomes.map((o) => (
-              <li key={o.label} className={o.ok ? "text-fg" : "text-danger"}>
-                {o.ok ? "✓" : "✗"} {o.label}
-                {o.ok ? "" : `: ${o.message}`}
-              </li>
-            ))}
-          </ul>
-          <div className="flex gap-2">
-            <Link
-              to={{ pathname: "/profiles", search: scope.search }}
-              className="rounded-md border border-line px-3 py-1.5 text-sm"
-            >
-              Back to profiles
-            </Link>
-            {made ? null : <Button onClick={() => setOutcomes(null)}>Change and retry</Button>}
-          </div>
-        </Card>
-      </div>
+    return shell(
+      <section className="flex flex-col gap-4 border border-line p-5">
+        <h2 className="type-section-title m-0 text-[0.9375rem]">
+          {made ? "Profile created" : "The profile was not created"}
+        </h2>
+        <ul
+          aria-label="Create results"
+          className="m-0 flex list-none flex-col gap-1 p-0 text-[0.8125rem]"
+        >
+          {outcomes.map((o) => (
+            <li key={o.label} className={o.ok ? "text-ink" : "text-danger"}>
+              {o.ok ? "✓" : "✗"} {o.label}
+              {o.ok ? "" : `: ${o.message}`}
+            </li>
+          ))}
+        </ul>
+        <div className="flex gap-2">
+          <Link
+            to={{ pathname: "/profiles", search: scope.search }}
+            className="type-button inline-flex h-[1.875rem] items-center border border-ink bg-ink px-3 text-on-ink hover:opacity-90"
+          >
+            Back to profiles
+          </Link>
+          {made ? null : <Button onClick={() => setOutcomes(null)}>Change and retry</Button>}
+        </div>
+      </section>,
     );
   }
 
-  return (
-    <div className="flex flex-col gap-4 p-4">
-      <ol aria-label="Steps" className="flex flex-wrap gap-1">
+  const providers = (options.data?.providers ?? []).filter((p) => {
+    const q = providerFilter.trim().toLowerCase();
+    return !q || p.label.toLowerCase().includes(q) || p.name.toLowerCase().includes(q);
+  });
+  const skillRows = (skills.data?.skills ?? []).filter((s) => {
+    const q = skillFilter.trim().toLowerCase();
+    return !q || s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q);
+  });
+  const rowClass =
+    "flex w-full items-center gap-2 px-3 py-2 text-left text-[0.8125rem] transition-colors";
+
+  return shell(
+    <>
+      <div className="flex items-center gap-4">
+        <h2 className="m-0 flex-1 font-display text-[2.5rem] leading-none font-bold text-ink">
+          New profile
+        </h2>
+        <Link
+          to={{ pathname: "/profiles", search: scope.search }}
+          className="px-3 py-1.5 text-[0.8125rem] font-bold tracking-[0.15em] text-ink hover:bg-hover"
+        >
+          Cancel
+        </Link>
+      </div>
+
+      <ol aria-label="Steps" className="m-0 flex list-none flex-wrap gap-2 p-0">
         {STEPS.map((s, i) => (
           <li key={s.id}>
-            <button
-              type="button"
-              aria-current={s.id === step ? "step" : undefined}
-              disabled={i > at && (nameProblem !== null || !!modelProblem)}
+            <Pill
+              index={i}
+              label={s.title}
+              state={i === at ? "current" : i < at ? "visited" : "future"}
+              disabled={(i > 0 && nameProblem !== null) || (i > at && !!modelProblem)}
               onClick={() => setStep(s.id)}
-              className={`rounded-md border px-2 py-1 text-xs ${
-                s.id === step ? "border-accent bg-accent text-accent-fg" : "border-line"
-              }`}
-            >
-              {i + 1}. {s.label}
-            </button>
+            />
           </li>
         ))}
       </ol>
-      <Card className="flex flex-col gap-3">
-        {step === "name" ? (
-          <Step title="Name">
-            <Field
-              label="Profile name"
-              htmlFor={`${ids}-name`}
-              hint="Lower-case letters, digits, '-' or '_'; at most 64 characters."
-            >
+
+      <div className="border border-line p-5">
+        {step === "identity" ? (
+          <Step title="Identity">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor={`${ids}-name`}>Profile name</Label>
               <input
                 id={`${ids}-name`}
-                className={inputClass}
+                className={fieldClass}
+                placeholder="coder"
+                aria-invalid={name !== "" && nameProblem !== null}
                 value={name}
                 onChange={(e) => setName(e.currentTarget.value)}
               />
-            </Field>
-            {name && nameProblem ? <p className="text-xs text-danger">{nameProblem}</p> : null}
-            <Field label="Start from" htmlFor={`${ids}-clone`}>
-              <select
+              {name && nameProblem ? (
+                <p className="m-0 text-[0.75rem] text-danger">{nameProblem}</p>
+              ) : null}
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor={`${ids}-description`}>Description (optional)</Label>
+              <input
+                id={`${ids}-description`}
+                className={fieldClass}
+                placeholder="What this profile is for"
+                value={description}
+                onChange={(e) => setDescription(e.currentTarget.value)}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor={`${ids}-clone`}>Start from</Label>
+              <Select
                 id={`${ids}-clone`}
-                className={inputClass}
+                className="w-full [&_select]:h-[33px] [&_select]:text-[0.8125rem]"
                 value={cloneFrom}
                 onChange={(e) => setCloneFrom(e.currentTarget.value)}
               >
@@ -242,237 +350,460 @@ export function ProfileBuilderPage() {
                     A copy of {p}'s settings
                   </option>
                 ))}
-              </select>
-            </Field>
+              </Select>
+            </div>
           </Step>
         ) : null}
-        {step === "description" ? (
-          <Step title="Description">
-            <Field
-              label="Description"
-              htmlFor={`${ids}-description`}
-              hint="What this profile is for; shown on the Profiles page."
-            >
-              <textarea
-                id={`${ids}-description`}
-                className={inputClass}
-                rows={3}
-                value={description}
-                onChange={(e) => setDescription(e.currentTarget.value)}
-              />
-            </Field>
-          </Step>
-        ) : null}
+
         {step === "model" ? (
           <Step title="Model">
-            <Field label="Provider" htmlFor={`${ids}-provider`}>
-              <select
-                id={`${ids}-provider`}
-                className={inputClass}
-                value={provider}
-                onChange={(e) => setProvider(e.currentTarget.value)}
+            <p className={mutedLine}>
+              Pick the provider new sessions use; you can also leave it for later.
+            </p>
+            <input
+              aria-label="Filter providers"
+              className={fieldClass}
+              placeholder="Filter…"
+              value={providerFilter}
+              onChange={(e) => setProviderFilter(e.currentTarget.value)}
+            />
+            <fieldset
+              aria-label="Providers"
+              className="m-0 flex max-h-72 min-w-0 flex-col overflow-y-auto border border-line p-0"
+            >
+              <button
+                type="button"
+                aria-pressed={provider === ""}
+                onClick={() => {
+                  setProvider("");
+                  setModel("");
+                }}
+                className={cx(rowClass, provider === "" ? "bg-ink/10" : "hover:bg-hover")}
               >
-                <option value="">Keep the model it starts with</option>
-                {(options.data?.providers ?? []).map((p) => (
-                  <option key={p.name} value={p.name}>
-                    {p.label}
-                    {p.configured ? "" : " (no key yet)"}
-                  </option>
-                ))}
-              </select>
-            </Field>
+                Use default (set later)
+              </button>
+              {options.isPending ? <p className={cx(mutedLine, "px-3 py-2")}>Loading…</p> : null}
+              {providers.map((p) => (
+                <button
+                  key={p.name}
+                  type="button"
+                  aria-pressed={provider === p.name}
+                  onClick={() => setProvider(p.name)}
+                  className={cx(
+                    rowClass,
+                    "border-t border-line",
+                    provider === p.name ? "bg-ink/10" : "hover:bg-hover",
+                  )}
+                >
+                  <span className="flex-1">{p.label}</span>
+                  <span className="type-data text-[0.75rem] text-ink-soft">
+                    {p.configured ? p.name : "no key yet"}
+                  </span>
+                </button>
+              ))}
+            </fieldset>
             {provider ? (
-              <Field label="Model" htmlFor={`${ids}-model`}>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor={`${ids}-model`}>Model</Label>
                 <input
                   id={`${ids}-model`}
-                  className={inputClass}
+                  className={fieldClass}
+                  placeholder="model name"
                   value={model}
                   onChange={(e) => setModel(e.currentTarget.value)}
                 />
-              </Field>
+              </div>
             ) : null}
-            {modelProblem ? <p className="text-xs text-danger">{modelProblem}</p> : null}
+            {modelProblem ? <p className="m-0 text-[0.75rem] text-danger">{modelProblem}</p> : null}
           </Step>
         ) : null}
+
         {step === "skills" ? (
           <Step title="Skills">
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="radio"
-                name={`${ids}-skills`}
-                checked={keepSkills}
-                onChange={() => setKeepSkills(true)}
+            <label htmlFor={`${ids}-keep`} className="flex items-center gap-2 text-[0.8125rem]">
+              <Checkbox
+                id={`${ids}-keep`}
+                checked={keepAll && !noSkills}
+                disabled={noSkills}
+                onChange={(e) => setKeepAll(e.currentTarget.checked)}
               />
-              Keep the bundled skills
+              Keep every bundled skill (recommended)
             </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="radio"
-                name={`${ids}-skills`}
-                checked={!keepSkills}
-                onChange={() => setKeepSkills(false)}
+            <label htmlFor={`${ids}-none`} className="flex items-center gap-2 text-[0.8125rem]">
+              <Checkbox
+                id={`${ids}-none`}
+                checked={noSkills}
+                onChange={(e) => setNoSkills(e.currentTarget.checked)}
               />
-              Start without bundled skills
+              Start with no bundled skills
             </label>
-            {keepSkills ? (
-              <fieldset className="flex flex-col gap-1 border-0 p-0">
-                <legend className="mb-1 text-xs text-muted">
+            {trimSkills ? (
+              <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
+                <legend className="mb-2 p-0 text-[0.75rem] text-ink-soft">
                   Untick a skill to switch it off in the new profile.
                 </legend>
-                {skills.isPending ? <p className="text-sm text-muted">Loading…</p> : null}
-                {(skills.data?.skills ?? []).map((skill) => (
-                  <label key={skill.name} className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={!skillsOff.includes(skill.name)}
-                      onChange={(e) => {
-                        const on = e.currentTarget.checked;
-                        setSkillsOff((all) =>
-                          on ? all.filter((n) => n !== skill.name) : [...all, skill.name],
-                        );
-                      }}
-                    />
-                    {skill.name}
-                  </label>
-                ))}
+                <input
+                  aria-label="Filter skills"
+                  className={fieldClass}
+                  placeholder="Filter…"
+                  value={skillFilter}
+                  onChange={(e) => setSkillFilter(e.currentTarget.value)}
+                />
+                <div className="flex max-h-56 flex-col overflow-y-auto border border-line">
+                  {skills.isPending ? <p className={cx(mutedLine, "px-3 py-2")}>Loading…</p> : null}
+                  {skillRows.map((skill, i) => (
+                    <label
+                      key={skill.name}
+                      htmlFor={`${ids}-skill-${skill.name}`}
+                      className={cx(
+                        "flex cursor-pointer items-start gap-2.5 px-3 py-2 hover:bg-hover",
+                        i > 0 && "border-t border-line",
+                      )}
+                    >
+                      <Checkbox
+                        id={`${ids}-skill-${skill.name}`}
+                        aria-label={skill.name}
+                        className="mt-0.5"
+                        checked={!skillsOff.includes(skill.name)}
+                        onChange={(e) => {
+                          const on = e.currentTarget.checked;
+                          setSkillsOff((all) =>
+                            on ? all.filter((n) => n !== skill.name) : [...all, skill.name],
+                          );
+                        }}
+                      />
+                      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                        <span className="flex items-center gap-2">
+                          <span className="text-[0.8125rem] font-medium text-ink">
+                            {skill.name}
+                          </span>
+                          {skill.category ? <Badge tone="secondary">{skill.category}</Badge> : null}
+                        </span>
+                        {skill.description ? (
+                          <span className="text-[0.75rem] text-ink-soft">{skill.description}</span>
+                        ) : null}
+                      </span>
+                    </label>
+                  ))}
+                </div>
               </fieldset>
             ) : null}
+            <div className="flex flex-col gap-2 border-t border-line pt-4">
+              <Label htmlFor={`${ids}-hub`}>Add from the skills hub</Label>
+              <div className="flex gap-2">
+                <input
+                  id={`${ids}-hub`}
+                  className={fieldClass}
+                  placeholder="Search the hub"
+                  value={hubQuery}
+                  onChange={(e) => setHubQuery(e.currentTarget.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      searchHub();
+                    }
+                  }}
+                />
+                <Button className="h-[33px]" onClick={searchHub} disabled={hub.isPending}>
+                  Search
+                </Button>
+              </div>
+              {hub.error ? <Notice tone="danger">{errorText(hub.error)}</Notice> : null}
+              {hubPicks.length ? (
+                <ul
+                  aria-label="Hub skills to add"
+                  className="m-0 flex list-none flex-wrap gap-1.5 p-0"
+                >
+                  {hubPicks.map((pick) => (
+                    <li key={pick.identifier}>
+                      <Badge tone="accent">
+                        {pick.name}
+                        <button
+                          type="button"
+                          aria-label={`Remove ${pick.name}`}
+                          className="-mr-1 inline-flex items-center"
+                          onClick={() =>
+                            setHubPicks((all) =>
+                              all.filter((p) => p.identifier !== pick.identifier),
+                            )
+                          }
+                        >
+                          <X />
+                        </button>
+                      </Badge>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {hub.data ? (
+                hub.data.results.length ? (
+                  <ul
+                    aria-label="Hub results"
+                    className="m-0 flex max-h-56 list-none flex-col overflow-y-auto border border-line p-0"
+                  >
+                    {hub.data.results.map((hit, i) => {
+                      const picked = hubPicks.some((p) => p.identifier === hit.identifier);
+                      return (
+                        <li
+                          key={hit.identifier}
+                          className={cx(
+                            "flex items-start gap-2 px-3 py-2",
+                            i > 0 && "border-t border-line",
+                          )}
+                        >
+                          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                            <span className="flex items-center gap-2">
+                              <span className="text-[0.8125rem] font-medium text-ink">
+                                {hit.name}
+                              </span>
+                              <Badge tone="secondary">{hit.source}</Badge>
+                            </span>
+                            {hit.description ? (
+                              <span className="text-[0.75rem] text-ink-soft">
+                                {hit.description}
+                              </span>
+                            ) : null}
+                          </span>
+                          <Button
+                            tone="ghost"
+                            size="sm"
+                            aria-label={`Add ${hit.name}`}
+                            disabled={picked || hit.installed}
+                            onClick={() => setHubPicks((all) => [...all, hit])}
+                          >
+                            {hit.installed ? "Installed" : picked ? "Added" : "Add"}
+                          </Button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <p className={mutedLine}>No hub skills match that search.</p>
+                )
+              ) : null}
+            </div>
           </Step>
         ) : null}
+
         {step === "mcp" ? (
           <Step title="MCP servers">
+            <div className="flex items-baseline gap-3">
+              <h3 className="m-0 flex-1 font-display text-[0.9375rem] font-bold text-ink [font-stretch:125%]">
+                MCP servers
+              </h3>
+              <span className="text-[0.75rem] text-ink-soft">{servers.length} configured</span>
+            </div>
+            <p className={mutedLine}>
+              Tool servers the new profile connects to. This step is optional.
+            </p>
+            <div className="flex flex-col gap-4 border border-line bg-surface p-4 sm:p-5">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor={`${ids}-mcp-name`}>Server name</Label>
+                  <input
+                    id={`${ids}-mcp-name`}
+                    className={fieldClass}
+                    placeholder="papers"
+                    value={draft.name}
+                    onChange={(e) => setDraft({ ...draft, name: e.currentTarget.value })}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <span aria-hidden="true" className={labelClass}>
+                    Transport
+                  </span>
+                  <Segmented
+                    label="Transport"
+                    value={draft.transport}
+                    options={[
+                      { value: "http", label: "HTTP/SSE" },
+                      { value: "stdio", label: "stdio" },
+                    ]}
+                    onChange={(transport) =>
+                      setDraft({ ...EMPTY_MCP, name: draft.name, transport })
+                    }
+                  />
+                </div>
+              </div>
+              {draft.transport === "http" ? (
+                <>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor={`${ids}-mcp-url`}>URL</Label>
+                    <input
+                      id={`${ids}-mcp-url`}
+                      className={fieldClass}
+                      placeholder="https://"
+                      value={draft.url}
+                      onChange={(e) => setDraft({ ...draft, url: e.currentTarget.value })}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <span aria-hidden="true" className={labelClass}>
+                      Authentication
+                    </span>
+                    <Segmented
+                      label="Authentication"
+                      value={draft.auth ?? "none"}
+                      options={[
+                        { value: "none", label: "None" },
+                        { value: "header", label: "Header" },
+                        { value: "oauth", label: "OAuth" },
+                      ]}
+                      onChange={(auth) => setDraft({ ...draft, auth })}
+                    />
+                    {draft.auth === "header" ? (
+                      <p className="m-0 text-[0.75rem] text-ink-soft">
+                        The header's key is stored on the Keys page, not here.
+                      </p>
+                    ) : null}
+                    {draft.auth === "oauth" ? (
+                      <p className="m-0 text-[0.75rem] text-ink-soft">
+                        Sign in from the MCP page once the profile exists.
+                      </p>
+                    ) : null}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor={`${ids}-mcp-command`}>Command</Label>
+                      <input
+                        id={`${ids}-mcp-command`}
+                        className={fieldClass}
+                        value={draft.command}
+                        onChange={(e) => setDraft({ ...draft, command: e.currentTarget.value })}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor={`${ids}-mcp-args`}>Arguments</Label>
+                      <input
+                        id={`${ids}-mcp-args`}
+                        className={fieldClass}
+                        value={draft.args}
+                        onChange={(e) => setDraft({ ...draft, args: e.currentTarget.value })}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor={`${ids}-mcp-env`}>Environment (KEY=value per line)</Label>
+                    <textarea
+                      id={`${ids}-mcp-env`}
+                      className={cx(inputClass, "w-full py-2 text-[0.8125rem]")}
+                      rows={2}
+                      value={draft.env}
+                      onChange={(e) => setDraft({ ...draft, env: e.currentTarget.value })}
+                    />
+                  </div>
+                </>
+              )}
+              {draftProblem ? <Notice tone="danger">{draftProblem}</Notice> : null}
+              <div className="flex justify-end">
+                <Button tone="primary" onClick={addServer}>
+                  Add server
+                </Button>
+              </div>
+            </div>
             {servers.length ? (
-              <ul aria-label="Servers to add" className="flex flex-col gap-1 text-sm">
+              <ul aria-label="Servers to add" className="m-0 flex list-none flex-col gap-2 p-0">
                 {servers.map((s) => (
-                  <li key={s.name} className="flex items-center gap-2">
-                    <code className="flex-1 font-mono text-xs">
-                      {s.name}: {s.url ?? [s.command, ...(s.args ?? [])].join(" ")}
-                    </code>
+                  <li
+                    key={s.name}
+                    className="flex items-start gap-3 border border-line bg-surface p-4"
+                  >
+                    <div className="flex min-w-0 flex-1 flex-col gap-1">
+                      <span className="flex flex-wrap items-center gap-2">
+                        <span className="text-[0.8125rem] font-medium text-ink">{s.name}</span>
+                        <Badge tone="secondary">{s.url ? "http" : "stdio"}</Badge>
+                        {s.url ? <Badge>{`auth: ${s.auth ?? "none"}`}</Badge> : null}
+                      </span>
+                      <code className="type-data text-[0.75rem] break-all text-ink-soft">
+                        {s.url ?? [s.command, ...(s.args ?? [])].join(" ")}
+                      </code>
+                    </div>
                     <Button
                       tone="ghost"
-                      aria-label={`Drop ${s.name}`}
+                      size="sm"
+                      className="text-danger hover:bg-danger-wash"
+                      aria-label={`Remove ${s.name}`}
                       onClick={() => setServers((all) => all.filter((x) => x.name !== s.name))}
                     >
-                      Drop
+                      Remove
                     </Button>
                   </li>
                 ))}
               </ul>
-            ) : (
-              <p className="text-sm text-muted">No MCP servers; this step is optional.</p>
-            )}
-            <Field label="Server name" htmlFor={`${ids}-mcp-name`}>
-              <input
-                id={`${ids}-mcp-name`}
-                className={inputClass}
-                value={draft.name}
-                onChange={(e) => setDraft({ ...draft, name: e.currentTarget.value })}
-              />
-            </Field>
-            <Field label="Transport" htmlFor={`${ids}-mcp-transport`}>
-              <select
-                id={`${ids}-mcp-transport`}
-                className={inputClass}
-                value={draft.transport}
-                onChange={(e) =>
-                  setDraft({
-                    ...EMPTY_MCP,
-                    name: draft.name,
-                    transport: e.currentTarget.value as McpDraft["transport"],
-                  })
-                }
-              >
-                <option value="stdio">stdio (a local command)</option>
-                <option value="http">HTTP (a URL)</option>
-              </select>
-            </Field>
-            {draft.transport === "stdio" ? (
-              <>
-                <Field label="Command" htmlFor={`${ids}-mcp-command`}>
-                  <input
-                    id={`${ids}-mcp-command`}
-                    className={`${inputClass} font-mono`}
-                    value={draft.command}
-                    onChange={(e) => setDraft({ ...draft, command: e.currentTarget.value })}
-                  />
-                </Field>
-                <Field label="Arguments" htmlFor={`${ids}-mcp-args`}>
-                  <input
-                    id={`${ids}-mcp-args`}
-                    className={`${inputClass} font-mono`}
-                    value={draft.args}
-                    onChange={(e) => setDraft({ ...draft, args: e.currentTarget.value })}
-                  />
-                </Field>
-                <Field label="Environment (KEY=value per line)" htmlFor={`${ids}-mcp-env`}>
-                  <textarea
-                    id={`${ids}-mcp-env`}
-                    className={`${inputClass} font-mono`}
-                    rows={2}
-                    value={draft.env}
-                    onChange={(e) => setDraft({ ...draft, env: e.currentTarget.value })}
-                  />
-                </Field>
-              </>
-            ) : (
-              <Field label="URL" htmlFor={`${ids}-mcp-url`}>
-                <input
-                  id={`${ids}-mcp-url`}
-                  className={inputClass}
-                  value={draft.url}
-                  onChange={(e) => setDraft({ ...draft, url: e.currentTarget.value })}
-                />
-              </Field>
-            )}
-            {draftProblem ? <Notice tone="danger">{draftProblem}</Notice> : null}
-            <div>
-              <Button onClick={addServer}>Add to the list</Button>
-            </div>
+            ) : null}
           </Step>
         ) : null}
+
         {step === "review" ? (
           <Step title="Review">
-            <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
-              <dt className="text-muted">Name</dt>
-              <dd>{normaliseProfileName(name)}</dd>
-              <dt className="text-muted">Starts from</dt>
-              <dd>{cloneFrom ? `a copy of ${cloneFrom}` : "a fresh profile"}</dd>
-              <dt className="text-muted">Description</dt>
-              <dd>{description.trim() || "none"}</dd>
-              <dt className="text-muted">Model</dt>
-              <dd>{provider ? `${model.trim()} (${provider})` : "unchanged"}</dd>
-              <dt className="text-muted">Skills</dt>
-              <dd>
-                {keepSkills
-                  ? skillsOff.length
-                    ? `bundled, without ${skillsOff.join(", ")}`
-                    : "bundled"
-                  : "none bundled"}
+            <dl className="m-0 grid grid-cols-[96px_1fr] gap-x-4 gap-y-2 text-[0.8125rem]">
+              <dt className="text-ink-soft">Name</dt>
+              <dd className="m-0 text-ink">{normaliseProfileName(name)}</dd>
+              <dt className="text-ink-soft">Description</dt>
+              <dd className="m-0 text-ink">{description.trim() || "—"}</dd>
+              <dt className="text-ink-soft">Starts from</dt>
+              <dd className="m-0 text-ink">
+                {cloneFrom ? `A copy of ${cloneFrom}` : "A fresh profile"}
               </dd>
-              <dt className="text-muted">MCP servers</dt>
-              <dd>{servers.length ? servers.map((s) => s.name).join(", ") : "none"}</dd>
+              <dt className="text-ink-soft">Model</dt>
+              <dd className="m-0 text-ink">
+                {provider ? `${model.trim()} (${provider})` : "Default (set later)"}
+              </dd>
+              <dt className="text-ink-soft">Skills</dt>
+              <dd className="m-0 text-ink">
+                {noSkills
+                  ? "No bundled skills"
+                  : trimSkills && skillsOff.length
+                    ? `Bundled, without ${skillsOff.join(", ")}`
+                    : "Every bundled skill"}
+              </dd>
+              {hubPicks.length ? (
+                <>
+                  <dt className="text-ink-soft">Hub skills</dt>
+                  <dd className="m-0 text-ink">{hubPicks.map((p) => p.name).join(", ")}</dd>
+                </>
+              ) : null}
+              <dt className="text-ink-soft">MCP servers</dt>
+              <dd className="m-0 text-ink">
+                {servers.length ? servers.map((s) => s.name).join(", ") : "None"}
+              </dd>
             </dl>
           </Step>
         ) : null}
-      </Card>
-      <div className="flex gap-2">
-        <Button onClick={() => go(-1)} disabled={at === 0 || creating}>
+      </div>
+
+      <div className="flex items-center justify-between gap-2">
+        <button
+          type="button"
+          onClick={() => go(-1)}
+          disabled={at === 0 || creating}
+          className={cx(navClass, "text-ink hover:bg-hover")}
+        >
           Back
-        </Button>
+        </button>
         {step === "review" ? (
-          <Button
-            tone="primary"
+          <button
+            type="button"
             onClick={() => void create()}
             disabled={creating || nameProblem !== null}
+            className={cx(navClass, "bg-ink text-on-ink hover:opacity-90")}
           >
             {creating ? "Creating…" : "Create profile"}
-          </Button>
+          </button>
         ) : (
-          <Button tone="primary" onClick={() => go(1)} disabled={blocked}>
+          <button
+            type="button"
+            onClick={() => go(1)}
+            disabled={blocked}
+            className={cx(navClass, "bg-ink text-on-ink hover:opacity-90")}
+          >
             Next
-          </Button>
+          </button>
         )}
       </div>
-    </div>
+    </>,
   );
 }

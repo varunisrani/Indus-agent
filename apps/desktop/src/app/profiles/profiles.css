@@ -1,0 +1,105 @@
+/* Profiles overlay (W52-l, spec 3.8). */
+
+.prof-pad {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 20px;
+}
+
+.prof-note {
+  margin: 0 0 8px;
+  color: var(--desk-fg-3);
+  font-size: var(--desk-text-small);
+}
+
+.prof-glyph {
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.prof-detail {
+  display: flex;
+  flex-direction: column;
+}
+
+.prof-description {
+  margin: 4px 0 0;
+  color: var(--desk-fg-3);
+  font-size: var(--desk-text-small);
+}
+
+.prof-model {
+  font-family: var(--indus-font-mono);
+}
+
+.prof-provider {
+  color: var(--desk-fg-4);
+}
+
+.prof-persona {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.prof-persona-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.prof-persona-label {
+  margin: 0;
+  color: var(--desk-fg-4);
+  font-size: var(--desk-text-micro);
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.prof-persona-desc {
+  margin: 2px 0 0;
+  color: var(--desk-fg-3);
+  font-size: var(--desk-text-small);
+}
+
+.prof-unsaved,
+.prof-saved {
+  color: var(--desk-fg-3);
+  font-size: 10px;
+}
+
+.prof-editor {
+  min-height: 192px;
+  padding: 10px 12px;
+  border: 1px solid var(--desk-stroke-2);
+  border-radius: var(--desk-radius-control);
+  background: var(--desk-bg-canvas);
+  color: var(--desk-fg-1);
+  font-family: var(--indus-font-mono);
+  font-size: var(--desk-text-ui);
+  line-height: 20px;
+  resize: vertical;
+}
+
+.prof-editor:focus-visible {
+  outline: none;
+  border-color: var(--desk-accent);
+}
+
+.prof-save {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}

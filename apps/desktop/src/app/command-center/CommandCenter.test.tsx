@@ -51,13 +51,13 @@ describe("delegation model", () => {
 describe("CommandCenter", () => {
   it("the log viewer filters by level", async () => {
     const api = fakeRest();
-    api.route("GET", "/api/sessions/stats", { total: 3, active: 1, empty: 1 });
-    api.route("GET", "/api/sessions?limit=10", { sessions: [] });
-    api.route("GET", "/api/logs?file=agent&lines=500", {
+    api.route("GET", "/api/daemon", { running: true, state: "running" });
+    api.route("GET", "/api/status", { version: "1.0.0", active_sessions: 2 });
+    api.route("GET", "/api/logs?file=agent&lines=200", {
       file: "agent",
       lines: ["a INFO one", "b ERROR two"],
     });
-    api.route("GET", "/api/logs?file=agent&lines=500&level=ERROR", {
+    api.route("GET", "/api/logs?file=agent&lines=200&level=ERROR", {
       file: "agent",
       lines: ["b ERROR two"],
     });
@@ -76,71 +76,124 @@ describe("CommandCenter", () => {
         rendererError: () => undefined,
       },
     };
-    render(<CommandCenter api={api} profile="work" bridge={bridge} />);
-    fireEvent.click(screen.getByRole("tab", { name: "Logs" }));
+    render(<CommandCenter api={api} profile="work" bridge={bridge} initial="system" />);
+    expect(await screen.findByText("Gateway running")).toBeTruthy();
+    expect(await screen.findByText("Indus 1.0.0 · Active sessions 2")).toBeTruthy();
     await waitFor(() => expect(screen.getByTestId("log-lines").textContent).toContain("one"));
-    fireEvent.change(screen.getByLabelText("Level"), { target: { value: "ERROR" } });
+    fireEvent.click(screen.getByRole("tab", { name: "error" }));
     await waitFor(() => expect(screen.getByTestId("log-lines").textContent).toBe("b ERROR two"));
     expect(api.calls.at(-1)).toMatchObject({
       profile: "work",
-      path: "/api/logs?file=agent&lines=500&level=ERROR",
+      path: "/api/logs?file=agent&lines=200&level=ERROR",
     });
-    fireEvent.change(screen.getByLabelText("Log"), { target: { value: "desktop" } });
+    fireEvent.click(screen.getByRole("tab", { name: "desktop" }));
     await waitFor(() => expect(screen.getByTestId("log-lines").textContent).toBe("t4 ERROR broke"));
-    fireEvent.change(screen.getByLabelText("Level"), { target: { value: "WARNING" } });
+    fireEvent.click(screen.getByRole("tab", { name: "warning" }));
     await waitFor(() =>
       expect(screen.getByTestId("log-lines").textContent).toBe(
         "t2 WARNING disk low\n  at frame 1\nt4 ERROR broke",
       ),
     );
+    // a warning line carries the amber rule, an error line the red one
+    const marked = Array.from(document.querySelectorAll(".kit-log-line[data-level]")).map((el) =>
+      el.getAttribute("data-level"),
+    );
+    expect(marked).toEqual(["warn", "error"]);
     expect(filterByLevel(["x"], "ALL")).toEqual(["x"]);
   });
 
-  it("maintenance answers 409 with who holds the gate, and the session import previews and imports", async () => {
+  it("lists sessions newest first, opens one, and deletes after a confirm", async () => {
     const api = fakeRest();
-    api.route("POST", "/api/sessions/prune", {});
+    api.route("GET", "/api/sessions?order=recent&limit=50&offset=0", {
+      sessions: [
+        { id: "s1", title: "Fix the parser", last_active: 1_700_000_000, pinned: false },
+        { id: "s2", title: "Write release notes", last_active: 1_699_000_000 },
+      ],
+      total: 2,
+    });
+    api.route("DELETE", "/api/sessions/s2", { ok: true });
+    api.route("PATCH", "/api/sessions/s1", { ok: true });
+    const opened: string[] = [];
+    render(
+      <CommandCenter
+        api={api}
+        profile="work"
+        bridge={null}
+        onOpenSession={(id) => opened.push(id)}
+      />,
+    );
+    fireEvent.click(await screen.findByText("Fix the parser"));
+    expect(opened).toEqual(["s1"]);
+    fireEvent.click(screen.getByLabelText("Pin Fix the parser"));
+    await waitFor(() => expect(screen.getByLabelText("Unpin Fix the parser")).toBeTruthy());
+    expect(api.calls.find((c) => c.method === "PATCH")?.body).toEqual({ pinned: true });
+    fireEvent.click(screen.getByLabelText("Delete Write release notes"));
+    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(screen.queryByText("Write release notes")).toBeNull());
+    expect(api.calls.some((c) => c.method === "DELETE" && c.path === "/api/sessions/s2")).toBe(
+      true,
+    );
+    // the search filters on title and id
+    fireEvent.change(screen.getByLabelText("Search sessions"), { target: { value: "zzz" } });
+    expect(await screen.findByText("No sessions match this search.")).toBeTruthy();
+  });
+
+  it("usage shows the tiles, a dash for API calls and the cost as a hint", async () => {
+    const api = fakeRest();
+    api.route("GET", "/api/analytics/usage?days=30", {
+      daily: [
+        { day: "2026-10-23", input_tokens: 1200, output_tokens: 300, cost: 0.1, sessions: 1 },
+        { day: "2026-10-24", input_tokens: 800, output_tokens: 100, cost: 0.05, sessions: 1 },
+      ],
+      totals: { input_tokens: 2000, output_tokens: 400, cost: 0.15, sessions: 2 },
+    });
+    api.route("GET", "/api/analytics/usage?days=7", {
+      daily: [],
+      totals: { input_tokens: 0, output_tokens: 0, cost: 0, sessions: 0 },
+    });
+    render(<CommandCenter api={api} profile="work" bridge={null} initial="usage" />);
+    expect(await screen.findByText("2K / 400")).toBeTruthy();
+    expect(screen.getByText("—")).toBeTruthy();
+    expect(screen.getByText("0.15 USD estimated")).toBeTruthy();
+    expect(screen.getByText("2026-10-23")).toBeTruthy();
+    fireEvent.click(screen.getByRole("radio", { name: "7d" }));
+    expect(await screen.findByText("Nothing was used in this period.")).toBeTruthy();
+  });
+
+  it("maintenance answers 409 with who holds the gate", async () => {
+    const api = fakeRest();
     api.route("POST", "/api/sessions/prune", () => ({
       status: 409,
       body: {
         detail: { code: "daemon_running", message: "The daemon owns this profile's sessions" },
       },
     }));
-    api.route("GET", "/api/session-import/candidates", {
-      candidates: [
-        {
-          source: "codex",
-          path: "/h/.codex/sessions/rollout-1.jsonl",
-          title: "List files",
-          cwd: "/w",
-          modified: 1,
-        },
-      ],
+    api.route("GET", "/api/memory", {
+      active: "",
+      builtin_files: { "MEMORY.md": 2048, "USER.md": 0 },
     });
-    api.route("POST", "/api/session-import/preview", {
-      title: "List files",
-      messages: [
-        { role: "user", content: "List the files" },
-        { role: "assistant", content: "", tool: "shell" },
-      ],
-      skipped: 0,
-    });
-    api.route("POST", "/api/session-import/import", {
-      session_id: "s-new",
-      title: "List files",
-      message_count: 2,
-    });
-    render(<CommandCenter api={api} profile="work" bridge={null} initial="maintenance" />);
-    fireEvent.click(screen.getByText("Prune old sessions"));
+    let imports = 0;
+    render(
+      <CommandCenter
+        api={api}
+        profile="work"
+        bridge={null}
+        initial="maintenance"
+        onOpenImport={() => {
+          imports += 1;
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Prune old sessions" }));
     expect(
       await screen.findByText(/Not now: The daemon owns this profile's sessions/),
     ).toBeTruthy();
-    fireEvent.click(await screen.findByText("List files"));
-    expect(await screen.findByText("List files: 2 messages")).toBeTruthy();
-    fireEvent.click(screen.getByText("Import this session"));
-    expect(await screen.findByText("Imported 2 messages.")).toBeTruthy();
-    expect(api.calls.find((c) => c.path === "/api/session-import/import")?.body).toEqual({
-      source: "codex",
-      path: "/h/.codex/sessions/rollout-1.jsonl",
-    });
+    expect(await screen.findByText("2.0 KB")).toBeTruthy();
+    expect(screen.getByText("empty")).toBeTruthy();
+    expect(
+      (screen.getByRole("button", { name: "Reset memory" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Open" }));
+    expect(imports).toBe(1);
   });
 });

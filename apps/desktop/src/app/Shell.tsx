@@ -3,7 +3,20 @@
 // content is its chat pane) and the bottom status bar. The interface mode (Advanced / Simple)
 // decides which surfaces show; the tab and window shortcuts are handled here.
 
-import { Monitor, Moon, PenSquare, Sun } from "lucide-react";
+import {
+  AppWindow,
+  Ellipsis,
+  Folder,
+  House,
+  MessageSquare,
+  Monitor,
+  Moon,
+  PanelLeft,
+  Plus,
+  Settings as SettingsIcon,
+  SquarePen,
+  Sun,
+} from "lucide-react";
 import {
   createContext,
   type ReactNode,
@@ -15,6 +28,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router";
+import { BotsRoster } from "../bots/BotsRoster.tsx";
 import { draftOf, FRESH, setDraft, windowDrafts } from "../chat/composer/goneSession.ts";
 import {
   CommandPalette,
@@ -22,7 +36,7 @@ import {
   type PaletteEntry,
   useContributedKeybinds,
 } from "../contrib/areas.tsx";
-import { ContributedNav } from "../contrib/shell.tsx";
+import { ContributedNav, useContributedPaths } from "../contrib/shell.tsx";
 import type { GatewayConnection } from "../gateway/connectionStore.ts";
 import { useConnectionState, useMaybeConnectionStore } from "../gateway/react.tsx";
 import { type MessageKey, useT } from "../i18n/index.tsx";
@@ -36,19 +50,24 @@ import { type PaneAction, usePaneShortcuts } from "../panes/shortcuts.ts";
 import { ProfileRail, type ProfilesApi, useProfileNames } from "../profiles/ProfileRail.tsx";
 import { useSwitcher, useSwitcherState } from "../profiles/switcherReact.tsx";
 import { freshDraftFolder } from "../sidebar/projects.ts";
-import { beginNewChat, Sidebar, SidebarModel } from "../sidebar/Sidebar.tsx";
+import { beginNewChat, rowTitle, Sidebar, SidebarModel } from "../sidebar/Sidebar.tsx";
+import { IconButton, KeyHint, Menu, type MenuItem } from "../ui/components.tsx";
 import { desktopBridge, launchFacts } from "./bridge.ts";
+import { rpcOf } from "./manage/managementSlots.tsx";
 import { OVERLAY_ICONS, OVERLAY_TEXT, PAGE_ICONS, PAGE_TEXT } from "./pages.tsx";
 import {
   isContributedPage,
   NEW_CHAT_PATH,
-  OVERLAYS,
+  type OverlayId,
   overlayPath,
   overlayStateFrom,
   PAGES,
+  type PageId,
   pagePath,
   sessionPath,
 } from "./routes.ts";
+import { SessionSwitcher, type SwitcherRow } from "./SessionSwitcher.tsx";
+import { dismissToast, notify, ToastRegion } from "./Toasts.tsx";
 import { type ThemeMode, useTheme } from "./theme.tsx";
 
 // -- chrome: the window's sidebar model and pane layout ------------------------------------------
@@ -104,7 +123,7 @@ function ThemeControl() {
   const t = useT();
   const { mode, setMode } = useTheme();
   return (
-    <div className="segmented" role="radiogroup" aria-label={t("theme.label")}>
+    <div className="theme-control" role="radiogroup" aria-label={t("theme.label")}>
       {THEME_OPTIONS.map((option) => (
         // biome-ignore lint/a11y/useSemanticElements: a segmented control, not a native radio
         <button
@@ -113,7 +132,8 @@ function ThemeControl() {
           role="radio"
           aria-checked={mode === option.mode}
           aria-label={t(option.key)}
-          className="segmented-option"
+          className="desk-icon-btn"
+          data-size="sm"
           onClick={() => setMode(option.mode)}
         >
           {option.icon}
@@ -123,82 +143,181 @@ function ThemeControl() {
   );
 }
 
+/** Pages the sidebar lists by name (W51-b-4); the rest sit in the footer row and its menu. */
+const LISTED_PAGES: readonly PageId[] = ["capabilities", "messaging", "artifacts"];
+/** W52-l-1: the management views open as overlays; these sit in the footer's "More" menu. */
+const FOOTER_OVERLAYS: readonly OverlayId[] = [
+  "webhooks",
+  "learning-map",
+  "session-import",
+  "profiles",
+  "agents",
+];
+const BOTS_PATH = "/bots";
+
 function LeftSidebar(props: {
   chrome: ShellChrome;
   profile: string;
   sessionId: string | null;
   connection: GatewayConnection | null;
   switchError: string | null;
+  platform: string;
+  onHide: () => void;
 }) {
   const t = useT();
   const navigate = useNavigate();
   const location = useLocation();
+  const contributed = useContributedPaths();
   const newChat = () => {
     beginNewChat(props.chrome.sidebar, props.profile, null);
     navigate(NEW_CHAT_PATH);
   };
+  const openOverlay = (overlay: OverlayId) =>
+    navigate(overlayPath(overlay), {
+      state: overlayStateFrom(location.pathname, location.state),
+    });
   // The list's first load may run before the backend is up: load again each time it is ready.
   const ready = useOptionalConnectionState(props.connection)?.ready ?? false;
   const sessions = props.chrome.sidebar.sessions(props.profile);
   useEffect(() => {
     if (ready) void sessions.refresh();
   }, [ready, sessions]);
+  const mod = props.platform === "mac" ? "\u2318" : "Ctrl";
+  const onBots = location.pathname === BOTS_PATH;
+  const botsOn = contributed.has(BOTS_PATH);
+  const [panel, setPanel] = useState<"sessions" | "bots">("sessions");
+  const rosterOn = botsOn && panel === "bots" && props.connection !== null;
+  const moreItems: MenuItem[] = [
+    ...FOOTER_OVERLAYS.map((overlay) => ({
+      id: `overlay.${overlay}`,
+      label: t(OVERLAY_TEXT[overlay].title),
+      icon: OVERLAY_ICONS[overlay],
+      run: () => openOverlay(overlay),
+    })),
+  ];
   return (
     <aside className="sidebar">
-      <nav aria-label={t("nav.label")}>
-        <button type="button" className="nav-item nav-primary" onClick={newChat}>
-          <PenSquare aria-hidden="true" size={16} />
-          <span>{t("nav.newChat")}</span>
-        </button>
-        <ul className="nav-list">
-          {PAGES.filter((page) => !isContributedPage(page)).map((page) => (
-            <li key={page}>
-              <NavLink to={pagePath(page)} className="nav-item">
-                {PAGE_ICONS[page]}
-                <span>{t(PAGE_TEXT[page].title)}</span>
-              </NavLink>
-            </li>
-          ))}
-          {/* the registry's sidebar entries (P24-32): bundled surfaces and plugins */}
-          <ContributedNav />
-        </ul>
+      <div className="band sidebar-band">
+        <IconButton
+          label={t("nav.hideSidebar")}
+          icon={<PanelLeft aria-hidden="true" />}
+          size="band"
+          onClick={props.onHide}
+        />
+      </div>
+      {/* one "Main" nav in both panels: the SESSIONS | BOTS strip, then (sessions) the page links */}
+      <nav
+        aria-label={t("nav.label")}
+        className="sidebar-nav"
+        data-panel={rosterOn ? "bots" : undefined}
+      >
+        <div className="desk-tabs sidebar-tabs">
+          <NavLink
+            to={NEW_CHAT_PATH}
+            className="desk-tab"
+            aria-current={onBots || panel === "bots" ? undefined : "page"}
+            onClick={(event) => {
+              setPanel("sessions");
+              if (!onBots) event.preventDefault();
+            }}
+          >
+            {t("nav.sessions")}
+          </NavLink>
+          {botsOn && (
+            // W52-k: the BOTS tab shows the roster in the sidebar; /bots stays for deep links
+            <button
+              type="button"
+              className="desk-tab"
+              aria-current={onBots || panel === "bots" ? "page" : undefined}
+              onClick={() => setPanel("bots")}
+            >
+              {t("nav.bots")}
+            </button>
+          )}
+        </div>
+        {!rosterOn && (
+          <>
+            <button type="button" className="nav-item nav-primary" onClick={newChat}>
+              <SquarePen aria-hidden="true" size={16} />
+              <span>{t("nav.newChat")}</span>
+              <KeyHint keys={[mod, "N"]} />
+            </button>
+            <ul className="nav-list">
+              {LISTED_PAGES.map((page) => (
+                <li key={page}>
+                  <NavLink to={pagePath(page)} className="nav-item">
+                    {PAGE_ICONS[page]}
+                    <span>{t(PAGE_TEXT[page].title)}</span>
+                  </NavLink>
+                </li>
+              ))}
+              <li>
+                <button type="button" className="nav-item" onClick={() => openOverlay("cron")}>
+                  {OVERLAY_ICONS.cron}
+                  <span>{t(OVERLAY_TEXT.cron.title)}</span>
+                </button>
+              </li>
+              {/* the registry's sidebar entries (P24-32): plugins; Bots is the tab above */}
+              <ContributedNav exclude={BOTS_PATH} />
+            </ul>
+          </>
+        )}
       </nav>
-      {props.switchError !== null && (
-        <p className="switch-error" role="alert">
-          {t("profiles.switchFailed", { error: props.switchError })}
-        </p>
+      {rosterOn && props.connection !== null ? (
+        <>
+          <BotsRoster
+            rpc={rpcOf(props.connection)}
+            activeSessionId={props.sessionId}
+            onOpenChat={(id) => navigate(sessionPath(id))}
+            previewOf={(id) => {
+              const row = sessions.getState().rows.find((r) => r.ids.includes(id));
+              return row === undefined ? null : { text: row.preview, lastActive: row.lastActive };
+            }}
+            onNewBot={() => openOverlay("profiles")}
+            onOpenRooms={() => navigate(BOTS_PATH)}
+          />
+          <button type="button" className="routines-edge-tab" onClick={() => openOverlay("cron")}>
+            {t("manage.bots.scheduledJobs")}
+          </button>
+        </>
+      ) : (
+        <>
+          {props.switchError !== null && (
+            <p className="switch-error" role="alert">
+              {t("profiles.switchFailed", { error: props.switchError })}
+            </p>
+          )}
+          <Sidebar
+            model={props.chrome.sidebar}
+            profile={props.profile}
+            activeSessionId={props.sessionId}
+            onOpenSession={(id) => navigate(sessionPath(id))}
+            onPopOut={(id) =>
+              void desktopBridge()?.hud.open({ sessionId: id, profile: props.profile })
+            }
+            onNewChat={() => navigate(NEW_CHAT_PATH)}
+            events={props.connection}
+            homeDir={launchFacts().homeDir || null}
+          />
+        </>
       )}
-      <Sidebar
-        model={props.chrome.sidebar}
-        profile={props.profile}
-        activeSessionId={props.sessionId}
-        onOpenSession={(id) => navigate(sessionPath(id))}
-        onPopOut={(id) => void desktopBridge()?.hud.open({ sessionId: id, profile: props.profile })}
-        onNewChat={() => navigate(NEW_CHAT_PATH)}
-        events={props.connection}
-        homeDir={launchFacts().homeDir || null}
-      />
-      <nav aria-label={t("nav.more")}>
-        <ul className="nav-list nav-bottom">
-          {OVERLAYS.map((overlay) => (
-            <li key={overlay}>
-              <button
-                type="button"
-                className="nav-item"
-                onClick={() =>
-                  navigate(overlayPath(overlay), {
-                    state: overlayStateFrom(location.pathname, location.state),
-                  })
-                }
-              >
-                {OVERLAY_ICONS[overlay]}
-                <span>{t(OVERLAY_TEXT[overlay].title)}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      </nav>
-      <ThemeControl />
+      <div className="sidebar-footer">
+        <IconButton
+          label={t(OVERLAY_TEXT["command-center"].title)}
+          icon={<House aria-hidden="true" />}
+          active={location.pathname === overlayPath("command-center")}
+          onClick={() => openOverlay("command-center")}
+        />
+        <span className="sidebar-footer-gap" />
+        <ThemeControl />
+        <Menu
+          label={t("nav.more")}
+          trigger={<Ellipsis aria-hidden="true" />}
+          items={moreItems}
+          side="up"
+          align="end"
+        />
+      </div>
     </aside>
   );
 }
@@ -214,15 +333,17 @@ function ConnectionBadge(props: { connection: GatewayConnection }) {
   );
 }
 
+/** The "still trying" warning, as one toast in the window's region (W52-g). */
 function ConnectionWarning(props: { connection: GatewayConnection }) {
   const t = useT();
   const state = useConnectionState(props.connection);
-  if (!state.warning) return null;
-  return (
-    <div className="toast" role="status">
-      {t("connection.warning")}
-    </div>
-  );
+  const text = t("connection.warning");
+  useEffect(() => {
+    if (!state.warning) return;
+    notify({ id: "connection-warning", tone: "warning", title: text });
+    return () => dismissToast("connection-warning");
+  }, [state.warning, text]);
+  return null;
 }
 
 /** Local or remote, from the connection's descriptor (null until the first boot answers). */
@@ -302,6 +423,19 @@ export function addToComposer(sessionId: string | null, text: string): void {
   });
 }
 
+/** The chat tab's label: the open conversation's title, or "New session" for a fresh draft. */
+function useChatTitle(chrome: ShellChrome, profile: string, sessionId: string | null): string {
+  const t = useT();
+  const list = chrome.sidebar.sessions(profile);
+  const rows = useSyncExternalStore(
+    (listener) => list.subscribe(listener),
+    () => list.getState().rows,
+  );
+  if (sessionId === null) return t("nav.newChat");
+  const row = rows.find((candidate) => candidate.ids.includes(sessionId));
+  return row === undefined ? t("panes.title.chat") : rowTitle(t, row);
+}
+
 // -- the shell -----------------------------------------------------------------------------------
 
 export function Shell(props: {
@@ -312,6 +446,7 @@ export function Shell(props: {
 }) {
   const t = useT();
   const navigate = useNavigate();
+  const location = useLocation();
   const chrome = useChrome();
   const store = useMaybeConnectionStore();
   const switcher = useSwitcher();
@@ -329,6 +464,7 @@ export function Shell(props: {
   const platform = launchFacts().platform;
   const sessionId = props.sessionId ?? null;
   const workspace = useWorkspaceFolder(chrome, profile, sessionId);
+  const chatTitle = useChatTitle(chrome, profile, sessionId);
   const connectionMode = useConnectionMode(connection);
   const openPreview = useCallback(
     (target: PreviewTarget) => {
@@ -405,6 +541,11 @@ export function Shell(props: {
       case "toggle-right": {
         const snapshot = panes.layout();
         const tools = zones(snapshot.root).filter((z) => !z.tabs.includes(CHAT_PANE));
+        if (tools.length === 0) {
+          // W52-m: an empty right side opens the right group (Files on top, Terminal below)
+          const opened = [panes.open("files"), panes.open("terminal")];
+          return opened.some(Boolean);
+        }
         const showing = tools.some(
           (z) => !z.minimized && z.tabs.some((pane) => !isHidden(snapshot, pane)),
         );
@@ -420,17 +561,116 @@ export function Shell(props: {
   const showSlots = usePaneShortcuts(platform, { onAction });
   // the registry's keybinds (P24-32); a key the app uses is never given to a plugin
   useContributedKeybinds(platform);
-  const paletteEntries = useMemo<PaletteEntry[]>(
-    () => [
-      { id: "app.new-chat", title: t("nav.newChat"), run: () => navigate(NEW_CHAT_PATH) },
-      ...PAGES.filter((page) => !isContributedPage(page)).map((page) => ({
+  const listStore = chrome.sidebar.sessions(profile);
+  const listRows = useSyncExternalStore(
+    (listener) => listStore.subscribe(listener),
+    () => listStore.getState(),
+  );
+  const switcherRows = useMemo<SwitcherRow[]>(() => {
+    const rows = [
+      ...listRows.rows.filter((row) => row.pinned),
+      ...listRows.rows.filter((row) => !row.pinned),
+    ];
+    return rows.map((row) => ({
+      id: row.id,
+      title: rowTitle(t, row),
+      state:
+        row.active || row.ids.some((id) => listRows.running.has(id))
+          ? "running"
+          : listStore.unread.isUnread(row, sessionId)
+            ? "unread"
+            : "idle",
+    }));
+  }, [listRows, listStore, sessionId, t]);
+  const activeRowId =
+    sessionId === null
+      ? null
+      : (listRows.rows.find((row) => row.ids.includes(sessionId))?.id ?? sessionId);
+  const openOverlay = useCallback(
+    (overlay: OverlayId) =>
+      navigate(overlayPath(overlay), {
+        state: overlayStateFrom(location.pathname, location.state),
+      }),
+    [navigate, location.pathname, location.state],
+  );
+  const paletteEntries = useMemo<PaletteEntry[]>(() => {
+    const pages = PAGES.filter((page) => !isContributedPage(page));
+    const goto: PaletteEntry[] = [
+      {
+        id: "app.new-chat",
+        title: t("nav.newChat"),
+        icon: <Plus aria-hidden="true" />,
+        keys: "CommandOrControl+N",
+        run: () => {
+          beginNewChat(chrome.sidebar, profile, null);
+          navigate(NEW_CHAT_PATH);
+        },
+      },
+      {
+        id: "app.new-window",
+        title: t("palette.newWindow"),
+        icon: <AppWindow aria-hidden="true" />,
+        keys: "CommandOrControl+Shift+N",
+        run: () => void desktopBridge()?.windows.openInstance({ profile }),
+      },
+      {
+        id: "app.overlay.settings",
+        title: t(OVERLAY_TEXT.settings.title),
+        icon: OVERLAY_ICONS.settings,
+        keys: "CommandOrControl+,",
+        deeper: true,
+        run: () => openOverlay("settings"),
+      },
+      ...pages.map((page) => ({
         id: `app.page.${page}`,
-        title: t("palette.goTo", { page: t(PAGE_TEXT[page].title) }),
+        title: t(PAGE_TEXT[page].title),
+        keywords: t("palette.goTo", { page: t(PAGE_TEXT[page].title) }),
+        icon: PAGE_ICONS[page],
         run: () => navigate(pagePath(page)),
       })),
-    ],
-    [t, navigate],
-  );
+      ...(
+        [
+          "cron",
+          "profiles",
+          "agents",
+          "command-center",
+          "webhooks",
+          "learning-map",
+          "session-import",
+        ] as const
+      ).map((overlay) => ({
+        id: `app.overlay.${overlay}`,
+        title: t(OVERLAY_TEXT[overlay].title),
+        icon: OVERLAY_ICONS[overlay],
+        deeper: true,
+        run: () => openOverlay(overlay),
+      })),
+    ];
+    const projects: PaletteEntry[] = projectPrefs.projects.map((project) => ({
+      id: `app.project.${project.id}`,
+      title: project.name,
+      hint: t("palette.newChatIn", { name: project.name }),
+      group: "projects",
+      icon: <Folder aria-hidden="true" />,
+      run: () => {
+        beginNewChat(chrome.sidebar, profile, project);
+        navigate(NEW_CHAT_PATH);
+      },
+    }));
+    const chats: PaletteEntry[] = [
+      ...listRows.rows.filter((row) => row.pinned),
+      ...listRows.rows.filter((row) => !row.pinned),
+    ].map((row) => ({
+      id: `app.chat.${row.durableId}`,
+      title: rowTitle(t, row),
+      keywords: [row.cwd ?? "", row.preview ?? "", row.id].join(" "),
+      group: "chats",
+      searchOnly: true,
+      icon: <MessageSquare aria-hidden="true" />,
+      run: () => navigate(sessionPath(row.id)),
+    }));
+    return [...goto, ...projects, ...chats];
+  }, [t, navigate, chrome, profile, openOverlay, projectPrefs.projects, listRows.rows]);
 
   const selectProfile = (next: string) => {
     if (switcher === null) return;
@@ -464,10 +704,35 @@ export function Shell(props: {
           sessionId={sessionId}
           connection={connection}
           switchError={switchState?.status === "error" ? switchState.error : null}
+          platform={platform}
+          onHide={() => setLeftOpen(false)}
         />
+      )}
+      {!leftOpen && !secondary && (
+        <div className="band band-collapsed">
+          <IconButton
+            label={t("nav.showSidebar")}
+            icon={<PanelLeft aria-hidden="true" />}
+            size="band"
+            onClick={() => setLeftOpen(true)}
+          />
+        </div>
       )}
       <main className="pane-area">
         <PaneShell
+          chatTitle={chatTitle}
+          bandTools={
+            <IconButton
+              label={t("nav.settings")}
+              icon={<SettingsIcon aria-hidden="true" />}
+              size="band"
+              onClick={() =>
+                navigate(overlayPath("settings"), {
+                  state: overlayStateFrom(location.pathname, location.state),
+                })
+              }
+            />
+          }
           store={chrome.layout}
           chat={props.children}
           sessionId={sessionId}
@@ -495,11 +760,19 @@ export function Shell(props: {
           </div>
         ))}
       {connection !== null && <ConnectionWarning connection={connection} />}
+      <ToastRegion />
       {/* the registry's title bar items and palette commands (P24-32) */}
       {!secondary && (
         <ContributedTitleBar platform={platform} bandHeight={launchFacts().titleBarHeight} />
       )}
-      <CommandPalette builtIn={paletteEntries} />
+      <CommandPalette builtIn={paletteEntries} mac={platform === "mac" || platform === "darwin"} />
+      {!secondary && (
+        <SessionSwitcher
+          rows={switcherRows}
+          activeId={activeRowId}
+          onOpen={(id) => navigate(sessionPath(id))}
+        />
+      )}
     </div>
   );
 }

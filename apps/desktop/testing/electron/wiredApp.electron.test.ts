@@ -175,11 +175,11 @@ async function expectNoUncertainStrip(cdp: Cdp): Promise<void> {
 }
 
 async function answerApproval(cdp: Cdp): Promise<void> {
-  await cdp.waitFor(hasButton("Allow once"), "the approval card", 60_000);
+  await cdp.waitFor(hasButton("Run"), "the approval card", 60_000);
   await expectNoUncertainStrip(cdp);
   await new Promise((resolve) => setTimeout(resolve, 400)); // the card's arming delay
-  await cdp.click("Allow once");
-  await cdp.waitFor(`!(${hasButton("Allow once")})`, "the card to close", 20_000);
+  await cdp.click("Run");
+  await cdp.waitFor(`!(${hasButton("Run")})`, "the card to close", 20_000);
 }
 
 beforeAll(async () => {

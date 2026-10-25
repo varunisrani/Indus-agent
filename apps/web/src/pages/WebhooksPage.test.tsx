@@ -2,7 +2,8 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WebhookRoute } from "../lib/restTypes.ts";
 import { createMockApi, type MockApi } from "../testing/mockApi.ts";
-import { renderApp, renderPage } from "../testing/render.tsx";
+import { renderPage } from "../testing/render.tsx";
+import { renderApp } from "../testing/renderApp.tsx";
 import { parseEvents, WebhooksPage } from "./WebhooksPage.tsx";
 
 let mock: MockApi;
@@ -44,10 +45,17 @@ function fill(label: string, value: string) {
   fireEvent.change(screen.getByLabelText(label), { target: { value } });
 }
 
+/** Routes are added in the "New route" dialog opened from the header. */
+async function openCreate() {
+  await screen.findByTestId("webhook-deploys");
+  fireEvent.click(screen.getByRole("button", { name: "New route" }));
+  await screen.findByRole("dialog", { name: "New route" });
+}
+
 describe("webhooks page", () => {
   it("shows the signing secret once and not after navigating back", async () => {
     renderApp("/webhooks");
-    await screen.findByTestId("webhook-deploys");
+    await openCreate();
     fill("Name", "Builds");
     fill("Events", "push, pull_request");
     fill("Prompt", "Summarise the build.");
@@ -69,11 +77,12 @@ describe("webhooks page", () => {
     });
     await screen.findByTestId("webhook-builds");
 
-    // Away and back: the list is fetched again and carries no secret; the page shows none.
-    const nav = within(screen.getByRole("navigation", { name: "Dashboard" }));
-    fireEvent.click(nav.getByRole("link", { name: "Sessions" }));
+    // Away and back (with the dialog still open, so the nav sits behind the modal): the list is
+    // fetched again and carries no secret; the page shows none.
+    const nav = within(screen.getByRole("navigation", { name: "Dashboard", hidden: true }));
+    fireEvent.click(nav.getByRole("link", { name: "Sessions", hidden: true }));
     await waitFor(() => expect(screen.queryByTestId("webhook-builds")).toBeNull());
-    fireEvent.click(nav.getByRole("link", { name: "Webhooks" }));
+    fireEvent.click(nav.getByRole("link", { name: "Webhooks", hidden: true }));
     await screen.findByTestId("webhook-builds");
     expect(screen.queryByRole("region", { name: "New webhook route" })).toBeNull();
     expect(document.body.textContent).not.toContain(secret);
@@ -83,7 +92,7 @@ describe("webhooks page", () => {
 
   it("lets the person dismiss the secret after copying it", async () => {
     renderPage(<WebhooksPage />, "/webhooks");
-    await screen.findByTestId("webhook-deploys");
+    await openCreate();
     fill("Name", "alerts");
     fireEvent.click(screen.getByRole("button", { name: "Add route" }));
     const created = within(await screen.findByRole("region", { name: "New webhook route" }));
@@ -91,11 +100,33 @@ describe("webhooks page", () => {
     await waitFor(() =>
       expect(screen.queryByRole("region", { name: "New webhook route" })).toBeNull(),
     );
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("keeps New route off while the receiver is off, and offers a restart after enabling", async () => {
+    mock.state.webhookReceiver = false;
+    renderPage(<WebhooksPage />, "/webhooks");
+    await screen.findByTestId("webhook-deploys");
+    expect((screen.getByRole("button", { name: "New route" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Enable webhooks" }));
+    await waitFor(() =>
+      expect(mock.callsTo("PUT", "/api/webhooks/receiver")[0]?.body).toEqual({ enabled: true }),
+    );
+    // The receiver starts with the daemon: the page offers the restart right there.
+    expect(await screen.findByRole("button", { name: "Restart daemon" })).toBeTruthy();
+    await waitFor(() =>
+      expect(
+        (screen.getByRole("button", { name: "New route" }) as HTMLButtonElement).disabled,
+      ).toBe(false),
+    );
+    expect(screen.getByRole("switch", { name: "Webhook receiver on" })).toBeTruthy();
   });
 
   it("refuses a bad name and a direct delivery without a target before sending", async () => {
     renderPage(<WebhooksPage />, "/webhooks");
-    await screen.findByTestId("webhook-deploys");
+    await openCreate();
     fill("Name", "no spaces please");
     fireEvent.click(screen.getByRole("button", { name: "Add route" }));
     expect((await screen.findByRole("alert")).textContent).toContain("lower-case");
@@ -110,7 +141,7 @@ describe("webhooks page", () => {
 
   it("shows the server's refusal for a duplicate name", async () => {
     renderPage(<WebhooksPage />, "/webhooks");
-    await screen.findByTestId("webhook-deploys");
+    await openCreate();
     fill("Name", "deploys");
     fireEvent.click(screen.getByRole("button", { name: "Add route" }));
     expect((await screen.findByRole("alert")).textContent).toContain("already exists");

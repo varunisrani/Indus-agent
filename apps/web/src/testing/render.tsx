@@ -5,7 +5,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render } from "@testing-library/react";
 import type { ReactElement, ReactNode } from "react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
-import { App, type AppProps } from "../App.tsx";
 import { PageHeader } from "../shell/PageHeader.tsx";
 import { ProfileScopeProvider } from "../shell/ProfileScope.tsx";
 import { ToastProvider } from "../shell/Toasts.tsx";
@@ -26,21 +25,10 @@ export function currentLocation(): string {
   return lastLocation;
 }
 
-function LocationProbe() {
+export function LocationProbe() {
   const location = useLocation();
   lastLocation = `${location.pathname}${location.search}`;
   return null;
-}
-
-export function renderApp(path = "/", props: AppProps = {}) {
-  return render(
-    <QueryClientProvider client={testClient()}>
-      <MemoryRouter initialEntries={[path]}>
-        <App {...props} />
-        <LocationProbe />
-      </MemoryRouter>
-    </QueryClientProvider>,
-  );
 }
 
 /** Render one page at `path`; any other route the page navigates to renders a marker. */

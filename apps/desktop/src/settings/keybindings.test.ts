@@ -52,3 +52,18 @@ describe("key bindings", () => {
     expect(conflictsFor("CommandOrControl+F", "chat.new", bindings)).toEqual([]);
   });
 });
+
+describe("key chips (W52-j)", () => {
+  it("splits an accelerator into one chip per key, per platform", async () => {
+    const { acceleratorKeys, keyGroupOf } = await import("./keybindings.ts");
+    expect(acceleratorKeys("CommandOrControl+Shift+T", "linux")).toEqual(["Ctrl", "Shift", "T"]);
+    expect(acceleratorKeys("CommandOrControl+Shift+T", "darwin")).toEqual(["⌘", "⇧", "T"]);
+    expect(acceleratorKeys("Control+Tab", "win32")).toEqual(["Ctrl", "Tab"]);
+    expect(acceleratorKeys("Alt+Enter", "linux")).toEqual(["Alt", "↵"]);
+    expect(acceleratorKeys("CommandOrControl+,", "linux")).toEqual(["Ctrl", ","]);
+    expect(acceleratorKeys("", "linux")).toEqual([]);
+    expect(keyGroupOf("tab.next")).toBe("tabs");
+    expect(keyGroupOf("composer.focus")).toBe("composer");
+    expect(keyGroupOf("unknown")).toBe("general");
+  });
+});

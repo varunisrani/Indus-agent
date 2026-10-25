@@ -6,7 +6,20 @@
 //
 // Tool panes register here (P20-28..31): `paneRegistry.register({ id, stateful, render })`.
 
-import { EyeOff, Minus, X } from "lucide-react";
+import {
+  EyeOff,
+  FolderTree,
+  GitCompareArrows,
+  Globe,
+  LayoutDashboard,
+  LayoutGrid,
+  LayoutTemplate,
+  Minus,
+  PanelRight,
+  RectangleHorizontal,
+  SquareTerminal,
+  X,
+} from "lucide-react";
 import {
   createContext,
   type DragEvent,
@@ -14,6 +27,7 @@ import {
   type PointerEvent,
   type ReactNode,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -21,6 +35,7 @@ import {
 } from "react";
 import type { ChatConnection } from "../gateway/connectionStore.ts";
 import { type MessageKey, useT } from "../i18n/index.tsx";
+import { LayoutEditor } from "./LayoutEditor.tsx";
 import { type LayoutStore, withoutUnknown } from "./layoutStore.ts";
 import {
   allPanes,
@@ -63,6 +78,8 @@ export interface PaneRenderContext {
   openPreview?(target: PreviewTarget): void;
   /** Put text into the composer of the route's conversation. */
   addToChat?(text: string): void;
+  /** Close this pane (a pane that draws its own header puts its close button there). */
+  close?(): void;
 }
 
 export interface PaneDefinition {
@@ -222,6 +239,10 @@ export interface PaneShellProps {
   showSlots?: boolean;
   /** Show the layout toolbar (presets, panes, interface mode). */
   toolbar?: boolean;
+  /** Buttons the shell puts first in the title band's tool cluster (W51-b: Settings). */
+  bandTools?: ReactNode;
+  /** The chat tab's label (the conversation's title, or "New session"); else "Chat". */
+  chatTitle?: string;
   /** What tool panes get besides the route (P20-28..31). */
   workspace?: string | null;
   mode?: "local" | "remote" | null;
@@ -241,6 +262,32 @@ interface ShellContext {
   showSlots: boolean;
   title: (pane: PaneId) => string;
   tools: Pick<PaneShellProps, "workspace" | "mode" | "connection" | "openPreview" | "addToChat">;
+  /** The zone whose header runs under the band's tool cluster (top right), if any. */
+  bandEnd: string | null;
+  /** Zones whose top edge is the window's top (their header is part of the title band). */
+  topZones: ReadonlySet<string>;
+}
+
+/** Panes that draw their own titled header (W52-m): alone in a zone they show no tab strip. */
+const SELF_LABELLED: ReadonlySet<PaneId> = new Set(["files", "review"]);
+
+/** The zones along the window's top edge: every child of a row, the first child of a column. */
+export function topZoneIds(node: LayoutNode | null, into = new Set<string>()): Set<string> {
+  if (node === null) return into;
+  if (node.kind === "zone") into.add(node.id);
+  else if (node.orientation === "row") for (const child of node.children) topZoneIds(child, into);
+  else topZoneIds(node.children[0] ?? null, into);
+  return into;
+}
+
+/** The top-right zone: the last child of a row, the first child of a column, down to a zone.
+ * Collapsed children are skipped, since they take no room in the band. */
+export function bandEndZone(layout: PaneLayout, node: LayoutNode | null): string | null {
+  if (node === null) return null;
+  if (node.kind === "zone") return node.id;
+  const shown = node.children.filter((child) => !nodeCollapsed(layout, child));
+  const pick = node.orientation === "row" ? shown[shown.length - 1] : shown[0];
+  return pick === undefined ? null : bandEndZone(layout, pick);
 }
 
 /** A zone takes no space when it is minimised or every pane in it is hidden. */
@@ -381,6 +428,8 @@ function ZoneView(props: { ctx: ShellContext; zone: ZoneNode }) {
   const canMinimize =
     !z.tabs.includes(CHAT_PANE) && !z.tabs.some((pane) => ctx.registry.isStateful(pane));
   const focused = ctx.focusedZone === z.id;
+  const selfLabelled = z.tabs.length === 1 && SELF_LABELLED.has(z.tabs[0] as PaneId);
+  const chrome = ctx.topZones.has(z.id) ? "band" : "strip";
 
   const onDragOver = (event: DragEvent<HTMLElement>) => {
     if (paneFromDrag(event) === null && !event.dataTransfer?.types.includes(PANE_DRAG_TYPE)) {
@@ -421,7 +470,10 @@ function ZoneView(props: { ctx: ShellContext; zone: ZoneNode }) {
     <section
       className="pane-zone"
       data-zone-id={z.id}
+      data-band-end={ctx.bandEnd === z.id ? "true" : undefined}
       data-focused={focused ? "true" : "false"}
+      data-chrome={chrome}
+      data-self-labelled={selfLabelled ? "true" : undefined}
       hidden={collapsed}
       aria-label={ctx.title(active)}
       onFocusCapture={() => ctx.store.setFocusedZone(z.id)}
@@ -558,6 +610,7 @@ function PaneBody(props: { ctx: ShellContext; pane: PaneId; active: boolean }) {
         connection: ctx.tools.connection ?? null,
         ...(ctx.tools.openPreview === undefined ? {} : { openPreview: ctx.tools.openPreview }),
         ...(ctx.tools.addToChat === undefined ? {} : { addToChat: ctx.tools.addToChat }),
+        close: () => ctx.store.close(pane),
       })}
     </>
   );
@@ -607,7 +660,6 @@ function PaneToggle(props: {
   pane: PaneId;
   "data-ui": string;
 }) {
-  const t = useT();
   const { ctx, mode, pane } = props;
   if (!ctx.registry.ids().includes(pane) || !paneAllowed(mode, pane)) return null;
   const host = zones(ctx.layout.root).find((z) => z.tabs.includes(pane));
@@ -617,21 +669,51 @@ function PaneToggle(props: {
   return (
     <button
       type="button"
-      className="pane-toggle"
+      className="desk-icon-btn"
+      data-size="band"
+      aria-label={title}
       aria-pressed={showing}
-      title={t(showing ? "panes.close" : "panes.open", { pane: title })}
       data-ui={props["data-ui"]}
       onClick={() => {
         if (showing) ctx.store.close(pane);
         else ctx.store.open(pane);
       }}
     >
-      {title}
+      {paneIcon(pane)}
     </button>
   );
 }
 
-function LayoutToolbar(props: { ctx: ShellContext; mode: InterfaceMode; preset: PresetId | null }) {
+/** The title band's glyph for a tool pane (contributed panes share one). */
+function paneIcon(pane: PaneId): ReactNode {
+  switch (pane) {
+    case "preview":
+      return <Globe aria-hidden="true" />;
+    case "files":
+      return <FolderTree aria-hidden="true" />;
+    case "review":
+      return <GitCompareArrows aria-hidden="true" />;
+    case "terminal":
+      return <SquareTerminal aria-hidden="true" />;
+    default:
+      return <PanelRight aria-hidden="true" />;
+  }
+}
+
+const MODE_ICONS: Readonly<Record<InterfaceMode, ReactNode>> = {
+  advanced: <LayoutDashboard aria-hidden="true" />,
+  simple: <RectangleHorizontal aria-hidden="true" />,
+};
+
+function LayoutToolbar(props: {
+  ctx: ShellContext;
+  mode: InterfaceMode;
+  preset: PresetId | null;
+  bandTools?: ReactNode;
+  /** The layout editor (W52-l) is open. */
+  editing?: boolean;
+  onEdit?: () => void;
+}) {
   const t = useT();
   const { ctx, mode } = props;
   const open = new Set(allPanes(ctx.layout.root));
@@ -646,8 +728,10 @@ function LayoutToolbar(props: { ctx: ShellContext; mode: InterfaceMode; preset: 
     );
   return (
     <div className="pane-toolbar">
+      {props.bandTools}
       <label className="pane-toolbar-field">
-        <span>{t("panes.layout")}</span>
+        <span className="sr-only">{t("panes.layout")}</span>
+        <LayoutTemplate aria-hidden="true" className="pane-toolbar-glyph" />
         <select
           value={props.preset ?? ""}
           onChange={(event) => {
@@ -665,19 +749,34 @@ function LayoutToolbar(props: { ctx: ShellContext; mode: InterfaceMode; preset: 
           ))}
         </select>
       </label>
+      {props.onEdit !== undefined && (
+        <button
+          type="button"
+          className="desk-icon-btn"
+          data-size="band"
+          aria-label={t("lay.open")}
+          aria-pressed={props.editing === true}
+          data-ui="layout-editor"
+          onClick={props.onEdit}
+        >
+          <LayoutGrid aria-hidden="true" />
+        </button>
+      )}
       <PaneToggle ctx={ctx} mode={mode} pane="files" data-ui="pane-toggle-files" />
       <PaneToggle ctx={ctx} mode={mode} pane="review" data-ui="pane-toggle-review" />
       {closable.map((pane) => (
         <button
           key={pane}
           type="button"
-          className="text-button"
+          className="desk-icon-btn"
+          data-size="band"
+          aria-label={t("panes.open", { pane: ctx.title(pane) })}
           onClick={() => ctx.store.open(pane)}
         >
-          {t("panes.open", { pane: ctx.title(pane) })}
+          {paneIcon(pane)}
         </button>
       ))}
-      <div className="segmented" role="radiogroup" aria-label={t("panes.mode.label")}>
+      <div className="band-modes" role="radiogroup" aria-label={t("panes.mode.label")}>
         {INTERFACE_MODES.map((option) => (
           // biome-ignore lint/a11y/useSemanticElements: a segmented control, not a native radio
           <button
@@ -685,10 +784,12 @@ function LayoutToolbar(props: { ctx: ShellContext; mode: InterfaceMode; preset: 
             type="button"
             role="radio"
             aria-checked={mode === option}
-            className="segmented-option segmented-text"
+            aria-label={t(MODE_KEYS[option])}
+            className="desk-icon-btn"
+            data-size="band"
             onClick={() => ctx.store.setMode(option)}
           >
-            {t(MODE_KEYS[option])}
+            {MODE_ICONS[option]}
           </button>
         ))}
       </div>
@@ -698,8 +799,24 @@ function LayoutToolbar(props: { ctx: ShellContext; mode: InterfaceMode; preset: 
 
 export function PaneShell(props: PaneShellProps) {
   const registry = usePaneRegistry();
+  // the layout editor (W52-l): the band button or Ctrl+Shift+\ toggles it
+  const [editing, setEditing] = useState(false);
+  useEffect(() => {
+    if (props.toolbar === false) return;
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.code === "Backslash") {
+        event.preventDefault();
+        setEditing((open) => !open);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [props.toolbar]);
   const snapshot = useLayout(props.store);
-  const title = usePaneTitle();
+  const paneTitle = usePaneTitle();
+  const chatTitle = props.chatTitle;
+  const title = (pane: PaneId) =>
+    pane === CHAT_PANE && chatTitle !== undefined && chatTitle !== "" ? chatTitle : paneTitle(pane);
   const knownKey = registry.ids().join("\n");
   const layout = useMemo(
     () => withoutUnknown(snapshot.layout, new Set(knownKey.split("\n"))),
@@ -722,15 +839,50 @@ export function PaneShell(props: PaneShellProps) {
       ...(props.openPreview === undefined ? {} : { openPreview: props.openPreview }),
       ...(props.addToChat === undefined ? {} : { addToChat: props.addToChat }),
     },
+    bandEnd: props.toolbar === false ? null : bandEndZone(layout, layout.root),
+    topZones: topZoneIds(layout.root),
   };
   const root = layout.root;
+  const shellRef = useRef<HTMLDivElement>(null);
+  // the band's tool cluster width, so the zone under it keeps its tabs clear (W51-b)
+  useEffect(() => {
+    const host = shellRef.current;
+    const tools = host?.querySelector<HTMLElement>(":scope > .pane-toolbar") ?? null;
+    if (host === null || tools === null || typeof ResizeObserver === "undefined") return;
+    const sync = () => host.style.setProperty("--band-tools-width", `${tools.offsetWidth}px`);
+    sync();
+    const observer = new ResizeObserver(sync);
+    observer.observe(tools);
+    return () => observer.disconnect();
+  }, []);
   return (
-    <div className="pane-shell" data-mode={snapshot.mode}>
+    <div
+      className="pane-shell"
+      data-mode={snapshot.mode}
+      data-layout-editing={editing ? "true" : undefined}
+      ref={shellRef}
+    >
       {props.toolbar !== false && (
-        <LayoutToolbar ctx={ctx} mode={snapshot.mode} preset={snapshot.preset} />
+        <LayoutToolbar
+          ctx={ctx}
+          mode={snapshot.mode}
+          preset={snapshot.preset}
+          bandTools={props.bandTools}
+          editing={editing}
+          onEdit={() => setEditing(!editing)}
+        />
       )}
       <RestoreRail ctx={ctx} />
       <div className="pane-root">{root !== null && <NodeView ctx={ctx} node={root} />}</div>
+      {editing && (
+        <LayoutEditor
+          store={props.store}
+          mode={snapshot.mode}
+          preset={snapshot.preset}
+          panes={registry.ids()}
+          onDone={() => setEditing(false)}
+        />
+      )}
     </div>
   );
 }

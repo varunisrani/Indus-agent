@@ -2,10 +2,12 @@
 // and form tree, each with the control its type asks for. A change is written at once as a
 // one-field patch (`PUT /api/config`, additive), for the profile the "Applies to" chips name.
 
-import { Eye, EyeOff } from "lucide-react";
+import { ChevronDown, Eye, EyeOff } from "lucide-react";
 import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { useT } from "../i18n/index.tsx";
+import { fieldCopy } from "./fieldCopy.ts";
 import { fieldsOnPage, type PageDef } from "./pages.ts";
+import { FreeCombo, MoreFields } from "./primitives.tsx";
 import { fieldLabel, type SchemaField, type SchemaFields } from "./search.ts";
 import { patchFor, type RestLike, rest, SECRET_PLACEHOLDER, valueAt } from "./settingsApi.ts";
 
@@ -41,10 +43,11 @@ export function parseInput(
           return { ok: false };
         }
       }
+      // one line, comma-separated (W52-i); a pasted one-per-line list still parses
       return {
         ok: true,
         value: text
-          .split("\n")
+          .split(/[,\n]/)
           .map((line) => line.trim())
           .filter((line) => line !== ""),
       };
@@ -56,8 +59,19 @@ export function parseInput(
 
 function listText(value: unknown): string {
   if (!Array.isArray(value)) return "";
-  if (value.every((v) => typeof v === "string")) return value.join("\n");
+  if (value.every((v) => typeof v === "string")) return value.join(", ");
   return JSON.stringify(value, null, 2);
+}
+
+/** "manual" → "Manual", "must_respond" → "Must respond" (the stored value is unchanged). */
+export function optionLabel(option: string): string {
+  const words = option.replace(/_/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** A list holding objects (fallback routes): edited as JSON in a text area. */
+function isStructured(value: unknown): boolean {
+  return Array.isArray(value) && value.some((v) => typeof v !== "string");
 }
 
 function inputText(value: unknown): string {
@@ -86,6 +100,15 @@ export function FieldRow(props: FieldRowProps) {
   const [revealed, setRevealed] = useState(false);
   const [invalid, setInvalid] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
+  // our wording when the field has some (`fieldCopy.ts`), else the derived label and the schema's
+  const copy = fieldCopy(fieldKey);
+  const label = copy === undefined ? fieldLabel(fieldKey) : t(copy.label);
+  const description =
+    copy?.description === undefined
+      ? field.description
+      : copy.description === ""
+        ? ""
+        : t(copy.description);
 
   useEffect(() => setDraft(initial), [initial]);
   useEffect(() => {
@@ -133,20 +156,75 @@ export function FieldRow(props: FieldRowProps) {
     const options = field.options ?? [];
     const current = inputText(value);
     control = (
-      <select
+      <span className="settings-select">
+        <select
+          id={id}
+          className="settings-input"
+          value={current}
+          disabled={props.disabled}
+          onChange={(event) => void save(event.currentTarget.value)}
+        >
+          {!options.includes(current) && <option value={current}>{current}</option>}
+          {options.map((option) => (
+            <option key={option} value={option}>
+              {option === "" ? t("settings.field.none") : optionLabel(option)}
+            </option>
+          ))}
+        </select>
+        <ChevronDown aria-hidden="true" className="settings-select-caret" />
+      </span>
+    );
+  } else if (field.type === "list" && !isStructured(value)) {
+    control = (
+      <input
         id={id}
         className="settings-input"
-        value={current}
+        value={draft}
         disabled={props.disabled}
-        onChange={(event) => void save(event.currentTarget.value)}
-      >
-        {!options.includes(current) && <option value={current}>{current}</option>}
-        {options.map((option) => (
-          <option key={option} value={option}>
-            {option === "" ? t("settings.field.none") : option}
-          </option>
-        ))}
-      </select>
+        aria-invalid={invalid}
+        placeholder={t("settingsA.list.placeholder")}
+        autoComplete="off"
+        spellCheck={false}
+        onChange={(event) => setDraft(event.currentTarget.value)}
+        onBlur={commitText}
+        onKeyDown={onKey}
+      />
+    );
+  } else if (copy?.options !== undefined && field.type === "string") {
+    // a string the page offers from a short list (W52-j); an unknown stored value stays
+    const current = inputText(value);
+    const known = copy.options.some((option) => option.value === current);
+    control = (
+      <span className="settings-select">
+        <select
+          id={id}
+          className="settings-input"
+          value={current}
+          disabled={props.disabled}
+          onChange={(event) => void save(event.currentTarget.value)}
+        >
+          {!known && (
+            <option value={current}>{current === "" ? t("settings.field.none") : current}</option>
+          )}
+          {copy.options.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <ChevronDown aria-hidden="true" className="settings-select-caret" />
+      </span>
+    );
+  } else if (copy?.suggestions !== undefined && !secret) {
+    control = (
+      <FreeCombo
+        value={inputText(value)}
+        suggestions={copy.suggestions()}
+        label={label}
+        placeholder={t(copy.placeholder ?? "settings.field.notSet")}
+        {...(props.disabled ? { disabled: true } : {})}
+        onCommit={(next) => void save(next)}
+      />
     );
   } else if (field.type === "list") {
     control = (
@@ -174,7 +252,11 @@ export function FieldRow(props: FieldRowProps) {
           value={draft}
           disabled={props.disabled}
           aria-invalid={invalid}
-          placeholder={secret ? t("settings.field.secretStored") : ""}
+          placeholder={
+            secret
+              ? t("settings.field.secretStored")
+              : t(copy?.placeholder ?? "settings.field.notSet")
+          }
           autoComplete="off"
           spellCheck={false}
           onChange={(event) => setDraft(event.currentTarget.value)}
@@ -207,11 +289,11 @@ export function FieldRow(props: FieldRowProps) {
       data-highlighted={props.highlighted ? "true" : undefined}
     >
       <div className="settings-row-text">
-        <label htmlFor={id} className="settings-row-label">
-          {fieldLabel(fieldKey)}
+        {/* the config key is a hover hint, not a line of its own (W51-b) */}
+        <label htmlFor={id} className="settings-row-label" title={fieldKey}>
+          {label}
         </label>
-        {field.description !== "" && <p className="settings-row-desc">{field.description}</p>}
-        <code className="settings-row-key">{fieldKey}</code>
+        {description !== "" && <p className="settings-row-desc">{description}</p>}
       </div>
       <div className="settings-row-control">
         {control}
@@ -224,6 +306,12 @@ export function FieldRow(props: FieldRowProps) {
       </div>
     </div>
   );
+}
+
+/** `page.order` first (in that order), then the rest in schema order (W52-i). */
+export function orderedKeys(page: PageDef, keys: readonly string[]): string[] {
+  const first = (page.order ?? []).filter((key) => keys.includes(key));
+  return [...first, ...keys.filter((key) => !first.includes(key))];
 }
 
 export interface SchemaPageProps {
@@ -242,7 +330,7 @@ export interface SchemaPageProps {
 export function SchemaPage(props: SchemaPageProps) {
   const t = useT();
   const [managed, setManaged] = useState<string | null>(null);
-  const keys = fieldsOnPage(props.page, Object.keys(props.schema));
+  const keys = orderedKeys(props.page, fieldsOnPage(props.page, Object.keys(props.schema)));
   if (keys.length === 0) {
     return <p className="settings-empty">{t("settings.page.nothing")}</p>;
   }
@@ -258,6 +346,22 @@ export function SchemaPage(props: SchemaPageProps) {
     if (answer.code === "config_managed") setManaged(answer.message);
     return answer.message || t("settings.saveFailed");
   };
+  // A curated page shows its chosen fields first; the rest wait behind "More settings".
+  const curated = props.page.curated;
+  // curated rows show in the curated order (W52-j)
+  const shown = curated === undefined ? keys : curated.filter((key) => keys.includes(key));
+  const folded = curated === undefined ? [] : keys.filter((key) => !curated.includes(key));
+  const row = (key: string) => (
+    <FieldRow
+      key={`${props.profile ?? ""}:${key}`}
+      fieldKey={key}
+      field={props.schema[key] as SchemaField}
+      value={valueAt(props.config, key)}
+      disabled={managed !== null}
+      highlighted={props.focusField === key}
+      onSave={save}
+    />
+  );
   return (
     <div className="settings-rows">
       {managed !== null && (
@@ -265,17 +369,15 @@ export function SchemaPage(props: SchemaPageProps) {
           {managed}
         </p>
       )}
-      {keys.map((key) => (
-        <FieldRow
-          key={`${props.profile ?? ""}:${key}`}
-          fieldKey={key}
-          field={props.schema[key] as SchemaField}
-          value={valueAt(props.config, key)}
-          disabled={managed !== null}
-          highlighted={props.focusField === key}
-          onSave={save}
-        />
-      ))}
+      {shown.map(row)}
+      {folded.length > 0 && (
+        <MoreFields
+          label={t("settings.moreFields")}
+          open={props.focusField !== null && folded.includes(props.focusField)}
+        >
+          {folded.map(row)}
+        </MoreFields>
+      )}
     </div>
   );
 }

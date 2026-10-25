@@ -21,7 +21,7 @@ export function QuickEntry() {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [problem, setProblem] = useState<MessageKey | null>(null);
-  const box = useRef<HTMLTextAreaElement>(null);
+  const box = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     document.documentElement.dataset.window = "quick";
@@ -53,7 +53,7 @@ export function QuickEntry() {
     }
   };
 
-  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+  const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Escape") {
       event.preventDefault();
       bridge?.quick.dismiss();
@@ -64,31 +64,45 @@ export function QuickEntry() {
   };
 
   return (
-    <main className="quick" aria-label={t("quick.label")}>
-      <textarea
-        ref={box}
-        value={text}
-        rows={2}
-        placeholder={t("quick.placeholder")}
-        aria-label={t("quick.label")}
-        onChange={(event) => setText(event.target.value)}
-        onKeyDown={onKeyDown}
-      />
-      {problem !== null && (
-        <p className="quick-error" role="alert">
-          {t(problem)}
-        </p>
-      )}
-      <div className="quick-footer">
-        <span className="quick-hint">{sending ? t("quick.sending") : t("quick.hint")}</span>
-        <button
-          type="button"
-          className="button button-primary"
-          disabled={sending}
-          onClick={() => void send()}
-        >
-          {t("quick.send")}
-        </button>
+    <main
+      className="quick"
+      aria-label={t("quick.label")}
+      data-sending={sending ? "true" : undefined}
+    >
+      <div className="quick-card">
+        <div className="quick-row">
+          <span className="quick-prompt" aria-hidden="true">
+            ›
+          </span>
+          <input
+            ref={box}
+            type="text"
+            className="quick-input"
+            value={text}
+            placeholder={t("quick.placeholder")}
+            aria-label={t("quick.label")}
+            disabled={sending}
+            onChange={(event) => setText(event.target.value)}
+            onKeyDown={onKeyDown}
+          />
+        </div>
+        <div className="quick-target">
+          <label className="quick-target-label" htmlFor="quick-target">
+            {t("quick.sendTo")}
+          </label>
+          {/* W52-m-2: main delivers to the window used last; other targets need a target field */}
+          <select id="quick-target" className="quick-select" value="current" onChange={() => {}}>
+            <option value="current">{t("quick.target.current")}</option>
+          </select>
+          <span className="sr-only" aria-live="polite">
+            {sending ? t("quick.sending") : ""}
+          </span>
+        </div>
+        {problem !== null && (
+          <p className="quick-error" role="alert">
+            {t(problem)}
+          </p>
+        )}
       </div>
     </main>
   );

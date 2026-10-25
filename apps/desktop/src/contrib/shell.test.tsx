@@ -195,10 +195,16 @@ describe("the shell reads the contribution registry", () => {
     ]);
     mount("/bots", registry);
     expect(screen.getByRole("heading", { name: "Bots here" })).toBeTruthy();
+    // W52-k: Bots is the sidebar's BOTS tab (the roster in place), not a nav link
     const links = [...screen.getByRole("navigation", { name: "Main" }).querySelectorAll("a")];
-    expect(links.filter((a) => a.getAttribute("href") === "/bots")).toHaveLength(1);
+    expect(links.filter((a) => a.getAttribute("href") === "/bots")).toHaveLength(0);
+    expect(screen.getByRole("button", { name: "Bots" })).toBeTruthy();
+    // W53: one "Main" nav whichever panel the strip shows
+    fireEvent.click(screen.getByRole("button", { name: "Bots" }));
+    expect(screen.getAllByRole("navigation", { name: "Main" })).toHaveLength(1);
     await act(async () => off());
     expect(where()).toBe("/");
+    expect(screen.queryByRole("button", { name: "Bots" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Bots" })).toBeNull();
   });
 

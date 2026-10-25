@@ -6,7 +6,7 @@
 
 import type { CompletionItem, MethodName, MethodTypes } from "@indus/protocol";
 import type { RequestOptions } from "../../gateway/connectionStore.ts";
-import { completeSlash } from "../slash.ts";
+import { completeSlash, dropListedAliases, orderByCategory } from "../slash.ts";
 
 export type TriggerKind = "slash" | "mention";
 
@@ -59,9 +59,14 @@ export interface CompletionState {
   readonly trigger: Trigger | null;
   readonly items: readonly CompletionItem[];
   readonly selected: number;
+  /** An answer for the current trigger is still on its way. */
+  readonly loading?: boolean;
 }
 
 export const EMPTY_COMPLETION: CompletionState = { trigger: null, items: [], selected: 0 };
+
+/** How long a question may run before the drawer says it is looking. */
+export const LOADING_DELAY_MS = 150;
 
 /** Debounce for asking the daemon while the person types. */
 export const COMPLETION_DEBOUNCE_MS = 60;
@@ -69,6 +74,8 @@ export const COMPLETION_DEBOUNCE_MS = 60;
 export interface CompletionSourceOptions {
   request: Request | null;
   sessionId: string | null;
+  /** The folder paths are completed in (the draft's folder before its session exists). */
+  cwd?: string | null;
   onChange: (state: CompletionState) => void;
   debounceMs?: number;
 }
@@ -122,11 +129,16 @@ export class CompletionSource {
   private async ask(trigger: Trigger, mine: number): Promise<void> {
     const controller = new AbortController();
     this.controller = controller;
+    const slow = setTimeout(() => {
+      if (mine === this.generation) this.publish({ ...this.state, trigger, loading: true });
+    }, LOADING_DELAY_MS);
     let items: CompletionItem[];
     try {
       items = await this.fetch(trigger, controller.signal);
     } catch {
       items = [];
+    } finally {
+      clearTimeout(slow);
     }
     if (mine !== this.generation) return;
     this.publish({ trigger, items, selected: 0 });
@@ -134,11 +146,20 @@ export class CompletionSource {
 
   private async fetch(trigger: Trigger, signal: AbortSignal): Promise<CompletionItem[]> {
     const { request, sessionId } = this.options;
-    if (trigger.kind === "slash") return completeSlash(trigger.word, request, sessionId, signal);
+    if (trigger.kind === "slash") {
+      return orderByCategory(
+        dropListedAliases(await completeSlash(trigger.word, request, sessionId, signal)),
+      );
+    }
     if (request === null) return [];
+    // W52-h: a fresh draft has no session yet; its folder decides where paths are found (the
+    // daemon otherwise searched its own folder and `@src` found nothing).
+    const cwd = this.options.cwd ?? null;
     const answer = await request(
       "complete.path",
-      { word: trigger.word.slice(1), session_id: sessionId },
+      // the whole word, `@` included: the daemon answers a bare `@` with the reference forms and
+      // treats `@src` as a reference (without the `@` it listed a plain path and found nothing)
+      { word: trigger.word, session_id: sessionId, ...(cwd === null ? {} : { cwd }) },
       { timeoutMs: 10_000, signal },
     );
     return answer.items;

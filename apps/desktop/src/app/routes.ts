@@ -2,9 +2,10 @@
 //
 //   /                 new chat (home)
 //   /<sessionId>      a chat
-//   /capabilities, /messaging, /artifacts          pages (empty "coming later" in 1.0)
-//   /webhooks, /command-center, /learning-map, /bots  management pages (P24-27, P24-28, P24-31)
-//   /settings, /cron, /profiles, /agents           overlays over the route they opened from
+//   /capabilities, /messaging, /artifacts, /bots   pages (P24-26..31)
+//   /settings, /cron, /profiles, /agents,          overlays over the route they opened from
+//   /webhooks, /command-center, /learning-map,     (W52-l-1: the management views are overlays,
+//   /session-import                                 as in the reference; paths unchanged)
 //   a contributed route (P24-32)                   a `route` contribution's page, when the caller
 //                                                  passes the registry's route paths
 //   anything else     → new chat
@@ -16,16 +17,17 @@
 // contribution is off, the path is no page at all.
 
 export const NEW_CHAT_PATH = "/";
-export const PAGES = [
-  "capabilities",
-  "messaging",
-  "artifacts",
+export const PAGES = ["capabilities", "messaging", "artifacts", "bots"] as const;
+export const OVERLAYS = [
+  "settings",
+  "cron",
+  "profiles",
+  "agents",
   "webhooks",
   "command-center",
   "learning-map",
-  "bots",
+  "session-import",
 ] as const;
-export const OVERLAYS = ["settings", "cron", "profiles", "agents"] as const;
 /** Reserved pages served by a bundled contribution (the Bots surface, P24-31). */
 export const CONTRIBUTED_PAGES: readonly PageId[] = ["bots"];
 

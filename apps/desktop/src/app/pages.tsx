@@ -4,6 +4,7 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import {
   Archive,
+  ArrowDownToLine,
   Bot,
   Clock,
   Gauge,
@@ -24,9 +25,6 @@ export const PAGE_TEXT: Readonly<Record<PageId, { title: MessageKey; body: Messa
   capabilities: { title: "nav.capabilities", body: "page.capabilities.body" },
   messaging: { title: "nav.messaging", body: "page.messaging.body" },
   artifacts: { title: "nav.artifacts", body: "page.artifacts.body" },
-  webhooks: { title: "nav.webhooks", body: "page.webhooks.body" },
-  "command-center": { title: "nav.command-center", body: "page.command-center.body" },
-  "learning-map": { title: "nav.learning-map", body: "page.learning-map.body" },
   bots: { title: "nav.bots", body: "page.bots.body" },
 };
 
@@ -35,15 +33,17 @@ export const OVERLAY_TEXT: Readonly<Record<OverlayId, { title: MessageKey; body:
   cron: { title: "nav.cron", body: "overlay.cron.body" },
   profiles: { title: "nav.profiles", body: "overlay.profiles.body" },
   agents: { title: "nav.agents", body: "overlay.agents.body" },
+  // W52-l-1: the management views are overlays
+  webhooks: { title: "nav.webhooks", body: "page.webhooks.body" },
+  "command-center": { title: "nav.command-center", body: "page.command-center.body" },
+  "learning-map": { title: "nav.learning-map", body: "page.learning-map.body" },
+  "session-import": { title: "nav.session-import", body: "page.session-import.body" },
 };
 
 export const PAGE_ICONS: Readonly<Record<PageId, ReactNode>> = {
   capabilities: <Puzzle aria-hidden="true" size={16} />,
   messaging: <MessagesSquare aria-hidden="true" size={16} />,
   artifacts: <Archive aria-hidden="true" size={16} />,
-  webhooks: <Webhook aria-hidden="true" size={16} />,
-  "command-center": <Gauge aria-hidden="true" size={16} />,
-  "learning-map": <Orbit aria-hidden="true" size={16} />,
   bots: <Smile aria-hidden="true" size={16} />,
 };
 
@@ -52,6 +52,10 @@ export const OVERLAY_ICONS: Readonly<Record<OverlayId, ReactNode>> = {
   cron: <Clock aria-hidden="true" size={16} />,
   profiles: <Users aria-hidden="true" size={16} />,
   agents: <Bot aria-hidden="true" size={16} />,
+  webhooks: <Webhook aria-hidden="true" size={16} />,
+  "command-center": <Gauge aria-hidden="true" size={16} />,
+  "learning-map": <Orbit aria-hidden="true" size={16} />,
+  "session-import": <ArrowDownToLine aria-hidden="true" size={16} />,
 };
 
 export function ComingLaterPage(props: { page: PageId }) {

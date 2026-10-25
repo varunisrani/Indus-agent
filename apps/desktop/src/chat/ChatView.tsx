@@ -8,6 +8,7 @@ import { NEW_CHAT_PATH, overlayPath, overlayStateFrom } from "../app/routes.ts";
 import type { GatewayConnection } from "../gateway/connectionStore.ts";
 import { useConnectionState, useMaybeConnectionStore } from "../gateway/react.tsx";
 import { useT } from "../i18n/index.tsx";
+import { Wordmark } from "../ui/components.tsx";
 import type { FailureAction } from "./failure.ts";
 import type { ErrorItem } from "./messageStream.ts";
 import { Transcript } from "./Transcript.tsx";
@@ -76,8 +77,7 @@ export function ChatView(props: ChatViewProps) {
     <section className="chat" aria-label={t("chat.label")}>
       {sessionId === null ? (
         <div className="chat-empty">
-          <h1>{t("chat.empty.title")}</h1>
-          <p>{t("chat.empty.body")}</p>
+          <Wordmark text={t("chat.empty.title")} caption={t("chat.empty.body")} />
           {props.cards}
         </div>
       ) : (

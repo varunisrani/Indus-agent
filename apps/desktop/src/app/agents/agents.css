@@ -1,0 +1,142 @@
+/* Agents overlay (W52-l, spec 3.9). */
+
+.agents-empty {
+  display: grid;
+  flex: 1;
+  place-items: center;
+}
+
+.agents-view {
+  overflow-y: auto;
+  padding-bottom: 20px;
+}
+
+.agents-summary {
+  margin: 0 0 12px;
+  color: var(--desk-fg-3);
+  font-size: var(--desk-text-micro);
+}
+
+.agents-batch {
+  margin-bottom: 16px;
+}
+
+.agents-batch ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agents-batch-label {
+  display: flex;
+  gap: 6px;
+  margin: 0 0 6px;
+  color: var(--desk-fg-3);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.agents-active {
+  color: var(--desk-accent);
+}
+
+.agents-worker-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--desk-radius-card);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.agents-worker-main:hover {
+  background: var(--desk-row-hover);
+}
+
+.agents-glyph {
+  flex: none;
+  margin-top: 2px;
+  color: var(--desk-fg-3);
+}
+
+.agents-worker[data-status="running"] .agents-glyph {
+  color: var(--desk-accent);
+  animation: agents-spin 1s linear infinite;
+}
+
+.agents-worker[data-status="done"] .agents-glyph {
+  color: var(--kit-ok);
+}
+
+.agents-worker[data-status="failed"] .agents-glyph {
+  color: var(--desk-danger);
+}
+
+@keyframes agents-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agents-worker[data-status="running"] .agents-glyph {
+    animation: none;
+  }
+}
+
+.agents-worker-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.agents-goal {
+  color: var(--desk-fg-1);
+  font-size: var(--desk-text-ui);
+  font-weight: 500;
+}
+
+.agents-note {
+  overflow: hidden;
+  color: var(--desk-fg-3);
+  font-size: 10.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agents-elapsed {
+  flex: none;
+  color: var(--desk-fg-3);
+  font-size: 9.6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.agents-details {
+  padding: 2px 8px 8px 32px;
+  color: var(--desk-fg-2);
+  font-family: var(--indus-font-mono);
+  font-size: 10.7px;
+}
+
+.agents-details p {
+  margin: 0;
+}
+
+.agents-details .agents-mini {
+  margin-top: 6px;
+  color: var(--desk-fg-4);
+  font-family: var(--desk-font-ui);
+  font-size: 9.3px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}

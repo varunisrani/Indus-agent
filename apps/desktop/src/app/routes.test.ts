@@ -23,6 +23,11 @@ describe("routes", () => {
     ["/cron", { kind: "overlay", overlay: "cron" }],
     ["/profiles", { kind: "overlay", overlay: "profiles" }],
     ["/agents", { kind: "overlay", overlay: "agents" }],
+    ["/webhooks", { kind: "overlay", overlay: "webhooks" }],
+    ["/command-center", { kind: "overlay", overlay: "command-center" }],
+    ["/command-center?section=usage", { kind: "overlay", overlay: "command-center" }],
+    ["/learning-map", { kind: "overlay", overlay: "learning-map" }],
+    ["/session-import", { kind: "overlay", overlay: "session-import" }],
     ["/a/b", { kind: "unknown" }],
     ["/%zz", { kind: "unknown" }],
     ["/%20", { kind: "unknown" }],
@@ -49,6 +54,11 @@ describe("routes", () => {
     expect(closeTarget(overlayStateFrom("/messaging", null))).toBe("/messaging");
     expect(closeTarget(null)).toBe("/");
     expect(closeTarget({ background: "/settings" })).toBe("/");
+    // the management overlays (W52-l-1) never become a background either
+    expect(closeTarget({ background: "/command-center" })).toBe("/");
+    expect(closeTarget(overlayStateFrom("/webhooks", overlayStateFrom("/artifacts", null)))).toBe(
+      "/artifacts",
+    );
     // Opened from another overlay: the first background is kept.
     const first = overlayStateFrom("/abc", null);
     expect(closeTarget(overlayStateFrom("/settings", first))).toBe("/abc");

@@ -288,3 +288,39 @@ describe("the picker", () => {
     expect(new ModelPrefs(storage).favourites().has("anthropic:claude-haiku-4-5")).toBe(true);
   });
 });
+
+describe("the composer chips (W51-b)", () => {
+  it("names the configured model before the picker is ever opened", async () => {
+    const connection = new FakeConnection().on("model.options", () => OPTIONS);
+    render(
+      <ModelPicker
+        sessionId="s1"
+        profile={null}
+        connection={connection}
+        prefs={new ModelPrefs(new MemoryStorage())}
+      />,
+    );
+    expect(await screen.findByRole("button", { name: "gpt-4o" })).toBeTruthy();
+    expect(screen.queryByText("Choose a model")).toBeNull();
+  });
+
+  it("the effort chip stores the model's preset and tells the session", async () => {
+    const connection = new FakeConnection()
+      .on("model.options", () => OPTIONS)
+      .on("config.set", () => ({
+        key: "reasoning",
+        value: "high",
+        applied: "applied",
+        saved: false,
+      }));
+    const prefs = new ModelPrefs(new MemoryStorage());
+    render(<ModelPicker sessionId="s1" profile={null} connection={connection} prefs={prefs} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Reasoning effort: Auto" }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("menuitemradio", { name: "High" }));
+    });
+    expect(prefs.preset("openai:gpt-4o").effort).toBe("high");
+    expect(connection.called("config.set").map((call) => call.params.key)).toEqual(["reasoning"]);
+    expect(screen.getByRole("button", { name: "Reasoning effort: High" })).toBeTruthy();
+  });
+});

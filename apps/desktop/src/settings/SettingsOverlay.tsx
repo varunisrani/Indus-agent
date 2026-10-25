@@ -4,7 +4,7 @@
 // query (`/settings?view=…&page=…&field=…`), so links and search hits are the same thing.
 
 import * as Dialog from "@radix-ui/react-dialog";
-import { ChevronRight, Search, X } from "lucide-react";
+import { ChevronRight, Download, RefreshCw, Search, Upload, X } from "lucide-react";
 import {
   type KeyboardEvent,
   type ReactNode,
@@ -26,10 +26,12 @@ import {
   type SettingsContextValue,
 } from "./context.tsx";
 import { CustomSettingsPage } from "./customPages.tsx";
+import { pageIcon, startsGroup, viewIcon } from "./navMeta.tsx";
 import { resolveTarget, targetQuery, VIEWS, type ViewDef, viewDef } from "./pages.ts";
 import { SchemaPage } from "./schemaPage.tsx";
 import { buildEntries, type SchemaFields, search } from "./search.ts";
 import { bridgeRest, patchFor, type RestLike, rest } from "./settingsApi.ts";
+import "../app/overlay/overlay.css";
 import "./settings.css";
 
 export interface ProfileRow {
@@ -53,7 +55,11 @@ export interface SettingsOverlayProps {
 }
 
 function mergeValue(tree: unknown, key: string, value: unknown): unknown {
-  const patch = patchFor(key, value);
+  return mergePatch(tree, patchFor(key, value));
+}
+
+/** The form tree with `patch` laid over it (objects merge, anything else replaces). */
+function mergePatch(tree: unknown, patch: Record<string, unknown>): unknown {
   const merge = (a: unknown, b: unknown): unknown => {
     if (
       a === null ||
@@ -107,6 +113,15 @@ export function SettingsOverlay(props: SettingsOverlayProps) {
   const [active, setActive] = useState<string | null>(null);
   const [chosen, setChosen] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  // groups opened by their caret (the current view's group is always open)
+  const [opened, setOpened] = useState<ReadonlySet<string>>(new Set());
+  const toggleOpened = (id: string) =>
+    setOpened((now) => {
+      const next = new Set(now);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   const [configTick, setConfigTick] = useState(0);
   const searchRef = useRef<HTMLInputElement | null>(null);
 
@@ -178,6 +193,28 @@ export function SettingsOverlay(props: SettingsOverlayProps) {
     config,
     reloadConfig: () => setConfigTick((n) => n + 1),
     focusRow: target.row,
+    // settings slice A (W52-i)
+    schema,
+    focusField: target.field,
+    saveField: async (key, value) => {
+      const answer = await rest<{ ok: boolean }>(api, "PUT", "/api/config", {
+        body: { config: patchFor(key, value) },
+        profile: chosen,
+      });
+      if (!answer.ok) return answer.message || t("settings.saveFailed");
+      setConfig((now: unknown) => mergeValue(now, key, value));
+      return null;
+    },
+    savePatch: async (patch) => {
+      const answer = await rest<{ ok: boolean }>(api, "PUT", "/api/config", {
+        body: { config: patch },
+        profile: chosen,
+      });
+      if (!answer.ok) return answer.message || t("settings.saveFailed");
+      setConfig((now: unknown) => mergePatch(now, patch));
+      return null;
+    },
+    go: (next) => go(next),
   };
 
   const showChips = view.scoped && profiles.length >= 2;
@@ -190,15 +227,19 @@ export function SettingsOverlay(props: SettingsOverlayProps) {
     content = <p className="settings-empty">{t("settings.loading")}</p>;
   else
     content = (
-      <SchemaPage
-        page={page}
-        schema={schema}
-        config={config}
-        api={api}
-        profile={chosen}
-        focusField={target.field}
-        onSaved={(key, value) => setConfig((now: unknown) => mergeValue(now, key, value))}
-      />
+      <>
+        <SchemaPage
+          page={page}
+          schema={schema}
+          config={config}
+          api={api}
+          profile={chosen}
+          focusField={target.field}
+          onSaved={(key, value) => setConfig((now: unknown) => mergeValue(now, key, value))}
+        />
+        {/* a hand-built block under the schema rows (W52-j: wake word, archived sessions) */}
+        {page.after !== undefined && <CustomSettingsPage page={page.after} />}
+      </>
     );
 
   return (
@@ -211,8 +252,13 @@ export function SettingsOverlay(props: SettingsOverlayProps) {
       <Dialog.Portal>
         <Dialog.Overlay className="overlay-backdrop" />
         <Dialog.Content
-          className="settings-overlay"
+          className="desk-overlay-card settings-overlay"
           aria-describedby={undefined}
+          // the search pill stays a pill until it is used: typing anywhere still reaches it (W52-i)
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            (event.currentTarget as HTMLElement | null)?.focus?.();
+          }}
           onKeyDown={(event) => {
             if (!isTypeToSearch(event)) return;
             event.preventDefault();
@@ -220,14 +266,14 @@ export function SettingsOverlay(props: SettingsOverlayProps) {
             searchRef.current?.focus();
           }}
         >
-          <nav className="settings-nav" aria-label={t("settings.nav")}>
+          <nav className="settings-nav desk-overlay-nav" aria-label={t("settings.nav")}>
             <label className="settings-search">
-              <Search aria-hidden="true" size={14} />
+              <Search aria-hidden="true" size={12} />
               <input
                 ref={searchRef}
                 type="search"
                 aria-label={t("settings.search")}
-                placeholder={t("settings.search")}
+                placeholder={t("settingsA.searchPill")}
                 value={query}
                 onChange={(event) => setQuery(event.currentTarget.value)}
                 onKeyDown={(event) => {
@@ -260,41 +306,91 @@ export function SettingsOverlay(props: SettingsOverlayProps) {
               </ul>
             ) : (
               <ul className="settings-views">
-                {VIEWS.map((item) => (
-                  <li key={item.id}>
-                    <button
-                      type="button"
-                      className="settings-view"
-                      aria-current={item.id === view.id ? "page" : undefined}
-                      onClick={() => go({ view: item.id })}
+                {VIEWS.map((item) => {
+                  const current = item.id === view.id;
+                  const nested = item.pages.length > 1;
+                  const expanded = nested && (current || opened.has(item.id));
+                  return (
+                    <li
+                      key={item.id}
+                      className="desk-nav-entry"
+                      data-gap={startsGroup(item.id) ? "true" : undefined}
                     >
-                      {t(item.label)}
-                    </button>
-                    {item.id === view.id && item.pages.length > 1 && (
-                      <ul className="settings-pages">
-                        {item.pages.map((child) => (
-                          <li key={child.id}>
-                            <button
-                              type="button"
-                              className="settings-page-link"
-                              aria-current={child.id === page?.id ? "page" : undefined}
-                              onClick={() => go({ view: item.id, page: child.id })}
-                            >
-                              {t(child.label)}
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </li>
-                ))}
+                      <div className="settings-view-line">
+                        <button
+                          type="button"
+                          className="desk-nav-link settings-view"
+                          aria-current={current ? "page" : undefined}
+                          onClick={() => go({ view: item.id })}
+                        >
+                          {viewIcon(item.id)}
+                          <span className="desk-nav-label">{t(item.label)}</span>
+                        </button>
+                        {nested && (
+                          <button
+                            type="button"
+                            className="settings-caret"
+                            aria-expanded={expanded}
+                            aria-label={t(expanded ? "settings.collapse" : "settings.expand", {
+                              section: t(item.label),
+                            })}
+                            onClick={() => toggleOpened(item.id)}
+                          >
+                            <ChevronRight aria-hidden="true" size={13} />
+                          </button>
+                        )}
+                      </div>
+                      {expanded && (
+                        <ul className="settings-pages">
+                          {item.pages.map((child) => (
+                            <li key={child.id} className="desk-nav-entry" data-depth="1">
+                              <button
+                                type="button"
+                                className="desk-nav-link settings-page-link"
+                                aria-current={current && child.id === page?.id ? "page" : undefined}
+                                onClick={() => go({ view: item.id, page: child.id })}
+                              >
+                                {pageIcon(item.id, child.id)}
+                                <span className="desk-nav-label">{t(child.label)}</span>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             )}
+            {/* settings slice A (W52-i): export / import / reset, not wired in this build */}
+            <div className="settings-rail-footer">
+              {(
+                [
+                  ["settingsA.footer.export", <Download key="e" aria-hidden="true" size={14} />],
+                  ["settingsA.footer.import", <Upload key="i" aria-hidden="true" size={14} />],
+                  ["settingsA.footer.reset", <RefreshCw key="r" aria-hidden="true" size={14} />],
+                ] as const
+              ).map(([key, icon]) => (
+                <button
+                  key={key}
+                  type="button"
+                  className="desk-icon-btn"
+                  aria-label={t(key)}
+                  title={`${t(key)} · ${t("settings.notAvailable")}`}
+                  disabled
+                >
+                  {icon}
+                </button>
+              ))}
+            </div>
           </nav>
           <section className="settings-main">
             <header className="settings-header">
               <Dialog.Title asChild>
-                <ol className="settings-breadcrumb" aria-label={t("settings.breadcrumb")}>
+                <ol
+                  className="settings-breadcrumb desk-breadcrumb"
+                  aria-label={t("settings.breadcrumb")}
+                >
                   <li>
                     <button
                       type="button"
@@ -322,8 +418,11 @@ export function SettingsOverlay(props: SettingsOverlayProps) {
                   )}
                 </ol>
               </Dialog.Title>
-              <Dialog.Close className="icon-button" aria-label={t("common.close")}>
-                <X aria-hidden="true" size={16} />
+              <Dialog.Close
+                className="desk-icon-btn desk-overlay-close"
+                aria-label={t("common.close")}
+              >
+                <X aria-hidden="true" size={14} />
               </Dialog.Close>
             </header>
             {showChips && (

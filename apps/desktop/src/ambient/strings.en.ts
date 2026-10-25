@@ -10,7 +10,11 @@ export const AMBIENT_STRINGS = {
   "hud.resize": "Drag to resize",
 
   "quick.label": "Quick message",
-  "quick.placeholder": "Ask Indus",
+  "quick.placeholder": "Ask Indus…",
+  "quick.sendTo": "Send to",
+  "quick.target.current": "Current chat",
+  "hud.placeholder": "What's on your mind?",
+  "hud.leave": "Leave floating chat",
   "quick.send": "Send",
   "quick.hint": "Enter to send, Esc to close",
   "quick.sending": "Sending",

@@ -11,6 +11,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { deskFromPresetCss, deskTokenCss } from "../theme/deskTokens.ts";
 import { appearance } from "../theme/themeStore.ts";
 import { desktopBridge } from "./bridge.ts";
 
@@ -53,7 +54,11 @@ const ThemeContext = createContext<ThemeValue | null>(null);
 
 export function ThemeStyles() {
   return (
-    <style data-indus-tokens="">{themeNames.map((name) => tokensToCss(name)).join("\n")}</style>
+    <>
+      <style data-indus-tokens="">{themeNames.map((name) => tokensToCss(name)).join("\n")}</style>
+      {/* W51-b: the desktop's look; after the base tokens, before any preset */}
+      <style data-desk-tokens="">{deskTokenCss()}</style>
+    </>
   );
 }
 
@@ -94,13 +99,12 @@ export function ThemeProvider(props: { children: ReactNode }) {
 
   // P24-33: a chosen preset or user theme paints over the built-in tokens (nothing when unchosen)
   const choices = useSyncExternalStore(appearance.subscribe, appearance.get, appearance.get);
-  const presetCss = useMemo(
-    () =>
-      choices.theme === null
-        ? ""
-        : appearance.css(null, resolved === "indus-dark" ? "dark" : "light"),
-    [choices, resolved],
-  );
+  const presetCss = useMemo(() => {
+    if (choices.theme === null) return "";
+    const scheme = resolved === "indus-dark" ? "dark" : "light";
+    const css = appearance.css(null, scheme);
+    return css === "" ? "" : `${css}\n${deskFromPresetCss(scheme)}`;
+  }, [choices, resolved]);
 
   return (
     <ThemeContext.Provider value={value}>

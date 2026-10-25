@@ -150,11 +150,11 @@ export class Cdp {
     await this.send("Input.dispatchKeyEvent", { type: "keyUp", ...key });
   }
 
-  /** A real mouse click on the button whose text is `label`. */
+  /** A real click on the button labelled `label` (its text, or an icon button's `aria-label`). */
   async click(label: string): Promise<void> {
     const at = await this.eval<{ x: number; y: number } | null>(`(() => {
       const button = [...document.querySelectorAll("button")]
-        .find((b) => b.textContent.trim() === ${JSON.stringify(label)});
+        .find((b) => b.textContent.trim() === ${JSON.stringify(label)} || b.getAttribute("aria-label") === ${JSON.stringify(label)});
       if (!button) return null;
       button.scrollIntoView({ block: "center" });
       const r = button.getBoundingClientRect();
@@ -181,7 +181,8 @@ export class Cdp {
 /** Text of the transcript area. */
 export const TRANSCRIPT_TEXT = `document.querySelector('.transcript')?.innerText ?? ''`;
 
-/** True while a button labelled `label` is on screen. */
+/** True while a button labelled `label` (its text, or an icon button's `aria-label`) is on screen. */
 export function hasButton(label: string): string {
-  return `[...document.querySelectorAll('button')].some((b) => b.textContent.trim() === ${JSON.stringify(label)})`;
+  const quoted = JSON.stringify(label);
+  return `[...document.querySelectorAll('button')].some((b) => b.textContent.trim() === ${quoted} || b.getAttribute('aria-label') === ${quoted})`;
 }

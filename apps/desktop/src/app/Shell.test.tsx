@@ -49,7 +49,7 @@ describe("shell", () => {
     mount("/");
     expect(screen.getByRole("navigation", { name: "Main" })).toBeTruthy();
     expect(screen.getByRole("main")).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "What should we work on?" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "INDUS AGENT" })).toBeTruthy();
   });
 
   it("an unknown route opens a new chat", async () => {

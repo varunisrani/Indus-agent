@@ -5,13 +5,13 @@
 import { useEffect, useState } from "react";
 import { useT } from "../i18n/index.tsx";
 import { attempt, useSettings } from "./context.tsx";
-import { Row } from "./customPages.tsx";
+import { PageBody } from "./primitives.tsx";
 
 type Notices = { readonly state: "loading" } | { readonly state: "done"; text: string | null };
 
 export function LicencesPage() {
   const t = useT();
-  const { bridge } = useSettings();
+  const { bridge, focusRow } = useSettings();
   const source = bridge?.about;
   const [notices, setNotices] = useState<Notices>({ state: "loading" });
   useEffect(() => {
@@ -26,12 +26,13 @@ export function LicencesPage() {
       live = false;
     };
   }, [source]);
+  // restyled on the page primitives (W52-j): intro line, then the notices block
   return (
-    <div className="settings-rows">
-      <Row
-        row="licences"
-        label={t("settings.licences.title")}
-        description={t("settings.licences.body")}
+    <PageBody intro={t("settings.licences.body")}>
+      <div
+        className="sb-about"
+        data-row="licences"
+        data-highlighted={focusRow === "licences" ? "true" : undefined}
       >
         {notices.state === "loading" ? (
           <p className="settings-row-note" role="status">
@@ -51,7 +52,7 @@ export function LicencesPage() {
             {notices.text}
           </pre>
         )}
-      </Row>
-    </div>
+      </div>
+    </PageBody>
   );
 }

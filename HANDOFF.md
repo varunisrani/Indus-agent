@@ -76,12 +76,18 @@ README for reference. Nothing uncommitted on main.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
-**Agent 2 ACTIVE (took the turn 21:50 UTC 2026-10-24, owner request) — wave 53, UI parity.** Parked in `.agents/wip/w53/`
-(README has every section): w53-web (w52 a–f on w51a, gate green), w53-desk (w52 g/h/m on w51b, green), w53i/w53j
-(desktop settings A/B) merged as w53-settings (green), w53k (capabilities/messaging/bots) and w53l (command center,
-cron, profiles, agents, artifacts, webhooks, learning map) — INT-KL merging them on the desktop line. Land order:
-w51a, w53-web, w51b, w53-desk, w53-settings, then the k+l integration; pnpm-lock and notices regenerated (not merged).
-Reference captures being re-taken (Agent 1's were lost with its container) for the side-by-side PDFs.
+**Agent 2 ACTIVE (took the turn 21:50 UTC 2026-10-24, owner request).** WAVE 53 LANDED (UI parity, D-16.1190–1269):
+web foundation + all 6 web page groups; desktop foundation + transcript, composer menus, panes/onboarding, settings A+B,
+capabilities/messaging/bots, command center/cron/profiles/agents/artifacts/webhooks/learning map. Full gate green on the
+landing tree (pytest 18779/0, perf 18/1, vitest 3162, Electron 43/2, web Playwright 15/15, pyright 0, tooling.checks ok).
+Notes: LEAD-NOTES "Wave 53 landing notes". Parked patch files pruned (briefs, specs, kits and READMEs kept in
+.agents/wip/w51–w53 for wave 54). Reference + Indus captures, side-by-side PDFs and the per-slug gap list live in Agent 2's
+scratchpad only (`compare/`), never in the repo.
+IN FLIGHT: wave 54 = fixes from the compare (D1 desktop chat + panes, D2 desktop settings/page states incl. password-manager
+detection, keychain toggle, voice error; W1 web incl. the analytics chart bug, sessions landing, button case). If found
+PAUSED, look in `.agents/wip/w54/`.
+Older text below (wave 52 era) is history.
+
 UI PARITY IN FLIGHT (owner 2026-10-24: "same to same UI as Hermes, every page and component, web + desktop").
 Read first: `.agents/wip/w51/brief.md` (rules: clean room for code/assets, look follows the reference),
 `.agents/wip/w52/brief.md`, `.agents/wip/w52/lead-decisions.md`, specs `.agents/wip/w52/specs/*.md` (one per page group).

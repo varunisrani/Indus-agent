@@ -20,7 +20,10 @@ export const KEY_ACTIONS: readonly KeyAction[] = [
   { id: "composer.focus", label: "settings.key.focusComposer", defaultKey: "CommandOrControl+L" },
   { id: "tab.close", label: "settings.key.closeTab", defaultKey: "CommandOrControl+W" },
   { id: "tab.reopen", label: "settings.key.reopenTab", defaultKey: "CommandOrControl+Shift+T" },
-  { id: "tab.next", label: "settings.key.nextTab", defaultKey: "Control+Tab" },
+  // W52-h-2: Ctrl+Tab steps through chats (the session switcher); tabs cycle on Ctrl+PageDown.
+  { id: "tab.next", label: "settings.key.nextChat", defaultKey: "Control+Tab" },
+  { id: "tab.cycle", label: "settings.key.nextTab", defaultKey: "Control+PageDown" },
+  { id: "palette.open", label: "settings.key.palette", defaultKey: "CommandOrControl+K" },
   { id: "find", label: "settings.key.find", defaultKey: "CommandOrControl+F" },
 ];
 
@@ -155,4 +158,69 @@ export function conflictsFor(
       return normal !== null && fold(normal) === target;
     })
     .map(([id]) => id);
+}
+
+// -- settings-b (W52-j): groups and key chips for the Key bindings page --------------------------
+
+export type KeyGroup = "general" | "composer" | "tabs" | "conversation";
+
+/** The section each in-app action is listed under (unknown ids fall into "general"). */
+const KEY_GROUP_OF: Readonly<Record<string, KeyGroup>> = {
+  "chat.new": "general",
+  "settings.open": "general",
+  "sidebar.toggle": "general",
+  "composer.focus": "composer",
+  "tab.close": "tabs",
+  "tab.reopen": "tabs",
+  "tab.next": "tabs",
+  find: "conversation",
+};
+
+export const KEY_GROUPS: readonly KeyGroup[] = ["general", "composer", "tabs", "conversation"];
+
+export function keyGroupOf(id: string): KeyGroup {
+  return KEY_GROUP_OF[id] ?? "general";
+}
+
+/**
+ * The chips an accelerator shows as, one per key: `CommandOrControl+Shift+T` → Ctrl, Shift, T
+ * (⌘, ⇧, T on macOS). An empty accelerator has no chips.
+ */
+export function acceleratorKeys(accelerator: string, platform: string): string[] {
+  if (accelerator.trim() === "") return [];
+  const mac = platform === "darwin";
+  const parts = accelerator.endsWith("++")
+    ? [...accelerator.slice(0, -2).split("+"), "+"]
+    : accelerator.split("+");
+  const names: Readonly<Record<string, string>> = mac
+    ? {
+        CommandOrControl: "⌘",
+        Command: "⌘",
+        Control: "⌃",
+        Alt: "⌥",
+        Shift: "⇧",
+        Super: "⌘",
+      }
+    : {
+        CommandOrControl: "Ctrl",
+        Command: "Super",
+        Control: "Ctrl",
+        Alt: "Alt",
+        Shift: "Shift",
+        Super: "Super",
+      };
+  const keys: Readonly<Record<string, string>> = {
+    Enter: "↵",
+    Up: "↑",
+    Down: "↓",
+    Left: "←",
+    Right: "→",
+    Plus: "+",
+    Escape: "Esc",
+    Backspace: "⌫",
+  };
+  return parts
+    .map((p) => p.trim())
+    .filter((p) => p !== "")
+    .map((p) => names[p] ?? keys[p] ?? (p.length === 1 ? p.toUpperCase() : p));
 }

@@ -1,11 +1,12 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import axe from "axe-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ROUTES } from "./shell/routes.ts";
+import { DOCS_LINK, ROUTES } from "./shell/routes.ts";
 import { SIDEBAR_KEY } from "./shell/Sidebar.tsx";
 import { UNREACHABLE_TOAST } from "./shell/Toasts.tsx";
 import { createMockApi, type MockApi } from "./testing/mockApi.ts";
-import { currentLocation, renderApp } from "./testing/render.tsx";
+import { currentLocation } from "./testing/render.tsx";
+import { renderApp } from "./testing/renderApp.tsx";
 
 let mock: MockApi;
 let restore: () => void;
@@ -44,20 +45,27 @@ describe("routes", () => {
     await waitFor(() => expect(currentLocation()).toBe("/sessions?profile=work"));
   });
 
-  it("resolves every route in the table", async () => {
-    for (const route of ROUTES) {
-      const view = renderApp(route.path);
+  // One test per route: each mounts the whole shell, which is real render work in jsdom (about
+  // 0.1-0.4 s idle), so one test for all 19 routes outgrew the 5 s budget on a busy machine.
+  it.each(ROUTES.map((route) => [route.path, route] as const))(
+    "resolves the route %s",
+    async (_path, route) => {
+      renderApp(route.path);
       await waitFor(() => expect(currentLocation()).toBe(route.path));
       await waitFor(() => expect(heading()).toBe(route.title));
-      view.unmount();
-    }
-  });
+    },
+  );
 
-  it("links the docs out in a new tab", () => {
+  it("lists Documentation as an in-app page whose panel links the docs out", async () => {
     renderApp("/sessions");
-    const link = nav().getByRole("link", { name: /Documentation/ });
-    expect(link.getAttribute("target")).toBe("_blank");
-    expect(link.getAttribute("rel")).toContain("noopener");
+    const item = nav().getByRole("link", { name: "Documentation" });
+    expect(item.getAttribute("target")).toBeNull();
+    fireEvent.click(item);
+    await waitFor(() => expect(currentLocation()).toBe("/docs"));
+    const open = await screen.findByRole("link", { name: "Open docs" });
+    expect(open.getAttribute("target")).toBe("_blank");
+    expect(open.getAttribute("rel")).toContain("noopener");
+    expect(open.getAttribute("href")).toBe(DOCS_LINK.href);
   });
 
   it("lists Analytics only when the config flag is on", async () => {
@@ -208,7 +216,7 @@ describe("failures and accessibility", () => {
 
   it("has no axe violations on the shell", async () => {
     const { container } = renderApp("/sessions");
-    await screen.findByRole("list", { name: "Sessions" });
+    await screen.findByRole("list", { name: "Recent sessions" });
     let violations: axe.Result[] = [];
     await act(async () => {
       const results = await axe.run(container, {

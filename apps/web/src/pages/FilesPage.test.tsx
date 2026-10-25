@@ -98,18 +98,24 @@ describe("files", () => {
 
   it("makes a folder in the current directory and refuses path tricks", async () => {
     renderPage(<FilesPage />, "/files");
-    const name = await screen.findByLabelText("New folder name");
+    await screen.findByTestId("file-notes.txt");
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "Create folder" }));
+    expect(dialog.getByText("Target: /home/user")).toBeTruthy();
+    const name = dialog.getByLabelText("Folder name");
     fireEvent.change(name, { target: { value: "../escape" } });
-    fireEvent.click(screen.getByRole("button", { name: "Create folder" }));
+    fireEvent.click(dialog.getByRole("button", { name: "Create" }));
     expect(mock.callsTo("POST", "/api/files/mkdir")).toHaveLength(0);
     fireEvent.change(name, { target: { value: "drafts" } });
-    fireEvent.click(screen.getByRole("button", { name: "Create folder" }));
+    fireEvent.click(dialog.getByRole("button", { name: "Create" }));
     await waitFor(() =>
       expect(mock.callsTo("POST", "/api/files/mkdir")[0]?.body).toEqual({
         path: "/home/user/drafts",
       }),
     );
     expect(await screen.findByTestId("file-drafts")).toBeTruthy();
+    expect(screen.getByText("Folder created")).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("opens folders, goes up and previews text", async () => {
@@ -119,11 +125,38 @@ describe("files", () => {
       expect(screen.getByTestId("current-path").textContent).toBe("/home/user/projects"),
     );
     await screen.findByText("This folder is empty.");
-    fireEvent.click(screen.getByRole("button", { name: "↑ Up" }));
+    fireEvent.click(screen.getByRole("button", { name: "Parent folder" }));
     await waitFor(() => expect(screen.getByTestId("current-path").textContent).toBe("/home/user"));
     fireEvent.click(await screen.findByRole("button", { name: "notes.txt" }));
     const dialog = await screen.findByRole("dialog");
     expect(await within(dialog).findByText("hello there")).toBeTruthy();
+  });
+
+  it("shows sizes and absolute dates, and opens a path typed into the path row", async () => {
+    renderPage(<FilesPage />, "/files");
+    const row = within(await screen.findByTestId("file-notes.txt"));
+    expect(row.getByText("12 B")).toBeTruthy();
+    expect(row.getByText(/2025, \d{1,2}:\d{2} (AM|PM)$/)).toBeTruthy();
+    expect(within(screen.getByTestId("file-projects")).getAllByText("-")).toHaveLength(2);
+    const input = screen.getByLabelText("Path");
+    fireEvent.change(input, { target: { value: "/home" } });
+    fireEvent.click(screen.getByRole("button", { name: "Go" }));
+    await waitFor(() => expect(screen.getByTestId("current-path").textContent).toBe("/home"));
+    fireEvent.change(input, { target: { value: " " } });
+    fireEvent.click(screen.getByRole("button", { name: "Go" }));
+    expect(await screen.findByText("Path required")).toBeTruthy();
+  });
+
+  it("uploads what is dropped on the drop zone", async () => {
+    renderPage(<FilesPage />, "/files");
+    await screen.findByTestId("file-notes.txt");
+    const zone = screen.getByTestId("drop-zone");
+    const file = new File(["x"], "dropped.txt", { type: "text/plain" });
+    fireEvent.dragEnter(zone, { dataTransfer: { types: ["Files"], files: [file] } });
+    expect(zone.textContent).toContain("Release to upload");
+    fireEvent.drop(zone, { dataTransfer: { types: ["Files"], files: [file] } });
+    await waitFor(() => expect(mock.callsTo("POST", "/api/files/upload")).toHaveLength(1));
+    expect(await screen.findByText("1 file uploaded.")).toBeTruthy();
   });
 
   it("uploads into the current folder", async () => {

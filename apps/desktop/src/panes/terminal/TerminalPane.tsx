@@ -36,8 +36,7 @@ interface SlotState {
   error: string | null;
 }
 
-const BUTTON =
-  "rounded border border-line px-2 py-0.5 text-xs hover:bg-raised focus-visible:outline-2 focus-visible:outline-focus";
+const BUTTON = "files-action";
 
 function errorText(error: unknown): string {
   const text = error instanceof Error ? error.message : String(error);
@@ -249,108 +248,124 @@ export function TerminalPane(props: TerminalPaneProps) {
 
   const current = states[active];
   const visible = props.hidden !== true;
-  return (
-    <section
-      className={`flex h-full min-h-0 flex-col ${visible ? "" : "invisible"}`}
-      aria-label={t("pane.terminal")}
-      inert={!visible}
-      data-testid="terminal-pane"
+  const rail = (
+    <div
+      className="term-rail"
+      role="tablist"
+      aria-label={t("terminal.list")}
+      aria-orientation="vertical"
     >
-      <div
-        className="flex items-center gap-1 border-b border-line px-2 py-1"
-        role="tablist"
-        aria-label={t("terminal.list")}
-      >
-        {slots.map((slot) => (
-          <span key={slot.key} className="flex items-center">
+      {slots.map((slot) => {
+        const name = states[slot.key]?.shell ?? slot.label;
+        return (
+          <span key={slot.key} className="term-instance">
             <button
               type="button"
               role="tab"
               aria-selected={slot.key === active}
-              className={`flex items-center gap-1 rounded px-2 py-0.5 text-xs ${slot.key === active ? "bg-raised font-medium" : "hover:bg-raised"}`}
+              aria-label={name}
+              title={name}
+              className="term-instance-btn"
               onClick={() => setActive(slot.key)}
             >
-              <SquareTerminal size={12} aria-hidden="true" />
-              {states[slot.key]?.shell ?? slot.label}
+              <SquareTerminal size={14} aria-hidden="true" />
             </button>
             <button
               type="button"
-              className="rounded p-0.5 text-muted hover:text-fg"
-              aria-label={t("terminal.close", { name: states[slot.key]?.shell ?? slot.label })}
+              className="term-instance-close"
+              aria-label={t("terminal.close", { name })}
+              title={t("terminal.close", { name })}
               onClick={() => askClose(slot.key)}
             >
-              <X size={12} aria-hidden="true" />
+              <X size={10} aria-hidden="true" />
             </button>
           </span>
-        ))}
-        <button
-          type="button"
-          className="rounded p-1 hover:bg-raised"
-          aria-label={t("terminal.new")}
-          onClick={add}
-        >
-          <Plus size={12} aria-hidden="true" />
-        </button>
-        <span className="flex-1" />
+        );
+      })}
+      <button
+        type="button"
+        className="term-instance-btn term-new"
+        aria-label={t("terminal.new")}
+        title={t("terminal.new")}
+        onClick={add}
+      >
+        <Plus size={14} aria-hidden="true" />
+      </button>
+    </div>
+  );
+  return (
+    <section
+      className="term-pane"
+      data-hidden={visible ? undefined : "true"}
+      aria-label={t("pane.terminal")}
+      inert={!visible}
+      data-testid="terminal-pane"
+    >
+      <div className="term-main">
         {props.onAddToChat !== undefined && selection.trim() !== "" ? (
-          <button type="button" className={BUTTON} onClick={() => props.onAddToChat?.(selection)}>
-            {t("terminal.addSelection")}
-          </button>
+          <div className="term-selection">
+            <button type="button" className={BUTTON} onClick={() => props.onAddToChat?.(selection)}>
+              {t("terminal.addSelection")}
+            </button>
+          </div>
         ) : null}
-      </div>
 
-      {closing !== null ? (
-        <div
-          role="alertdialog"
-          aria-label={t("pane.terminal")}
-          className="flex items-center gap-2 border-b border-line px-3 py-1 text-xs"
-        >
-          <span className="flex-1">{t("terminal.confirmClose")}</span>
-          <button type="button" className={BUTTON} onClick={() => remove(closing)}>
-            {t("terminal.confirm")}
-          </button>
-          <button type="button" className={BUTTON} onClick={() => setClosing(null)}>
-            {t("terminal.keep")}
-          </button>
-        </div>
-      ) : null}
-
-      {current?.error ? (
-        <p role="alert" className="px-3 py-2 text-sm text-danger">
-          {t("terminal.unavailable", { message: current.error })}
-        </p>
-      ) : null}
-      {current !== undefined && current.exitCode !== undefined && current.error === null ? (
-        <p role="status" className="flex items-center gap-2 px-3 py-1 text-xs">
-          <span>{t("terminal.exited", { code: current.exitCode ?? "?" })}</span>
-          <button
-            type="button"
-            className={BUTTON}
-            onClick={() => setRestarts((prev) => ({ ...prev, [active]: (prev[active] ?? 0) + 1 }))}
+        {closing !== null ? (
+          <div
+            role="alertdialog"
+            aria-label={t("pane.terminal")}
+            className="flex items-center gap-2 border-b border-line px-3 py-1 text-xs"
           >
-            {t("terminal.restart")}
-          </button>
-        </p>
-      ) : null}
-      {current === undefined && slots.length > 0 ? (
-        <Loader label={t("terminal.starting")} size="sm" />
-      ) : null}
+            <span className="flex-1">{t("terminal.confirmClose")}</span>
+            <button type="button" className={BUTTON} onClick={() => remove(closing)}>
+              {t("terminal.confirm")}
+            </button>
+            <button type="button" className={BUTTON} onClick={() => setClosing(null)}>
+              {t("terminal.keep")}
+            </button>
+          </div>
+        ) : null}
 
-      <div className="flex min-h-0 flex-1 flex-col">
-        {slots.map((slot) => (
-          <TerminalSlot
-            key={slot.key}
-            active={slot.key === active}
-            visible={visible}
-            cwd={props.cwd}
-            bridge={bridge}
-            createView={createView}
-            restartKey={restarts[slot.key] ?? 0}
-            onState={handlerFor(slot.key)}
-            onSelection={setSelection}
-          />
-        ))}
+        {current?.error ? (
+          <p role="alert" className="px-3 py-2 text-sm text-danger">
+            {t("terminal.unavailable", { message: current.error })}
+          </p>
+        ) : null}
+        {current !== undefined && current.exitCode !== undefined && current.error === null ? (
+          <p role="status" className="flex items-center gap-2 px-3 py-1 text-xs">
+            <span>{t("terminal.exited", { code: current.exitCode ?? "?" })}</span>
+            <button
+              type="button"
+              className={BUTTON}
+              onClick={() =>
+                setRestarts((prev) => ({ ...prev, [active]: (prev[active] ?? 0) + 1 }))
+              }
+            >
+              {t("terminal.restart")}
+            </button>
+          </p>
+        ) : null}
+        {current === undefined && slots.length > 0 ? (
+          <Loader label={t("terminal.starting")} size="sm" />
+        ) : null}
+
+        <div className="term-screens">
+          {slots.map((slot) => (
+            <TerminalSlot
+              key={slot.key}
+              active={slot.key === active}
+              visible={visible}
+              cwd={props.cwd}
+              bridge={bridge}
+              createView={createView}
+              restartKey={restarts[slot.key] ?? 0}
+              onState={handlerFor(slot.key)}
+              onSelection={setSelection}
+            />
+          ))}
+        </div>
       </div>
+      {rail}
     </section>
   );
 }

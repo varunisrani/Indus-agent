@@ -1,16 +1,24 @@
-// The learning map (P24-28): skills and memories as a force-directed graph (`layout.ts`), with a
-// playback slider over time, filters all / used / learned, node edit (a skill's on/off switch) and
-// delete (a memory), and Share, which copies a code holding the layout only.
+// The learning map (P24-28; W52-l look: an overlay card whose graph fills the panel): skills and
+// memories as a force-directed graph (`layout.ts`; W52-l-6: no radial time rings), with a floating
+// playback slider over time, text-tab filters all / used / learned, a node popover to switch a
+// skill on/off or delete a memory, and Share / Load code, which copy and read a code holding the
+// layout only.
 //
 // Data: `GET /api/learning/graph` (`{nodes, edges}`; memories with timestamps and the skill they
 // were learned with) when the server has it; otherwise the skills list alone (`GET /api/skills`,
 // linked by category, no times — playback then has nothing to replay).
 
-import { useMemo, useState } from "react";
+import { AlertTriangle, FileInput, Lightbulb, Share2 } from "lucide-react";
+import { type ReactNode, useMemo, useState } from "react";
 import { useT } from "../../i18n/index.tsx";
 import { type RestAnswer, type RestLike, rest } from "../../settings/settingsApi.ts";
+import { Button, EmptyState, IconButton, SmallDialog } from "../../ui/components.tsx";
 import { copyText } from "../clipboard.ts";
-import { LoadState, PageFrame, useApi, useRestValue } from "../manage/common.tsx";
+import { InlineError, TextAction, TextTabs } from "../kit.tsx";
+import { Loader } from "../Loader.tsx";
+import { useApi, useRestValue } from "../manage/common.tsx";
+import { OverlayCard } from "../overlay/OverlayFrame.tsx";
+import "./learningMap.css";
 import {
   graphFromSkills,
   type LearningGraph,
@@ -69,7 +77,10 @@ function MapView(props: {
   const [note, setNote] = useState("");
   const shown = useMemo(() => visible(props.graph, filter, until), [props.graph, filter, until]);
   const placed = useMemo(() => layout(props.graph, BOX), [props.graph]);
+  const [loading, setLoading] = useState(false);
   const [importText, setImportText] = useState("");
+  const [imported, setImported] = useState<ReturnType<typeof readShareCode> | null>(null);
+  const [importError, setImportError] = useState("");
 
   const toggleSkill = async (node: LearningNode) => {
     const answer = await rest(props.api, "POST", "/api/skills/toggle", {
@@ -77,6 +88,7 @@ function MapView(props: {
       body: { name: node.label, enabled: !node.enabled },
     });
     setNote(answer.ok ? "" : answer.message);
+    setSelected(null);
     props.reload();
   };
   const deleteMemory = async (node: LearningNode) => {
@@ -84,9 +96,7 @@ function MapView(props: {
       props.api,
       "DELETE",
       `/api/learning/nodes/${encodeURIComponent(node.id)}`,
-      {
-        profile: props.profile,
-      },
+      { profile: props.profile },
     );
     setNote(answer.ok ? "" : answer.message);
     setSelected(null);
@@ -97,185 +107,267 @@ function MapView(props: {
     const copied = await copyText(code);
     setNote(copied ? t("manage.map.copied") : code);
   };
-  let imported: ReturnType<typeof readShareCode> | null = null;
-  let importError = "";
-  if (importText.trim() !== "") {
+  const showCode = () => {
     try {
-      imported = readShareCode(importText);
+      setImported(readShareCode(importText));
+      setImportError("");
+      setLoading(false);
+      setSelected(null);
     } catch (error) {
-      importError = error instanceof ShareCodeError ? error.message : t("manage.failed");
+      setImportError(error instanceof ShareCodeError ? error.message : t("manage.failed"));
     }
-  }
+  };
+  const at = selected === null ? undefined : placed.get(selected.id);
 
   return (
-    <div className="manage-body">
-      <div className="manage-inline">
-        {(["all", "used", "learned"] as const).map((f) => (
-          <button
-            key={f}
-            type="button"
-            className="button button-secondary"
-            aria-pressed={filter === f}
-            onClick={() => setFilter(f)}
-          >
-            {t(`manage.map.filter.${f}`)}
-          </button>
-        ))}
-        <button type="button" className="button button-secondary" onClick={() => void share()}>
-          {t("manage.map.share")}
-        </button>
+    <div className="map-stage">
+      <div className="map-top-left">
+        {imported === null ? (
+          <TextTabs
+            label={t("map.filter")}
+            value={filter}
+            options={(["all", "used", "learned"] as const).map((f) => ({
+              value: f,
+              label: t(`manage.map.filter.${f}`),
+            }))}
+            onChange={setFilter}
+          />
+        ) : (
+          <TextAction strong onClick={() => setImported(null)}>
+            {t("map.back")}
+          </TextAction>
+        )}
       </div>
-      {range !== null && (
-        <label className="manage-field">
-          {t("manage.map.playback")}
+      {range !== null && imported === null && (
+        <label className="map-timeline">
+          <span className="sr-only">{t("manage.map.playback")}</span>
           <input
             type="range"
             min={range.from}
             max={range.to}
             value={until ?? range.to}
+            aria-label={t("manage.map.playback")}
             onChange={(e) => setUntil(Number(e.target.value))}
           />
         </label>
       )}
-      {!props.full && <p className="manage-muted">{t("manage.map.skillsOnly")}</p>}
-      <svg
-        className="manage-map"
-        viewBox={`0 0 ${BOX.width} ${BOX.height}`}
-        role="img"
-        aria-label={t("nav.learning-map")}
-      >
-        {shown.edges.map((edge) => {
-          const a = placed.get(edge.from);
-          const b = placed.get(edge.to);
-          if (a === undefined || b === undefined) return null;
-          return (
-            <line
-              key={`${edge.from}->${edge.to}`}
-              x1={a.x}
-              y1={a.y}
-              x2={b.x}
-              y2={b.y}
-              stroke="var(--color-line)"
-            />
-          );
-        })}
-        {shown.nodes.map((node) => {
-          const at = placed.get(node.id);
-          if (at === undefined) return null;
-          return (
-            // biome-ignore lint/a11y/useSemanticElements: SVG has no <button>; the group takes its role
-            <g
-              key={node.id}
-              data-node={node.id}
-              role="button"
-              tabIndex={0}
-              aria-label={node.label}
-              onClick={() => setSelected(node)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") setSelected(node);
-              }}
-              style={{ cursor: "pointer" }}
-            >
-              <circle
-                cx={at.x}
-                cy={at.y}
-                r={at.r}
-                fill={node.kind === "skill" ? "var(--color-accent)" : "var(--color-ok)"}
-                opacity={node.enabled ? 0.9 : 0.35}
-              />
-              <title>{node.label}</title>
-            </g>
-          );
-        })}
-      </svg>
-      <p className="manage-muted" data-testid="map-count">
-        {t("manage.map.count", { count: shown.nodes.length })}
-      </p>
-      {selected !== null && (
-        <div className="manage-card" role="dialog" aria-label={selected.label}>
-          <h3>{selected.label}</h3>
-          <p className="manage-muted">{selected.category}</p>
-          {selected.kind === "skill" ? (
-            <button
-              type="button"
-              className="button button-secondary"
-              onClick={() => void toggleSkill(selected)}
-            >
-              {selected.enabled ? t("manage.map.disable") : t("manage.map.enable")}
-            </button>
-          ) : (
-            props.full && (
-              <button
-                type="button"
-                className="button button-secondary"
-                onClick={() => void deleteMemory(selected)}
-              >
-                {t("manage.delete")}
-              </button>
-            )
-          )}
-          <button
-            type="button"
-            className="button button-secondary"
-            onClick={() => setSelected(null)}
-          >
-            {t("common.close")}
-          </button>
-        </div>
-      )}
-      {note !== "" && (
-        <p className="manage-muted manage-code" role="status">
-          {note}
-        </p>
-      )}
-      <label className="manage-field">
-        {t("manage.map.import")}
-        <textarea rows={2} value={importText} onChange={(e) => setImportText(e.target.value)} />
-      </label>
-      {importError !== "" && <p className="manage-error">{importError}</p>}
-      {imported !== null && (
+      {imported === null ? (
         <svg
-          className="manage-map"
+          className="map-svg"
+          viewBox={`0 0 ${BOX.width} ${BOX.height}`}
+          preserveAspectRatio="xMidYMid meet"
+          role="img"
+          aria-label={t("nav.learning-map")}
+        >
+          {shown.edges.map((edge) => {
+            const a = placed.get(edge.from);
+            const b = placed.get(edge.to);
+            if (a === undefined || b === undefined) return null;
+            return (
+              <line
+                key={`${edge.from}->${edge.to}`}
+                className="map-edge"
+                x1={a.x}
+                y1={a.y}
+                x2={b.x}
+                y2={b.y}
+              />
+            );
+          })}
+          {shown.nodes.map((node) => {
+            const spot = placed.get(node.id);
+            if (spot === undefined) return null;
+            return (
+              // biome-ignore lint/a11y/useSemanticElements: SVG has no <button>; the group takes its role
+              <g
+                key={node.id}
+                data-node={node.id}
+                className="map-node"
+                data-kind={node.kind}
+                data-off={node.enabled ? undefined : "true"}
+                role="button"
+                tabIndex={0}
+                aria-label={node.label}
+                onClick={() => setSelected(node)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") setSelected(node);
+                }}
+              >
+                {node.kind === "skill" ? (
+                  <circle cx={spot.x} cy={spot.y} r={spot.r} />
+                ) : (
+                  <rect
+                    x={spot.x - spot.r * 0.8}
+                    y={spot.y - spot.r * 0.8}
+                    width={spot.r * 1.6}
+                    height={spot.r * 1.6}
+                    transform={`rotate(45 ${spot.x} ${spot.y})`}
+                  />
+                )}
+                <title>{node.label}</title>
+              </g>
+            );
+          })}
+        </svg>
+      ) : (
+        <svg
+          className="map-svg"
           viewBox="0 0 1 1"
+          preserveAspectRatio="xMidYMid meet"
           role="img"
           aria-label={t("manage.map.importedMap")}
         >
           {keyed(imported.nodes).map(({ key, node: n }) => (
             <circle
               key={key}
+              className="map-node-dot"
+              data-kind={n.kind}
               cx={n.x}
               cy={n.y}
               r={0.008}
-              fill={n.kind === "skill" ? "var(--color-accent)" : "var(--color-ok)"}
             />
           ))}
         </svg>
+      )}
+      {selected !== null && at !== undefined && (
+        <div
+          className="map-popover"
+          role="dialog"
+          aria-label={selected.label}
+          style={{
+            left: `${(at.x / BOX.width) * 100}%`,
+            top: `${(at.y / BOX.height) * 100}%`,
+          }}
+        >
+          <p className="map-popover-title">{selected.label}</p>
+          <p className="map-popover-meta">{selected.category}</p>
+          <div className="map-popover-actions">
+            {selected.kind === "skill" ? (
+              <TextAction strong onClick={() => void toggleSkill(selected)}>
+                {selected.enabled ? t("manage.map.disable") : t("manage.map.enable")}
+              </TextAction>
+            ) : (
+              props.full && (
+                <TextAction strong tone="danger" onClick={() => void deleteMemory(selected)}>
+                  {t("manage.delete")}
+                </TextAction>
+              )
+            )}
+            <TextAction onClick={() => setSelected(null)}>{t("common.close")}</TextAction>
+          </div>
+        </div>
+      )}
+      <div className="map-legend">
+        <span>
+          <span className="map-key" data-kind="skill" aria-hidden="true" />
+          {t("map.skill")}
+        </span>
+        <span>
+          <span className="map-key" data-kind="memory" aria-hidden="true" />
+          {t("map.memory")}
+        </span>
+        <span className="map-legend-note" data-testid="map-count">
+          {t("manage.map.count", { count: shown.nodes.length })}
+        </span>
+        {!props.full && <span className="map-legend-note">{t("manage.map.skillsOnly")}</span>}
+        {note !== "" && (
+          <span className="map-legend-note map-code" role="status">
+            {note}
+          </span>
+        )}
+      </div>
+      <div className="map-share">
+        <IconButton
+          label={t("manage.map.share")}
+          icon={<Share2 aria-hidden="true" size={14} />}
+          onClick={() => void share()}
+        />
+        <IconButton
+          label={t("manage.map.import")}
+          icon={<FileInput aria-hidden="true" size={14} />}
+          onClick={() => setLoading(true)}
+        />
+      </div>
+      {loading && (
+        <SmallDialog
+          title={t("manage.map.import")}
+          closeLabel={t("common.close")}
+          onClose={() => setLoading(false)}
+        >
+          <textarea
+            className="map-code-input"
+            rows={5}
+            aria-label={t("map.code")}
+            value={importText}
+            onChange={(e) => setImportText(e.target.value)}
+          />
+          {importError !== "" && <InlineError>{importError}</InlineError>}
+          <Button
+            variant="primary"
+            className="map-code-button"
+            disabled={importText.trim() === ""}
+            onClick={showCode}
+          >
+            {t("map.showCode")}
+          </Button>
+        </SmallDialog>
       )}
     </div>
   );
 }
 
-export function LearningMap(props: { api?: RestLike | null; profile: string | null }) {
+export function LearningMap(props: {
+  api?: RestLike | null;
+  profile: string | null;
+  onClose?: () => void;
+}) {
   const t = useT();
   const api = useApi(props.api);
   const graph = useRestValue(() => loadGraph(api, props.profile), [api, props.profile]);
-  return (
-    <PageFrame title={t("nav.learning-map")} id="learning-map">
-      <LoadState value={graph}>
-        {(data) =>
-          data.graph.nodes.length === 0 ? (
-            <p className="manage-muted">{t("manage.map.empty")}</p>
-          ) : (
-            <MapView
-              api={api}
-              profile={props.profile}
-              graph={data.graph}
-              full={data.full}
-              reload={graph.reload}
-            />
-          )
+  let body: ReactNode;
+  if (graph.state === "loading") body = <Loader />;
+  else if (graph.state === "error") {
+    body = (
+      <EmptyState
+        look="panel"
+        icon={<AlertTriangle aria-hidden="true" />}
+        title={t("map.errorTitle")}
+        description={graph.code === "not-connected" ? t("manage.notConnected") : graph.message}
+        action={
+          <Button variant="secondary" size="sm" onClick={graph.reload}>
+            {t("manage.retry")}
+          </Button>
         }
-      </LoadState>
-    </PageFrame>
+      />
+    );
+  } else if (graph.data.graph.nodes.length === 0) {
+    body = (
+      <EmptyState
+        look="panel"
+        icon={<Lightbulb aria-hidden="true" />}
+        title={t("manage.map.empty")}
+        description={t("map.emptyBody")}
+      />
+    );
+  } else {
+    body = (
+      <MapView
+        api={api}
+        profile={props.profile}
+        graph={graph.data.graph}
+        full={graph.data.full}
+        reload={graph.reload}
+      />
+    );
+  }
+  return (
+    <OverlayCard
+      id="learning-map"
+      title={t("nav.learning-map")}
+      closeLabel={t("common.close")}
+      onClose={props.onClose ?? (() => {})}
+    >
+      <div className="map-frame">{body}</div>
+    </OverlayCard>
   );
 }

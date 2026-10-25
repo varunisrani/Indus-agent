@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { desktopBridge } from "../app/bridge.ts";
 import { overlayStateFrom } from "../app/routes.ts";
+import { dismissToast, notify } from "../app/Toasts.tsx";
 import type { IndusDesktopDeepLinks } from "../global.d.ts";
 import { useT } from "../i18n/index.tsx";
 import { bridgeRest, type RestLike, rest } from "../settings/settingsApi.ts";
@@ -20,6 +21,13 @@ export interface DeepLinkHostProps {
   api?: RestLike | null;
 }
 
+/** The host's one note (a refusal or an install result) goes to the window's toast region. */
+const NOTE_ID = "deep-link-note";
+
+function setNote(note: { text: string; error: boolean }): void {
+  notify({ id: NOTE_ID, tone: note.error ? "error" : "success", title: note.text });
+}
+
 export function DeepLinkHost(props: DeepLinkHostProps) {
   const t = useT();
   const navigate = useNavigate();
@@ -27,7 +35,6 @@ export function DeepLinkHost(props: DeepLinkHostProps) {
   const links = props.links === undefined ? (desktopBridge()?.deepLinks ?? null) : props.links;
   const api = props.api === undefined ? bridgeRest() : props.api;
   const [pending, setPending] = useState<Pending | null>(null);
-  const [note, setNote] = useState<{ text: string; error: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const [incoming, setIncoming] = useState<LinkPayload | null>(null);
 
@@ -52,7 +59,7 @@ export function DeepLinkHost(props: DeepLinkHostProps) {
         return;
       case "confirm-skill":
       case "confirm-mcp":
-        setNote(null);
+        dismissToast(NOTE_ID);
         setPending(action);
         return;
       case "refused":
@@ -132,14 +139,6 @@ export function DeepLinkHost(props: DeepLinkHostProps) {
             </Dialog.Content>
           </Dialog.Portal>
         </Dialog.Root>
-      )}
-      {note !== null && (
-        <div className="toast" role={note.error ? "alert" : "status"}>
-          <span>{note.text}</span>
-          <button type="button" className="icon-button" onClick={() => setNote(null)}>
-            {t("common.close")}
-          </button>
-        </div>
       )}
     </>
   );

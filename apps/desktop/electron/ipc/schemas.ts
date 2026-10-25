@@ -447,7 +447,7 @@ export const prefsSnapshot = z.object({
   /** In-app shortcut overrides: action id → accelerator ("" = unbound). */
   keybindings: z.record(z.string().max(64), accelerator),
   /** Chat text size in percent of the UI size. */
-  chatTextScale: z.number().int().min(80).max(160),
+  chatTextScale: z.number().int().min(80).max(175),
 });
 
 export const prefsPatch = z.strictObject({
@@ -464,7 +464,7 @@ export const prefsPatch = z.strictObject({
     })
     .optional(),
   keybindings: z.record(z.string().max(64), accelerator).optional(),
-  chatTextScale: z.number().int().min(80).max(160).optional(),
+  chatTextScale: z.number().int().min(80).max(175).optional(),
 });
 
 // -- the table -----------------------------------------------------------------------------------

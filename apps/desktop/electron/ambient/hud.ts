@@ -13,7 +13,7 @@ import { readJsonFile, writeFileAtomic } from "../fsSecure.ts";
 import type { BrowserWindowLike } from "../windows/manager.ts";
 import { type DisplayLike, displayShowing, type Rect } from "../windows/windowState.ts";
 
-export const HUD_DEFAULT_SIZE = { width: 560, height: 240 } as const;
+export const HUD_DEFAULT_SIZE = { width: 620, height: 320 } as const;
 export const HUD_MIN_SIZE = { width: 360, height: 160 } as const;
 /** Gap between the default HUD and the bottom of the work area. */
 export const HUD_BOTTOM_MARGIN = 72;

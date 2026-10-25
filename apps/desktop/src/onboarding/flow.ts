@@ -11,7 +11,12 @@ export interface ProviderOption {
   readonly auth_type: string;
   readonly configured: boolean;
   readonly device_login: boolean;
+  /** The backend marks a provider it wants first in the list (W52-m-1; none does today). */
+  readonly featured?: boolean;
 }
+
+/** Why the overlay is on screen: the first run, a provider failure, or an open from Settings. */
+export type OpenReason = "first-run" | "provider-error" | "manual";
 
 export type EndpointKind = "local" | "custom";
 
@@ -62,6 +67,8 @@ export interface FlowState {
   readonly step: Step;
   /** Opened from Settings: closable, no "choose later". */
   readonly manual: boolean;
+  /** Why it opened (W52-m; picks the notice text). Absent: the first run. */
+  readonly reason?: OpenReason;
   readonly providers: readonly ProviderOption[] | null;
   readonly currentModel: string | null;
 }
@@ -76,7 +83,7 @@ export type FlowEvent =
     }
   | { readonly type: "choose-later" }
   | { readonly type: "close" }
-  | { readonly type: "reopen"; readonly manual: boolean }
+  | { readonly type: "reopen"; readonly manual: boolean; readonly reason?: OpenReason }
   | { readonly type: "back" }
   | { readonly type: "pick-device"; readonly provider: ProviderOption }
   | {
@@ -168,7 +175,12 @@ export function reduce(state: FlowState, event: FlowEvent): FlowState {
     case "reopen":
       // A provider error does not interrupt a flow that is already on screen.
       if (isShown(state) && step.kind !== "checking") return state;
-      return { ...state, manual: event.manual, step: { kind: "checking" } };
+      return {
+        ...state,
+        manual: event.manual,
+        reason: event.reason ?? (event.manual ? "manual" : "provider-error"),
+        step: { kind: "checking" },
+      };
     case "back":
       return step.kind === "checking" || !isShown(state) ? state : to(state, { kind: "picker" });
     case "pick-device":

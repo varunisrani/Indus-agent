@@ -1,24 +1,202 @@
 @import "tailwindcss";
 
-/* Tailwind utilities read the @indus/ui tokens; the token values themselves are written per theme
-   by `ThemeStyles` (src/shell/ThemeSwitch.tsx) from `tokensToCss`. No font files are shipped: the
-   stacks fall back to system fonts (R09.22). */
-@theme {
-  --color-bg: var(--indus-color-bg);
-  --color-raised: var(--indus-color-bg-raised);
-  --color-fg: var(--indus-color-fg);
-  --color-muted: var(--indus-color-fg-muted);
-  --color-line: var(--indus-color-border);
-  --color-accent: var(--indus-color-accent);
-  --color-accent-fg: var(--indus-color-accent-fg);
-  --color-ok: var(--indus-color-success);
-  --color-warn: var(--indus-color-warning);
-  --color-danger: var(--indus-color-danger);
-  --color-code: var(--indus-color-code-bg);
-  --color-focus: var(--indus-color-focus-ring);
-  --font-sans: var(--indus-font-sans);
-  --font-mono: var(--indus-font-mono);
+/* Dashboard tokens (W51-a). A preset (src/theme/presets.ts) sets two colours on <html>:
+   --indus-canvas (the page) and --indus-ink (text, rules, filled controls). Everything below is
+   mixed from that pair, so a new preset needs nothing else. The full list, with the utility each
+   token becomes, is in docs/notes/ui-parity/web-foundation.md. */
+
+:root {
+  /* Fallback pair before the provider runs (Deep Teal). */
+  --indus-canvas: #041c1c;
+  --indus-ink: #ffe6cb;
+
+  --indus-mix-surface: color-mix(in srgb, var(--indus-ink) 4%, var(--indus-canvas));
+  --indus-mix-wash: color-mix(in srgb, var(--indus-ink) 6%, var(--indus-canvas));
+  --indus-mix-hover: color-mix(in srgb, var(--indus-ink) 8%, var(--indus-canvas));
+  --indus-mix-selected: color-mix(in srgb, var(--indus-ink) 12%, var(--indus-canvas));
+  --indus-mix-line: color-mix(in srgb, var(--indus-ink) 15%, var(--indus-canvas));
+  --indus-mix-line-strong: color-mix(in srgb, var(--indus-ink) 22%, var(--indus-canvas));
+  --indus-mix-ink-muted: color-mix(in srgb, var(--indus-ink) 80%, var(--indus-canvas));
+  --indus-mix-ink-soft: color-mix(in srgb, var(--indus-ink) 62%, var(--indus-canvas));
+  --indus-mix-ink-faint: color-mix(in srgb, var(--indus-ink) 42%, var(--indus-canvas));
+
+  --indus-status-success: #4ade80;
+  --indus-status-warning: #ffbd38;
+  --indus-status-danger: #fb2c36;
+  --indus-status-info: #60a5fa;
+  --indus-series-input: var(--indus-ink);
+  --indus-series-output: #34d399;
+  --indus-overlay: rgb(0 0 0 / 0.62);
+  /* Chat terminal card (W52-a). */
+  --indus-terminal-bg: #000000;
+  --indus-terminal-fg: #f0e6d2;
 }
+
+:root[data-theme="indus-light"] {
+  --indus-status-success: #16a34a;
+  /* The reference keeps its pale amber-yellow warning on light too (W53 integration, W52-d note). */
+  --indus-status-warning: #ffbd38;
+  --indus-status-danger: #e11d2a;
+  --indus-status-info: #0053fd;
+  --indus-series-input: #001934;
+  --indus-series-output: var(--indus-ink);
+  --indus-overlay: rgb(10 30 60 / 0.35);
+  --indus-terminal-bg: #f5f8fc;
+  --indus-terminal-fg: #170d02;
+}
+
+@theme {
+  /* Surfaces */
+  --color-canvas: var(--indus-canvas);
+  --color-surface: var(--indus-mix-surface);
+  --color-wash: var(--indus-mix-wash);
+  --color-hover: var(--indus-mix-hover);
+  --color-selected: var(--indus-mix-selected);
+  --color-overlay: var(--indus-overlay);
+  /* Ink */
+  --color-ink: var(--indus-ink);
+  --color-ink-muted: var(--indus-mix-ink-muted);
+  --color-ink-soft: var(--indus-mix-ink-soft);
+  --color-ink-faint: var(--indus-mix-ink-faint);
+  --color-on-ink: var(--indus-canvas);
+  /* Rules */
+  --color-line: var(--indus-mix-line);
+  --color-line-strong: var(--indus-mix-line-strong);
+  /* Status */
+  --color-success: var(--indus-status-success);
+  --color-warning: var(--indus-status-warning);
+  --color-danger: var(--indus-status-danger);
+  --color-info: var(--indus-status-info);
+  --color-success-wash: color-mix(in srgb, var(--indus-status-success) 12%, var(--indus-canvas));
+  --color-warning-wash: color-mix(in srgb, var(--indus-status-warning) 12%, var(--indus-canvas));
+  --color-danger-wash: color-mix(in srgb, var(--indus-status-danger) 10%, var(--indus-canvas));
+  --color-info-wash: color-mix(in srgb, var(--indus-status-info) 10%, var(--indus-canvas));
+  --color-series-input: var(--indus-series-input);
+  --color-series-output: var(--indus-series-output);
+  --color-terminal: var(--indus-terminal-bg);
+  --color-terminal-fg: var(--indus-terminal-fg);
+
+  /* Older utility names still used by pages not yet rebuilt (wave 52 moves them over). */
+  --color-bg: var(--indus-canvas);
+  --color-raised: var(--indus-canvas);
+  --color-fg: var(--indus-ink);
+  --color-muted: var(--indus-mix-ink-soft);
+  --color-accent: var(--indus-ink);
+  --color-accent-fg: var(--indus-canvas);
+  --color-ok: var(--indus-status-success);
+  --color-warn: var(--indus-status-warning);
+  --color-code: var(--indus-mix-wash);
+  --color-focus: var(--indus-ink);
+
+  /* Type stacks */
+  --font-sans:
+    "Archivo Variable", "Archivo", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Archivo Variable", "Archivo", system-ui, sans-serif;
+  --font-serif: "EB Garamond Variable", "EB Garamond", Georgia, "Times New Roman", serif;
+  --font-mono:
+    "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --font-typewriter: "Courier Prime", "Courier New", ui-monospace, monospace;
+
+  /* Corners are square throughout; `rounded-*` stays available for avatars and dots. */
+  --radius-ui: 0px;
+}
+
+/* ---- Type roles: one utility per voice, so pages never hand-tune letter-spacing ---- */
+
+/* Two-line heavy wordmark in the sidebar head. */
+@utility type-wordmark {
+  font-family: var(--font-sans);
+  font-weight: 800;
+  font-size: 1.0625rem;
+  line-height: 0.95;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+/* Page title in the header ("Sessions"). */
+@utility type-page-title {
+  font-family: var(--font-display);
+  font-stretch: 125%;
+  font-weight: 700;
+  font-size: 0.9375rem;
+  letter-spacing: 0.06em;
+}
+
+/* Card / section title ("RECENT SESSIONS"). */
+@utility type-section-title {
+  font-family: var(--font-display);
+  font-stretch: 125%;
+  font-weight: 700;
+  font-size: 1.0625rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Smaller section heading set in spaced sans ("Host", "Gateway" on System). */
+@utility type-heading {
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: 0.875rem;
+  letter-spacing: 0.16em;
+}
+
+/* Sidebar navigation label. */
+@utility type-nav {
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-size: 0.8125rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+/* Typewriter voice for buttons and pickers ("Prune old sessions"). */
+@utility type-button {
+  font-family: var(--font-typewriter);
+  font-weight: 700;
+  font-size: 0.75rem;
+  letter-spacing: 0.14em;
+}
+
+/* Serif voice: list titles, segmented options, descriptions. */
+@utility type-serif {
+  font-family: var(--font-serif);
+  letter-spacing: 0.005em;
+}
+
+/* Small uppercase serif label above form fields and in filter panels ("PROFILE", "SECTIONS"). */
+@utility type-label {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* Condensed badge voice ("CLI", "active"). */
+@utility type-badge {
+  font-family: var(--font-sans);
+  font-stretch: 62%;
+  font-weight: 400;
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+}
+
+/* Data mono: ids, model names, paths, code. */
+@utility type-data {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
+/* Large tabular figure (stat values). */
+@utility type-stat {
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-size: 1.0625rem;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Base ---- */
 
 html,
 body,
@@ -28,17 +206,77 @@ body,
 
 body {
   margin: 0;
-  background: var(--indus-color-bg);
-  color: var(--indus-color-fg);
-  font-family: var(--indus-font-sans);
-  font-size: 14px;
+  background: var(--indus-canvas);
+  color: var(--indus-ink);
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+code,
+kbd,
+pre,
+samp {
+  font-family: var(--font-mono);
 }
 
 ::selection {
-  background: var(--indus-color-selection);
+  background: color-mix(in srgb, var(--indus-ink) 30%, transparent);
 }
 
 :focus-visible {
-  outline: 2px solid var(--indus-color-focus-ring);
+  outline: 1px solid var(--indus-ink);
   outline-offset: 2px;
+}
+
+mark {
+  background: color-mix(in srgb, var(--indus-status-warning) 30%, transparent);
+  color: var(--indus-status-warning);
+  padding: 0 1px;
+}
+
+* {
+  scrollbar-color: var(--indus-mix-line-strong) transparent;
+  scrollbar-width: thin;
+}
+
+@keyframes indus-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes indus-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes indus-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0ms;
+    transition-duration: 0ms;
+  }
 }

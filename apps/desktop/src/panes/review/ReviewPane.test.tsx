@@ -69,7 +69,8 @@ describe("ReviewPane", () => {
     await waitFor(() =>
       expect(git.stage).toHaveBeenCalledWith({ repo: ROOT, paths: ["README.md"] }),
     );
-    const app = screen.getByText("src/app.ts").closest("li") as HTMLElement;
+    // W52-m: a row shows the name, then its folder; the full path is the row's title
+    const app = screen.getByTitle("src/app.ts").closest("li") as HTMLElement;
     fireEvent.click(within(app).getByRole("button", { name: "Unstage" }));
     await waitFor(() =>
       expect(git.unstage).toHaveBeenCalledWith({ repo: ROOT, paths: ["src/app.ts"] }),
@@ -93,7 +94,7 @@ describe("ReviewPane", () => {
     expect(within(diff).getByText("+new").className).toContain("text-ok");
     expect(within(diff).getByText("-old").className).toContain("text-danger");
     // a staged-only file asks for the staged diff
-    fireEvent.click(screen.getByText("src/app.ts"));
+    fireEvent.click(screen.getByTitle("src/app.ts"));
     await waitFor(() =>
       expect(git.diff).toHaveBeenLastCalledWith({
         repo: ROOT,
@@ -138,7 +139,9 @@ describe("ReviewPane", () => {
     );
     expect(draft.mock.calls[0]?.[0]).toContain("new.txt");
     git.commit.mockResolvedValueOnce({ commit: "abcdef1234", pushed: true });
-    fireEvent.click(screen.getByRole("button", { name: "Commit & push" }));
+    // W52-m: the split button's menu holds "Commit & push"
+    fireEvent.click(screen.getByRole("button", { name: "More commit options" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Commit & push" }));
     await waitFor(() =>
       expect(git.commit).toHaveBeenCalledWith({
         repo: ROOT,
@@ -180,9 +183,9 @@ describe("ReviewPane", () => {
   it("tree view groups by folder", async () => {
     const { bridge } = fakeGit();
     render(<ReviewPane repo={ROOT} bridge={bridge} />);
-    await screen.findByText("src/app.ts");
+    await screen.findByTitle("src/app.ts");
     fireEvent.click(screen.getByRole("radio", { name: "Tree" }));
-    expect(screen.getByText("src/")).toBeTruthy();
+    expect(screen.getByText("src")).toBeTruthy();
     expect(screen.getByText("app.ts")).toBeTruthy();
   });
 });

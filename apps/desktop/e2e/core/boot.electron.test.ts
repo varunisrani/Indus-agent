@@ -39,7 +39,7 @@ describe.skipIf(skipReason !== "")(`boot${skipReason ? ` (skipped: ${skipReason}
     await waitConnected(app.cdp);
     const announce = (await fake.received()).find((f) => f.method === "client.capabilities");
     expect(announce?.params).toMatchObject({ surface: "gui" });
-    await app.cdp.waitFor(`document.body.innerText.includes('No conversations yet.')`, "the list");
+    await app.cdp.waitFor(`document.body.innerText.includes('No sessions yet')`, "the list");
     const calls = await fake.restCalls();
     expect(calls.some((c) => c.method === "GET" && c.path.startsWith("/api/sessions"))).toBe(true);
     // a configured provider: no onboarding overlay

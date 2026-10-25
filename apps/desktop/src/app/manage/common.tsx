@@ -7,8 +7,6 @@
 // connection still reports that instance; a reconnect to the same instance keeps it, a new
 // instance id (the daemon restarted) clears it. "Restart now" asks the daemon to restart.
 
-import * as Dialog from "@radix-ui/react-dialog";
-import { X } from "lucide-react";
 import { type DependencyList, type ReactNode, useCallback, useEffect, useState } from "react";
 import { useT } from "../../i18n/index.tsx";
 import { bridgeRest, type RestAnswer, type RestLike } from "../../settings/settingsApi.ts";
@@ -66,32 +64,6 @@ export function PageFrame(props: {
       </header>
       <div className="manage-body">{props.children}</div>
     </section>
-  );
-}
-
-/** An overlay (cron, profiles, agents): a dialog over the route it was opened from. */
-export function ManageOverlay(props: { title: string; onClose: () => void; children: ReactNode }) {
-  const t = useT();
-  return (
-    <Dialog.Root
-      open
-      onOpenChange={(open) => {
-        if (!open) props.onClose();
-      }}
-    >
-      <Dialog.Portal>
-        <Dialog.Overlay className="overlay-backdrop" />
-        <Dialog.Content className="overlay-card" aria-describedby={undefined}>
-          <header className="overlay-header">
-            <Dialog.Title>{props.title}</Dialog.Title>
-            <Dialog.Close className="icon-button" aria-label={t("common.close")}>
-              <X aria-hidden="true" size={16} />
-            </Dialog.Close>
-          </header>
-          <div className="manage-overlay-body">{props.children}</div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
   );
 }
 

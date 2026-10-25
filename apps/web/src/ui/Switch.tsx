@@ -1,4 +1,5 @@
-// An on/off switch on the Radix primitive (role="switch", aria-checked).
+// An on/off switch on the Radix primitive (role="switch", aria-checked): a square track whose
+// thumb fills with ink when on.
 
 import * as RadixSwitch from "@radix-ui/react-switch";
 
@@ -22,9 +23,9 @@ export function Switch({
       onCheckedChange={onCheckedChange}
       disabled={disabled}
       aria-label={label}
-      className="relative h-5 w-9 shrink-0 rounded-full border border-line bg-code data-[state=checked]:bg-accent disabled:opacity-60"
+      className="relative h-[1.125rem] w-[2.125rem] shrink-0 cursor-pointer border border-line-strong bg-wash transition-colors data-[state=checked]:border-ink-soft data-[state=checked]:bg-ink-faint disabled:cursor-not-allowed disabled:opacity-50"
     >
-      <RadixSwitch.Thumb className="block h-4 w-4 translate-x-0.5 rounded-full bg-raised transition-transform data-[state=checked]:translate-x-4" />
+      <RadixSwitch.Thumb className="block size-3 translate-x-[0.1875rem] bg-ink-soft transition-transform data-[state=checked]:translate-x-[1.0625rem] data-[state=checked]:bg-ink" />
     </RadixSwitch.Root>
   );
 }

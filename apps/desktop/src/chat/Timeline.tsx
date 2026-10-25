@@ -12,15 +12,16 @@ function label(text: string): string {
 
 export function Timeline(props: { prompts: readonly UserItem[]; onJump: (key: string) => void }) {
   const t = useT();
-  if (props.prompts.length < 2) return null;
+  if (props.prompts.length === 0) return null;
   return (
     <nav className="timeline" aria-label={t("transcript.timeline")}>
       <ol>
-        {props.prompts.map((prompt) => (
+        {props.prompts.map((prompt, index) => (
           <li key={prompt.key}>
             <button
               type="button"
               className="timeline-marker"
+              data-current={index === props.prompts.length - 1 || undefined}
               aria-label={t("transcript.jumpTo", { text: label(prompt.text) })}
               onClick={() => props.onJump(prompt.key)}
             />

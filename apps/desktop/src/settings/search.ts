@@ -2,6 +2,7 @@
 // matched by words, each hit carrying the target of the child page that owns it.
 
 import type { MessageKey, Translate } from "../i18n/index.tsx";
+import { fieldCopy } from "./fieldCopy.ts";
 import { MANIFEST, pageForField, type SettingsTarget, type ViewId, viewDef } from "./pages.ts";
 
 /** One field of `GET /api/config/schema`. */
@@ -44,12 +45,20 @@ export function buildEntries(schema: SchemaFields | null, t: Translate): SearchE
   for (const [key, field] of Object.entries(schema ?? {})) {
     const owner = pageForField(key);
     if (owner === null) continue;
+    const copy = fieldCopy(key);
     entries.push({
       id: `field:${key}`,
-      label: fieldLabel(key),
+      label: copy === undefined ? fieldLabel(key) : t(copy.label),
       context: contextOf(t, owner.view.id, owner.page.id),
       description: field.description,
-      keywords: [key, ...key.split(/[._]/), field.category, ...(field.options ?? [])],
+      // the derived name stays findable next to our wording ("Mcp reload confirm"; W52-i, W52-j)
+      keywords: [
+        key,
+        ...key.split(/[._]/),
+        fieldLabel(key),
+        field.category,
+        ...(field.options ?? []),
+      ],
       target: { view: owner.view.id, page: owner.page.id, field: key, row: null },
     });
   }

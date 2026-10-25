@@ -4,19 +4,36 @@
 // change, then every profile-keyed store moves or goes (R08.7). Delete asks the person to type the
 // profile's name. Export writes a zip without history, runtime state or any key (the server strips
 // them; the page says so); import takes an archive path on the server's machine. A profile with no
-// persona file is told so, and "Create persona" writes one.
+// persona file is told so, and "Create persona" writes one. W52-l look: an overlay panel (list +
+// detail with the persona editor) and small dialogs for new, rename, delete and import.
 
-import { useState } from "react";
+import { FolderInput, FolderOutput, House, Save, Users } from "lucide-react";
+import { type ReactNode, useState } from "react";
 import { useT } from "../../i18n/index.tsx";
+import { profileColor } from "../../profiles/ProfileRail.tsx";
 import { useSwitcher } from "../../profiles/switcherReact.tsx";
 import { type RestLike, rest } from "../../settings/settingsApi.ts";
-import { LoadState, ManageOverlay, useApi, useRestValue } from "../manage/common.tsx";
+import { Button, SmallDialog } from "../../ui/components.tsx";
+import {
+  DetailHead,
+  Field,
+  InlineError,
+  MetaGrid,
+  PanelPill,
+  PanelRow,
+  TextAction,
+} from "../kit.tsx";
+import { Loader } from "../Loader.tsx";
+import { useApi, useRestValue } from "../manage/common.tsx";
+import { ListDetail, OverlayCard } from "../overlay/OverlayFrame.tsx";
+import "./profiles.css";
 
 interface ProfileRow {
   name: string;
   is_default: boolean;
   description?: string | null;
   model?: string | null;
+  provider?: string | null;
   has_persona?: boolean;
 }
 
@@ -41,58 +58,75 @@ function PersonaEditor(props: { api: RestLike | null; name: string }) {
   );
   const [draft, setDraft] = useState<string | null>(null);
   const [note, setNote] = useState("");
+  const [error, setError] = useState("");
   const save = async (content: string) => {
     const answer = await rest(
       props.api,
       "PUT",
       `/api/profiles/${encodeURIComponent(props.name)}/persona`,
-      {
-        body: { content },
-      },
+      { body: { content } },
     );
-    setNote(answer.ok ? t("manage.saved") : answer.message);
     if (answer.ok) {
+      setNote(t("manage.saved"));
+      setError("");
       setDraft(null);
       persona.reload();
-    }
+    } else setError(answer.message);
   };
+  if (persona.state === "loading") return <Loader />;
+  if (persona.state === "error") return <InlineError>{persona.message}</InlineError>;
+  const data = persona.data;
+  const dirty = draft !== null && draft !== data.content;
   return (
-    <LoadState value={persona}>
-      {(data) =>
-        !data.exists && draft === null ? (
-          <div className="manage-inline">
-            <p className="manage-muted">{t("manage.profiles.noPersona")}</p>
-            <button type="button" className="button button-secondary" onClick={() => void save("")}>
-              {t("manage.profiles.createPersona")}
-            </button>
+    <section className="prof-persona">
+      <div className="prof-persona-head">
+        <div>
+          <h4 className="prof-persona-label">{t("prof.personaFile")}</h4>
+          <p className="prof-persona-desc">
+            {data.exists ? t("prof.personaBody") : t("manage.profiles.noPersona")}
+          </p>
+        </div>
+        {dirty && <span className="prof-unsaved">{t("prof.unsaved")}</span>}
+      </div>
+      {!data.exists && draft === null ? (
+        <div>
+          <TextAction strong onClick={() => void save("")}>
+            {t("manage.profiles.createPersona")}
+          </TextAction>
+        </div>
+      ) : (
+        <>
+          <textarea
+            className="prof-editor"
+            aria-label={t("manage.profiles.persona")}
+            spellCheck={false}
+            value={draft ?? data.content}
+            onChange={(e) => setDraft(e.target.value)}
+          />
+          <div className="prof-save">
+            {note !== "" && !dirty && <span className="prof-saved">{note}</span>}
+            <Button
+              variant="primary"
+              size="sm"
+              icon={<Save aria-hidden="true" size={13} />}
+              disabled={!dirty}
+              onClick={() => void save(draft ?? data.content)}
+            >
+              {t("prof.savePersona")}
+            </Button>
           </div>
-        ) : (
-          <div className="manage-field">
-            <label className="manage-field">
-              {t("manage.profiles.persona")}
-              <textarea
-                rows={6}
-                value={draft ?? data.content}
-                onChange={(e) => setDraft(e.target.value)}
-              />
-            </label>
-            <div className="manage-inline">
-              <button
-                type="button"
-                className="button button-primary"
-                disabled={draft === null}
-                onClick={() => void save(draft ?? data.content)}
-              >
-                {t("manage.save")}
-              </button>
-              {note !== "" && <span className="manage-muted">{note}</span>}
-            </div>
-          </div>
-        )
-      }
-    </LoadState>
+        </>
+      )}
+      {error !== "" && <InlineError>{error}</InlineError>}
+    </section>
   );
 }
+
+type ProfileDialog =
+  | { kind: "new" }
+  | { kind: "rename"; name: string }
+  | { kind: "delete"; name: string }
+  | { kind: "import" };
 
 export function ProfilesOverlay(props: {
   api?: RestLike | null;
@@ -108,52 +142,69 @@ export function ProfilesOverlay(props: {
     () => rest(api, "GET", "/api/profiles"),
     [api],
   );
-  const [newName, setNewName] = useState("");
+  const [query, setQuery] = useState("");
+  const [picked, setPicked] = useState<string | null>(null);
+  const [dialog, setDialog] = useState<ProfileDialog | null>(null);
+  const [field, setField] = useState("");
   const [cloneFrom, setCloneFrom] = useState("");
-  const [renaming, setRenaming] = useState<Record<string, string>>({});
-  const [deleting, setDeleting] = useState<{ name: string; typed: string } | null>(null);
-  const [open, setOpen] = useState<string | null>(null);
-  const [archivePath, setArchivePath] = useState("");
+  const [dialogError, setDialogError] = useState("");
   const [note, setNote] = useState("");
 
-  const say = (ok: boolean, message: string) =>
-    setNote(ok ? message : message || t("manage.failed"));
+  const open = (next: ProfileDialog) => {
+    setDialog(next);
+    setField(next.kind === "rename" ? next.name : "");
+    setCloneFrom("");
+    setDialogError("");
+  };
   const runChange = async (call: () => ReturnType<typeof rest>) => {
     const answer = await call();
     if (!answer.ok) throw new Error(answer.message);
   };
 
   const create = async () => {
-    const body = { name: newName.trim(), ...(cloneFrom === "" ? {} : { clone_from: cloneFrom }) };
+    const body = { name: field.trim(), ...(cloneFrom === "" ? {} : { clone_from: cloneFrom }) };
     const answer = await rest(api, "POST", "/api/profiles", { body });
-    say(answer.ok, answer.ok ? t("manage.profiles.created", { name: body.name }) : answer.message);
-    if (answer.ok) {
-      setNewName("");
-      list.reload();
+    if (!answer.ok) {
+      setDialogError(answer.message || t("manage.failed"));
+      return;
     }
+    setDialog(null);
+    setNote(t("manage.profiles.created", { name: body.name }));
+    setPicked(body.name);
+    list.reload();
   };
 
   const rename = async (from: string) => {
-    const to = (renaming[from] ?? "").trim();
+    const to = field.trim();
     if (to === "" || to === from || changes === null) return;
     const result = await changes.renameProfile(from, to, () =>
       runChange(() =>
         rest(api, "PATCH", `/api/profiles/${encodeURIComponent(from)}`, { body: { new_name: to } }),
       ),
     );
-    say(result.ok, result.ok ? t("manage.profiles.renamed", { name: to }) : result.error);
-    if (result.ok) list.reload();
+    if (!result.ok) {
+      setDialogError(result.error || t("manage.failed"));
+      return;
+    }
+    setDialog(null);
+    setNote(t("manage.profiles.renamed", { name: to }));
+    setPicked(to);
+    list.reload();
   };
 
-  const remove = async () => {
-    if (deleting === null || deleting.typed !== deleting.name || changes === null) return;
-    const name = deleting.name;
+  const remove = async (name: string) => {
+    if (field !== name || changes === null) return;
     const result = await changes.deleteProfile(name, () =>
       runChange(() => rest(api, "DELETE", `/api/profiles/${encodeURIComponent(name)}`)),
     );
-    setDeleting(null);
-    say(result.ok, result.ok ? t("manage.profiles.deleted", { name }) : result.error);
-    if (result.ok) list.reload();
+    if (!result.ok) {
+      setDialogError(result.error || t("manage.failed"));
+      return;
+    }
+    setDialog(null);
+    setNote(t("manage.profiles.deleted", { name }));
+    setPicked(null);
+    list.reload();
   };
 
   const exportProfile = async (name: string) => {
@@ -162,165 +213,331 @@ export function ProfilesOverlay(props: {
       "POST",
       `/api/profiles/${encodeURIComponent(name)}/export`,
     );
-    say(
-      answer.ok,
-      answer.ok ? t("manage.profiles.exported", { path: answer.data.archive }) : answer.message,
+    setNote(
+      answer.ok
+        ? t("manage.profiles.exported", { path: answer.data.archive })
+        : answer.message || t("manage.failed"),
     );
   };
 
   const importArchive = async () => {
     const answer = await rest<{ name?: string }>(api, "POST", "/api/profiles/import", {
-      body: { archive: archivePath.trim() },
+      body: { archive: field.trim() },
     });
-    say(answer.ok, answer.ok ? t("manage.profiles.imported") : answer.message);
-    if (answer.ok) {
-      setArchivePath("");
-      list.reload();
+    if (!answer.ok) {
+      setDialogError(answer.message || t("manage.failed"));
+      return;
     }
+    setDialog(null);
+    setNote(t("manage.profiles.imported"));
+    list.reload();
   };
 
+  let body: ReactNode;
+  const rows = list.state === "ok" ? list.data.profiles : [];
+  if (list.state === "loading") body = <Loader />;
+  else if (list.state === "error") {
+    body = (
+      <div className="prof-pad">
+        <InlineError>
+          {list.code === "not-connected" ? t("manage.notConnected") : list.message}
+        </InlineError>
+        <Button variant="secondary" size="sm" onClick={list.reload}>
+          {t("manage.retry")}
+        </Button>
+      </div>
+    );
+  } else {
+    const needle = query.trim().toLowerCase();
+    const shown = rows.filter((r) => needle === "" || r.name.toLowerCase().includes(needle));
+    const row = rows.find((r) => r.name === picked) ?? null;
+    body = (
+      <ListDetail
+        title={t("nav.profiles")}
+        subtitle={t(rows.length === 1 ? "prof.countOne" : "prof.count", { count: rows.length })}
+        actions={
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<FolderInput aria-hidden="true" size={13} />}
+            onClick={() => open({ kind: "import" })}
+          >
+            {t("manage.profiles.importButton")}
+          </Button>
+        }
+        banner={
+          note === "" ? undefined : (
+            <p className="prof-note" role="status">
+              {note}
+            </p>
+          )
+        }
+        whole={rows.length === 0}
+        search={{
+          label: t("prof.search"),
+          placeholder: t("prof.searchPlaceholder"),
+          value: query,
+          onChange: setQuery,
+        }}
+        add={{ label: t("manage.profiles.new"), onAdd: () => open({ kind: "new" }) }}
+        listLabel={t("nav.profiles")}
+        list={shown.map((r) => (
+          <PanelRow
+            key={r.name}
+            title={r.name}
+            icon={
+              r.is_default ? (
+                <House aria-hidden="true" />
+              ) : (
+                <span
+                  className="prof-glyph"
+                  style={{ background: profileColor(r.name) }}
+                  aria-hidden="true"
+                >
+                  {r.name.slice(0, 1).toUpperCase()}
+                </span>
+              )
+            }
+            selected={r.name === picked}
+            onSelect={() => setPicked(r.name)}
+            data={{ "data-profile": r.name }}
+            menu={{
+              label: t("prof.rowMenu", { name: r.name }),
+              items: [
+                ...(r.is_default
+                  ? []
+                  : [
+                      {
+                        id: "rename",
+                        label: t("manage.profiles.rename"),
+                        run: () => open({ kind: "rename", name: r.name }),
+                      },
+                    ]),
+                {
+                  id: "export",
+                  label: t("manage.profiles.export"),
+                  run: () => void exportProfile(r.name),
+                },
+                ...(r.is_default
+                  ? []
+                  : [
+                      {
+                        id: "delete",
+                        label: t("manage.delete"),
+                        tone: "danger" as const,
+                        run: () => open({ kind: "delete", name: r.name }),
+                      },
+                    ]),
+              ],
+            }}
+          />
+        ))}
+        {...(row === null
+          ? {}
+          : {
+              detail: (
+                <div className="prof-detail" data-detail={row.name}>
+                  <DetailHead
+                    title={row.name}
+                    pills={
+                      row.is_default ? (
+                        <PanelPill tone="info">{t("prof.defaultPill")}</PanelPill>
+                      ) : undefined
+                    }
+                    below={
+                      row.description ? (
+                        <p className="prof-description">{row.description}</p>
+                      ) : undefined
+                    }
+                    actions={
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          icon={<FolderOutput aria-hidden="true" size={13} />}
+                          onClick={() => void exportProfile(row.name)}
+                        >
+                          {t("manage.profiles.export")}
+                        </Button>
+                        {!row.is_default && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => open({ kind: "delete", name: row.name })}
+                          >
+                            {t("manage.delete")}
+                          </Button>
+                        )}
+                      </>
+                    }
+                  />
+                  <MetaGrid
+                    rows={[
+                      [
+                        t("prof.model"),
+                        row.model ? (
+                          <span key="model" className="prof-model">
+                            {row.model}
+                            {row.provider ? (
+                              <span className="prof-provider"> · {row.provider}</span>
+                            ) : null}
+                          </span>
+                        ) : (
+                          "—"
+                        ),
+                      ],
+                      [t("prof.skills"), "—"],
+                    ]}
+                  />
+                  <PersonaEditor api={api} name={row.name} />
+                </div>
+              ),
+            })}
+        empty={
+          rows.length === 0
+            ? {
+                icon: <Users aria-hidden="true" />,
+                title: t("prof.none"),
+                action: (
+                  <Button variant="primary" size="sm" onClick={() => open({ kind: "new" })}>
+                    {t("manage.profiles.new")}
+                  </Button>
+                ),
+              }
+            : { icon: <Users aria-hidden="true" />, title: t("prof.pick") }
+        }
+      />
+    );
+  }
+
+  const cancel = (
+    <Button variant="outline" onClick={() => setDialog(null)}>
+      {t("manage.cancel")}
+    </Button>
+  );
   return (
-    <ManageOverlay title={t("nav.profiles")} onClose={props.onClose}>
-      {note !== "" && (
-        <p className="manage-muted" role="status">
-          {note}
-        </p>
-      )}
-      <LoadState value={list}>
-        {(data) => (
-          <>
-            {data.profiles.map((row) => (
-              <div className="manage-card" key={row.name} data-profile={row.name}>
-                <div className="manage-inline">
-                  <h3>{row.name}</h3>
-                  {row.is_default && (
-                    <span className="manage-badge">{t("manage.profiles.default")}</span>
-                  )}
-                  {row.model && <span className="manage-muted">{row.model}</span>}
-                </div>
-                <div className="manage-inline">
-                  {!row.is_default && (
-                    <>
-                      <input
-                        aria-label={t("manage.profiles.renameTo", { name: row.name })}
-                        value={renaming[row.name] ?? ""}
-                        placeholder={t("manage.profiles.newName")}
-                        onChange={(e) => setRenaming({ ...renaming, [row.name]: e.target.value })}
-                      />
-                      <button
-                        type="button"
-                        className="button button-secondary"
-                        onClick={() => void rename(row.name)}
-                      >
-                        {t("manage.profiles.rename")}
-                      </button>
-                      <button
-                        type="button"
-                        className="button button-secondary"
-                        onClick={() => setDeleting({ name: row.name, typed: "" })}
-                      >
-                        {t("manage.delete")}
-                      </button>
-                    </>
-                  )}
-                  <button
-                    type="button"
-                    className="button button-secondary"
-                    onClick={() => void exportProfile(row.name)}
-                  >
-                    {t("manage.profiles.export")}
-                  </button>
-                  <button
-                    type="button"
-                    className="button button-secondary"
-                    onClick={() => setOpen(open === row.name ? null : row.name)}
-                  >
-                    {t("manage.profiles.persona")}
-                  </button>
-                </div>
-                {deleting?.name === row.name && (
-                  <div
-                    className="manage-banner"
-                    role="alertdialog"
-                    aria-label={t("manage.profiles.confirmDelete", { name: row.name })}
-                  >
-                    <label className="manage-field">
-                      {t("manage.profiles.typeToDelete", { name: row.name })}
-                      <input
-                        value={deleting.typed}
-                        onChange={(e) => setDeleting({ name: row.name, typed: e.target.value })}
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      className="button button-primary"
-                      disabled={deleting.typed !== row.name}
-                      onClick={() => void remove()}
-                    >
-                      {t("manage.profiles.deleteForGood")}
-                    </button>
-                    <button
-                      type="button"
-                      className="button button-secondary"
-                      onClick={() => setDeleting(null)}
-                    >
-                      {t("manage.cancel")}
-                    </button>
-                  </div>
-                )}
-                {open === row.name && <PersonaEditor api={api} name={row.name} />}
-              </div>
-            ))}
-            <form
-              className="manage-card"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void create();
-              }}
-            >
-              <h3>{t("manage.profiles.new")}</h3>
-              <label className="manage-field">
-                {t("manage.profiles.name")}
-                <input value={newName} onChange={(e) => setNewName(e.target.value)} />
-              </label>
-              <label className="manage-field">
-                {t("manage.profiles.cloneFrom")}
-                <select value={cloneFrom} onChange={(e) => setCloneFrom(e.target.value)}>
-                  <option value="">{t("manage.profiles.fresh")}</option>
-                  {data.profiles.map((p) => (
-                    <option key={p.name} value={p.name}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button
-                type="submit"
-                className="button button-primary"
-                disabled={newName.trim() === ""}
+    <OverlayCard
+      id="profiles"
+      title={t("nav.profiles")}
+      closeLabel={t("common.close")}
+      onClose={props.onClose}
+    >
+      {body}
+      {dialog?.kind === "new" && (
+        <SmallDialog
+          title={t("manage.profiles.new")}
+          closeLabel={t("common.close")}
+          onClose={() => setDialog(null)}
+          actions={
+            <>
+              {cancel}
+              <Button
+                variant="primary"
+                disabled={field.trim() === ""}
+                onClick={() => void create()}
               >
                 {t("manage.profiles.create")}
-              </button>
-            </form>
-          </>
-        )}
-      </LoadState>
-      <div className="manage-card">
-        <h3>{t("manage.profiles.import")}</h3>
-        <p className="manage-muted">{t("manage.profiles.exportNote")}</p>
-        <label className="manage-field">
-          {t("manage.profiles.archive")}
-          <input value={archivePath} onChange={(e) => setArchivePath(e.target.value)} />
-        </label>
-        <button
-          type="button"
-          className="button button-secondary"
-          disabled={archivePath.trim() === ""}
-          onClick={() => void importArchive()}
+              </Button>
+            </>
+          }
         >
-          {t("manage.profiles.importButton")}
-        </button>
-      </div>
-    </ManageOverlay>
+          <Field label={t("manage.profiles.name")} htmlFor="prof-new-name">
+            <input id="prof-new-name" value={field} onChange={(e) => setField(e.target.value)} />
+          </Field>
+          <Field label={t("manage.profiles.cloneFrom")} htmlFor="prof-clone">
+            <select
+              id="prof-clone"
+              value={cloneFrom}
+              onChange={(e) => setCloneFrom(e.target.value)}
+            >
+              <option value="">{t("manage.profiles.fresh")}</option>
+              {rows.map((p) => (
+                <option key={p.name} value={p.name}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          {dialogError !== "" && <InlineError>{dialogError}</InlineError>}
+        </SmallDialog>
+      )}
+      {dialog?.kind === "rename" && (
+        <SmallDialog
+          title={t("prof.renameTitle")}
+          closeLabel={t("common.close")}
+          onClose={() => setDialog(null)}
+          actions={
+            <>
+              {cancel}
+              <Button
+                variant="primary"
+                disabled={field.trim() === "" || field.trim() === dialog.name}
+                onClick={() => void rename(dialog.name)}
+              >
+                {t("manage.profiles.rename")}
+              </Button>
+            </>
+          }
+        >
+          <Field label={t("manage.profiles.renameTo", { name: dialog.name })} htmlFor="prof-rename">
+            <input id="prof-rename" value={field} onChange={(e) => setField(e.target.value)} />
+          </Field>
+          {dialogError !== "" && <InlineError>{dialogError}</InlineError>}
+        </SmallDialog>
+      )}
+      {dialog?.kind === "delete" && (
+        <SmallDialog
+          role="alertdialog"
+          title={t("manage.profiles.confirmDelete", { name: dialog.name })}
+          closeLabel={t("common.close")}
+          onClose={() => setDialog(null)}
+          actions={
+            <>
+              {cancel}
+              <Button
+                variant="danger"
+                disabled={field !== dialog.name}
+                onClick={() => void remove(dialog.name)}
+              >
+                {t("manage.profiles.deleteForGood")}
+              </Button>
+            </>
+          }
+        >
+          <Field
+            label={t("manage.profiles.typeToDelete", { name: dialog.name })}
+            htmlFor="prof-delete"
+          >
+            <input id="prof-delete" value={field} onChange={(e) => setField(e.target.value)} />
+          </Field>
+          {dialogError !== "" && <InlineError>{dialogError}</InlineError>}
+        </SmallDialog>
+      )}
+      {dialog?.kind === "import" && (
+        <SmallDialog
+          title={t("manage.profiles.import")}
+          description={t("manage.profiles.exportNote")}
+          closeLabel={t("common.close")}
+          onClose={() => setDialog(null)}
+          actions={
+            <>
+              {cancel}
+              <Button
+                variant="primary"
+                disabled={field.trim() === ""}
+                onClick={() => void importArchive()}
+              >
+                {t("manage.profiles.importButton")}
+              </Button>
+            </>
+          }
+        >
+          <Field label={t("manage.profiles.archive")} htmlFor="prof-archive">
+            <input id="prof-archive" value={field} onChange={(e) => setField(e.target.value)} />
+          </Field>
+          {dialogError !== "" && <InlineError>{dialogError}</InlineError>}
+        </SmallDialog>
+      )}
+    </OverlayCard>
   );
 }

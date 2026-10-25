@@ -99,7 +99,7 @@ describe("settings overlay", () => {
     expect(crumbs.textContent).toContain("Settings");
     expect(crumbs.textContent).toContain("Safety");
     expect(crumbs.textContent).toContain("Approvals");
-    expect((screen.getByLabelText("Mode") as HTMLSelectElement).value).toBe("manual");
+    expect((screen.getByLabelText("Approval mode") as HTMLSelectElement).value).toBe("manual");
   });
 
   it('search "proxy" opens the owning child page and outlines the field', async () => {
@@ -111,7 +111,7 @@ describe("settings overlay", () => {
     const hit = screen
       .getAllByRole("button")
       .find((b) => b.textContent?.includes("Fake ip ranges"));
-    expect(hit?.textContent).toContain("Safety › Privacy and network");
+    expect(hit?.textContent).toContain("Safety › Privacy & network");
     await act(async () => {
       fireEvent.click(hit as HTMLElement);
     });
@@ -139,9 +139,9 @@ describe("settings overlay", () => {
       fireEvent.click(screen.getByRole("radio", { name: "work" }));
     });
     await settle();
-    expect((screen.getByLabelText("Mode") as HTMLSelectElement).value).toBe("off");
+    expect((screen.getByLabelText("Approval mode") as HTMLSelectElement).value).toBe("off");
     await act(async () => {
-      fireEvent.change(screen.getByLabelText("Mode"), { target: { value: "manual" } });
+      fireEvent.change(screen.getByLabelText("Approval mode"), { target: { value: "manual" } });
     });
     const put = api.calls.find((c) => c.method === "PUT");
     expect(put?.profile).toBe("work");
@@ -210,6 +210,8 @@ describe("settings overlay", () => {
     render(<Harness initial="view=providers&page=keys" api={api} bridge={null} />);
     await settle();
     const value = ["test", "key", String(Date.now())].join("-");
+    // rows are closed until clicked (W52-j); the row is named by the provider
+    fireEvent.click(screen.getByRole("button", { name: /OpenRouter/ }));
     const input = screen.getByLabelText("OPENROUTER_API_KEY") as HTMLInputElement;
     fireEvent.change(input, { target: { value } });
     await act(async () => {
@@ -313,5 +315,165 @@ describe("settings overlay", () => {
     });
     await settle();
     expect(screen.getByTestId("query").textContent).toBe("view=about&page=licences&row=licences");
+  });
+});
+
+describe("settings-b pages (W52-j)", () => {
+  function prefsBridge(overrides: Record<string, unknown> = {}) {
+    let state = {
+      minimizeToTray: false,
+      keepAwake: "while-working" as const,
+      quickEntryShortcut: "CommandOrControl+Shift+Space",
+      hudSnapShortcut: "CommandOrControl+Shift+G",
+      hudToggleShortcut: "CommandOrControl+Shift+H",
+      notifications: { turnComplete: true, approvals: true, sounds: true },
+      keybindings: {},
+      chatTextScale: 110,
+      ...overrides,
+    };
+    const set = vi.fn(async (patch: Record<string, unknown>) => {
+      const notifications = {
+        ...state.notifications,
+        ...((patch.notifications as object | undefined) ?? {}),
+      };
+      state = { ...state, ...patch, notifications } as typeof state;
+      return state;
+    });
+    return { set, prefs: { get: async () => state, set, onChanged: () => () => undefined } };
+  }
+
+  it("the notifications master switch writes both kinds; off dims the two rows", async () => {
+    const fake = prefsBridge();
+    const bridge = { prefs: fake.prefs } as unknown as SettingsBridge;
+    render(<Harness initial="view=notifications" api={backend(["default"])} bridge={bridge} />);
+    await settle();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("switch", { name: "Enable notifications" }));
+    });
+    expect(fake.set).toHaveBeenLastCalledWith({
+      notifications: { turnComplete: false, approvals: false },
+    });
+    await settle();
+    expect(
+      (screen.getByRole("switch", { name: "Approval needed" }) as HTMLInputElement).disabled,
+    ).toBe(true);
+  });
+
+  it("the completion sound select maps to the sounds preference", async () => {
+    const fake = prefsBridge();
+    const bridge = { prefs: fake.prefs } as unknown as SettingsBridge;
+    render(
+      <Harness
+        initial="view=notifications&page=sounds"
+        api={backend(["default"])}
+        bridge={bridge}
+      />,
+    );
+    await settle();
+    const select = screen.getByLabelText("Completion sound") as HTMLSelectElement;
+    expect(select.value).toBe("chime");
+    await act(async () => {
+      fireEvent.change(select, { target: { value: "off" } });
+    });
+    expect(fake.set).toHaveBeenLastCalledWith({ notifications: { sounds: false } });
+  });
+
+  it("Local models: Test asks the preset's address, then Use sets the main model", async () => {
+    const api = backend(["default"]);
+    api.route("GET", "/api/model/options", {
+      providers: [
+        {
+          name: "ollama",
+          label: "Ollama (local)",
+          auth_type: "api_key_optional",
+          configured: false,
+          device_login: false,
+        },
+        {
+          name: "openai",
+          label: "OpenAI",
+          auth_type: "api_key",
+          configured: false,
+          device_login: false,
+        },
+      ],
+      current: { provider: null, model: null },
+    });
+    api.route("POST", "/api/model/test-endpoint", {
+      ok: true,
+      status: 200,
+      models: ["llama3"],
+      message: "The endpoint offers 1 model.",
+    });
+    api.route("POST", "/api/model/set", { ok: true });
+    render(<Harness initial="view=providers&page=local" api={api} bridge={null} />);
+    await settle();
+    expect(screen.queryByText("OpenAI")).toBeNull();
+    const use = screen.getByRole("button", { name: "Use" }) as HTMLButtonElement;
+    expect(use.disabled).toBe(true);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Test" }));
+    });
+    await settle();
+    expect(api.calls.find((c) => c.path === "/api/model/test-endpoint")?.body).toEqual({
+      base_url: "http://127.0.0.1:11434/v1",
+    });
+    expect(screen.getByText("Running")).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Use" }));
+    });
+    await settle();
+    expect(api.calls.find((c) => c.path === "/api/model/set")?.body).toEqual({
+      scope: "main",
+      provider: "ollama",
+      model: "llama3",
+    });
+  });
+
+  it("a key row opens, and Remove clears a stored key", async () => {
+    const api = backend(["default"]);
+    api.route("GET", "/api/env", {
+      MY_TOOL_TOKEN: {
+        category: "custom",
+        description: "",
+        advanced: false,
+        is_password: true,
+        is_set: true,
+        redacted_value: "ab…yz",
+      },
+    });
+    api.route("DELETE", "/api/env", { ok: true });
+    render(<Harness initial="view=tools" api={api} bridge={null} />);
+    await settle();
+    expect(screen.getByText("ab…yz")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /MY TOOL TOKEN/ }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    });
+    expect(api.calls.find((c) => c.method === "DELETE")?.body).toEqual({ key: "MY_TOOL_TOKEN" });
+  });
+
+  it("a curated page shows its rows in order and folds the rest; a link inside opens the fold", async () => {
+    const api = fakeRest();
+    api.route("GET", "/api/config/schema", {
+      fields: {
+        "memory.notes_enabled": { type: "boolean", description: "notes", category: "memory" },
+        "memory.provider": { type: "string", description: "provider", category: "memory" },
+        "memory.review_interval": { type: "integer", description: "review", category: "memory" },
+      },
+    });
+    api.route("GET", "/api/config", { memory: { notes_enabled: true, provider: "" } });
+    api.route("GET", "/api/profiles", { profiles: [{ name: "default" }], current: "default" });
+    const { unmount } = render(<Harness initial="view=memory" api={api} bridge={null} />);
+    await settle();
+    expect(screen.getByRole("switch", { name: "Persistent memory" })).toBeTruthy();
+    expect((screen.getByLabelText("Memory provider") as HTMLInputElement).placeholder).toBe(
+      "Built-in only",
+    );
+    expect(screen.queryByLabelText("Review interval")).toBeNull();
+    unmount();
+    render(<Harness initial="view=memory&field=memory.review_interval" api={api} bridge={null} />);
+    await settle();
+    expect(screen.getByLabelText("Review interval")).toBeTruthy();
   });
 });

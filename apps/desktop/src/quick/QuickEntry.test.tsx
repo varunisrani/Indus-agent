@@ -130,3 +130,14 @@ describe("update notice", () => {
     expect(screen.queryByRole("status")).toBeNull();
   });
 });
+
+describe("quick entry look (W52-m)", () => {
+  it("one line, a Send to select with the current chat, no visible Send button", () => {
+    install([]);
+    const box = renderQuick();
+    expect(box.tagName).toBe("INPUT");
+    expect(screen.getByRole("combobox", { name: "Send to" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Current chat" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
+  });
+});

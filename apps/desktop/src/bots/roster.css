@@ -1,0 +1,210 @@
+/* The sidebar's BOTS panel (W52-k), on the desk tokens. */
+
+.roster {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--desk-bg-canvas);
+}
+
+.roster-refresh {
+  align-self: center;
+  margin: 8px 0 4px;
+  padding: 2px 6px;
+  border: 0;
+  background: transparent;
+  color: var(--desk-fg-2);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.roster-refresh:hover {
+  color: var(--desk-accent);
+}
+
+.roster-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 24px;
+  padding: 0 10px;
+}
+
+.roster-label {
+  color: var(--desk-fg-4);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.roster-head-tools {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.roster-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.roster-section {
+  margin: 6px 0 2px;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  color: var(--desk-fg-3);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  text-align: left;
+}
+
+.roster-section-toggle {
+  cursor: pointer;
+}
+
+.roster-list {
+  margin: 0;
+  padding: 0 6px;
+  list-style: none;
+}
+
+.roster-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: 6px;
+}
+
+.roster-row:hover {
+  background: var(--desk-row-hover);
+}
+
+.roster-row[data-selected="true"] {
+  background: var(--desk-row-active-soft);
+}
+
+.roster-main {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 52px;
+  padding: 8px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.roster-main .bots-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+}
+
+.roster-room {
+  min-height: 32px;
+}
+
+.roster-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.roster-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.roster-ring {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border: 1px solid var(--desk-fg-3);
+  border-radius: 50%;
+}
+
+.roster-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--desk-fg-1);
+  font-size: 13px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.roster-ago {
+  flex: none;
+  color: var(--desk-fg-4);
+  font-size: 11px;
+}
+
+.roster-preview {
+  overflow: hidden;
+  color: var(--desk-fg-3);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.roster-kebab {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  opacity: 0;
+}
+
+.roster-row:hover .roster-kebab,
+.roster-kebab:focus-visible {
+  opacity: 1;
+}
+
+.roster-error,
+.roster-empty {
+  margin: 4px 10px;
+  color: var(--desk-fg-3);
+  font-size: 12px;
+}
+
+.roster-error {
+  color: var(--desk-danger);
+}
+
+/* the routines edge tab at the window's right edge */
+.routines-edge-tab {
+  position: fixed;
+  top: 36px;
+  right: 0;
+  z-index: 5;
+  width: 26px;
+  height: 114px;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid var(--desk-stroke-3);
+  background: var(--desk-bg-band);
+  color: var(--desk-fg-3);
+  font: inherit;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  writing-mode: vertical-rl;
+  cursor: pointer;
+}
+
+.routines-edge-tab:hover {
+  color: var(--desk-accent);
+}

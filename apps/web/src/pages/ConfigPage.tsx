@@ -1,198 +1,142 @@
-// Config (P18-20): a form built from the config schema, grouped by category, plus a read-only
-// "effective" view naming where each value comes from.
+// Config (P18-20, re-laid out in W52-e): a section list beside one card of fields built from the
+// config schema, a search in the header, a toolbar (export / import JSON, reset a section to the
+// defaults, the YAML and Effective views, Save), a read-only YAML view of what the file sets, and
+// the effective view naming where each value comes from.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type ChangeEvent, useEffect, useId, useState } from "react";
+import {
+  Code,
+  Download,
+  RectangleEllipsis,
+  RotateCcw,
+  Search,
+  SlidersHorizontal,
+  Upload,
+  X,
+} from "lucide-react";
+import {
+  type ChangeEvent,
+  type ComponentType,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { api } from "../lib/api.ts";
 import { saveJson } from "../lib/format.ts";
 import { getPath, setPath } from "../lib/nested.ts";
-import type { ConfigField, ConfigObject, ConfigValue, ValueSource } from "../lib/restTypes.ts";
+import type { ConfigObject, ConfigValue, ConfigField as FieldSchema } from "../lib/restTypes.ts";
 import { HeaderActions } from "../shell/PageHeader.tsx";
+import { useProfileScope } from "../shell/ProfileScope.tsx";
 import { errorText, useToast } from "../shell/Toasts.tsx";
+import { Badge, Button, Card, IconButton, Loading, QueryState } from "../ui/controls.tsx";
+import { cx } from "../ui/cx.ts";
+import { ConfirmDialog } from "../ui/Dialog.tsx";
+import { ConfigField, SubsectionDivider } from "./config/ConfigField.tsx";
 import {
-  Badge,
-  type BadgeTone,
-  Button,
-  Card,
-  Field,
-  inputClass,
-  Notice,
-  QueryState,
-  Segmented,
-} from "../ui/controls.tsx";
-import { Switch } from "../ui/Switch.tsx";
+  categoryIcon,
+  categoryName,
+  fieldCategory,
+  fieldMatches,
+  orderedCategories,
+} from "./config/categories.ts";
+import { EffectiveView } from "./config/EffectiveView.tsx";
+import { FilterColumn } from "./config/FilterColumn.tsx";
+import { YamlView } from "./config/YamlView.tsx";
 
 export const APPLY_NOTE = "Changes apply to the next session, or to the daemon after it restarts.";
+export const YAML_SAVE_NOTE =
+  "Raw YAML editing is not available yet; edit the settings in the form.";
 
-type View = "form" | "effective";
+type View = "form" | "yaml" | "effective";
+
+/** Toolbar buttons are a touch shorter than the shell's (27 px). */
+const toolClass = "h-[27px]";
+/** A disabled Save keeps full-strength text on the muted fill. */
+const saveClass =
+  "h-[27px] disabled:border-transparent disabled:bg-selected disabled:text-ink disabled:opacity-100";
 
 function isPlainObject(value: unknown): value is ConfigObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function displayValue(value: ConfigValue | undefined): string {
-  if (value === undefined || value === null) return "";
-  if (typeof value === "object") return JSON.stringify(value);
-  return String(value);
+/** The second key segment of a three-plus segment key (its sub-section), else null. */
+function subsection(key: string): string | null {
+  const parts = key.split(".");
+  return parts.length >= 3 ? (parts[1] ?? null) : null;
 }
 
-function FieldControl({
-  name,
-  field,
-  value,
-  onChange,
-}: {
-  name: string;
-  field: ConfigField;
-  value: ConfigValue | undefined;
-  onChange: (next: ConfigValue) => void;
-}) {
-  const id = useId();
-  const label = name.split(".").pop() ?? name;
-  if (field.type === "boolean") {
-    return (
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex flex-col">
-          <span className="text-sm">{label}</span>
-          <span className="text-xs text-muted">{field.description}</span>
-        </div>
-        <Switch checked={value === true} onCheckedChange={(next) => onChange(next)} label={name} />
-      </div>
-    );
-  }
-  if (field.type === "enum") {
-    return (
-      <Field label={label} htmlFor={id} hint={field.description}>
-        <select
-          id={id}
-          aria-label={name}
-          className={inputClass}
-          value={displayValue(value)}
-          onChange={(e) => onChange(e.currentTarget.value)}
-        >
-          {value === undefined || value === null ? <option value="">(not set)</option> : null}
-          {(field.options ?? []).map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-        </select>
-      </Field>
-    );
-  }
-  if (field.type === "number" || field.type === "integer") {
-    return (
-      <Field label={label} htmlFor={id} hint={field.description}>
-        <input
-          id={id}
-          aria-label={name}
-          type="number"
-          step={field.type === "integer" ? 1 : "any"}
-          className={inputClass}
-          value={displayValue(value)}
-          onChange={(e) => {
-            const raw = e.currentTarget.value;
-            const parsed = Number(raw);
-            onChange(raw === "" ? null : Number.isFinite(parsed) ? parsed : raw);
-          }}
-        />
-      </Field>
-    );
-  }
-  if (field.type === "list") {
-    const lines = Array.isArray(value) ? value.map(displayValue).join("\n") : displayValue(value);
-    return (
-      <Field label={label} htmlFor={id} hint={`${field.description} One entry per line.`}>
-        <textarea
-          id={id}
-          aria-label={name}
-          className={inputClass}
-          rows={3}
-          value={lines}
-          onChange={(e) =>
-            onChange(e.currentTarget.value.split("\n").filter((line) => line.trim() !== ""))
-          }
-        />
-      </Field>
-    );
-  }
+function HeaderSearch({ value, onChange }: { value: string; onChange: (next: string) => void }) {
   return (
-    <Field label={label} htmlFor={id} hint={field.description}>
-      <input
-        id={id}
-        aria-label={name}
-        type="text"
-        className={inputClass}
-        value={displayValue(value)}
-        onChange={(e) => onChange(e.currentTarget.value)}
+    <div className="relative w-[min(300px,50vw)]">
+      <Search
+        aria-hidden="true"
+        className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-ink-soft"
       />
-    </Field>
+      <input
+        type="search"
+        aria-label="Search settings"
+        placeholder="Search..."
+        value={value}
+        onChange={(e) => onChange(e.currentTarget.value)}
+        className="type-data h-[30px] w-full border border-line bg-transparent pr-8 pl-8 text-[0.75rem] text-ink outline-none placeholder:text-ink-faint focus:border-ink [&::-webkit-search-cancel-button]:hidden"
+      />
+      {value ? (
+        <button
+          type="button"
+          aria-label="Clear search"
+          onClick={() => onChange("")}
+          className="absolute top-1/2 right-1.5 inline-flex size-5 -translate-y-1/2 items-center justify-center text-ink-soft hover:text-ink"
+        >
+          <X className="size-3.5" />
+        </button>
+      ) : null}
+    </div>
   );
 }
 
-const SOURCE_TONE: Record<ValueSource, BadgeTone> = {
-  default: "neutral",
-  file: "accent",
-  env: "warn",
-  overlay: "danger",
-};
-
-const SOURCE_LABEL: Record<ValueSource, string> = {
-  default: "default",
-  file: "config file",
-  env: "environment",
-  overlay: "admin overlay",
-};
-
-function EffectiveView() {
-  const effective = useQuery({
-    queryKey: ["config", "effective"],
-    queryFn: () => api.config.effective(),
-  });
-  const entries = effective.data?.entries ?? [];
+function SectionCard({
+  icon: Icon,
+  title,
+  count,
+  children,
+}: {
+  icon: ComponentType<{ className?: string }>;
+  title: string;
+  count: number;
+  children: ReactNode;
+}) {
   return (
-    <QueryState
-      loading={effective.isPending}
-      error={effective.error}
-      empty={entries.length === 0}
-      emptyText="No settings reported."
-    >
-      <table className="w-full text-sm" aria-label="Effective configuration">
-        <thead>
-          <tr className="text-left text-xs text-muted">
-            <th className="py-1">Key</th>
-            <th className="py-1">Value</th>
-            <th className="py-1">Source</th>
-          </tr>
-        </thead>
-        <tbody>
-          {entries.map((entry) => (
-            <tr
-              key={entry.key}
-              className="border-t border-line"
-              data-testid={`effective-${entry.key}`}
-            >
-              <td className="py-1 font-mono text-xs">{entry.key}</td>
-              <td className="py-1 font-mono text-xs break-all">{displayValue(entry.value)}</td>
-              <td className="py-1">
-                <Badge tone={SOURCE_TONE[entry.source]}>{SOURCE_LABEL[entry.source]}</Badge>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </QueryState>
+    <Card padded={false} className="min-w-0 flex-1">
+      <header className="flex h-12 items-center gap-2.5 border-b border-line px-4">
+        <Icon aria-hidden="true" className="size-4 shrink-0 text-ink" />
+        <h2 className="type-section-title m-0 flex-1 truncate text-[0.9375rem]">{title}</h2>
+        <Badge tone="secondary">
+          {count} {count === 1 ? "field" : "fields"}
+        </Badge>
+      </header>
+      <div className="flex flex-col gap-2 px-4 pt-2 pb-4">{children}</div>
+    </Card>
   );
 }
 
 export function ConfigPage() {
   const toast = useToast();
   const client = useQueryClient();
+  const scope = useProfileScope();
   const [view, setView] = useState<View>("form");
   const [form, setForm] = useState<ConfigObject | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [query, setQuery] = useState("");
+  const [picked, setPicked] = useState<string | null>(null);
+  const [resetting, setResetting] = useState(false);
   const config = useQuery({ queryKey: ["config", "file"], queryFn: () => api.config.get() });
   const schema = useQuery({ queryKey: ["config", "schema"], queryFn: () => api.config.schema() });
+  const defaults = useQuery({
+    queryKey: ["config", "defaults"],
+    queryFn: () => api.config.defaults(),
+    enabled: resetting,
+  });
 
   useEffect(() => {
     if (config.data && form === null) setForm(config.data);
@@ -229,23 +173,124 @@ export function ConfigPage() {
   };
 
   const fields = schema.data?.fields ?? {};
-  const order = schema.data?.category_order ?? [];
-  const categories = [...new Set(Object.values(fields).map((f) => f.category || "general"))].sort(
-    (a, b) => {
-      const ia = order.indexOf(a);
-      const ib = order.indexOf(b);
-      return (ia < 0 ? order.length : ia) - (ib < 0 ? order.length : ib) || a.localeCompare(b);
-    },
+  const categories = useMemo(
+    () => (schema.data ? orderedCategories(schema.data) : []),
+    [schema.data],
+  );
+  const counts = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const field of Object.values(fields)) {
+      const c = fieldCategory(field);
+      out[c] = (out[c] ?? 0) + 1;
+    }
+    return out;
+  }, [fields]);
+  const searching = query.trim() !== "";
+  const category = picked && categories.includes(picked) ? picked : (categories[0] ?? null);
+  const scoped: [string, FieldSchema][] = Object.entries(fields).filter(([key, field]) =>
+    searching ? fieldMatches(key, field, query) : fieldCategory(field) === category,
   );
 
+  const resetToDefaults = () => {
+    const tree = defaults.data;
+    if (!tree) return;
+    let next = form ?? {};
+    let changed = 0;
+    for (const [key] of scoped) {
+      const value = getPath(tree, key);
+      if (value === undefined) continue;
+      next = setPath(next, key, value);
+      changed += 1;
+    }
+    setForm(next);
+    setDirty(true);
+    setResetting(false);
+    toast.show(
+      `${changed} ${changed === 1 ? "field" : "fields"} set to the defaults. Save to keep them.`,
+      "info",
+    );
+  };
+
+  const profileName =
+    scope.active ||
+    scope.profiles.find((p) => p.is_current)?.name ||
+    scope.defaultName ||
+    "this profile";
+
+  const renderFields = (rows: [string, FieldSchema][], grouped: boolean) => {
+    if (!form) return null;
+    const out: ReactNode[] = [];
+    let lastGroup: string | null = null;
+    let lastSub: string | null = null;
+    for (const [key, field] of rows) {
+      if (grouped) {
+        const c = fieldCategory(field);
+        if (c !== lastGroup) {
+          const Icon = categoryIcon(c);
+          out.push(
+            <SubsectionDivider key={`group-${c}`}>
+              <span className="inline-flex items-center gap-1.5">
+                <Icon aria-hidden="true" className="size-3.5" />
+                {categoryName(c)}
+              </span>
+            </SubsectionDivider>,
+          );
+          lastGroup = c;
+          lastSub = null;
+        }
+      }
+      const sub = subsection(key);
+      if (sub && sub !== lastSub) {
+        out.push(
+          <SubsectionDivider key={`sub-${key}`}>{sub.replace(/_/g, " ")}</SubsectionDivider>,
+        );
+      }
+      lastSub = sub;
+      out.push(
+        <ConfigField
+          key={key}
+          name={key}
+          field={field}
+          value={getPath(form, key)}
+          onChange={(v) => edit(key, v)}
+        />,
+      );
+    }
+    return out;
+  };
+
+  const yaml = view === "yaml";
   return (
-    <div className="flex flex-col gap-4 p-4">
+    <div className="flex flex-col gap-4 px-4 py-[1.4375rem] lg:px-[1.4375rem]">
       <HeaderActions>
-        <Button onClick={() => form && saveJson(form, "indus-config.json")} disabled={!form}>
-          Export JSON
-        </Button>
-        <label className="inline-flex cursor-pointer items-center rounded-md border border-line bg-raised px-3 py-1.5 text-sm">
-          Import JSON
+        <HeaderSearch
+          value={query}
+          onChange={(next) => {
+            setQuery(next);
+            if (next.trim() && view !== "form") setView("form");
+          }}
+        />
+      </HeaderActions>
+
+      <div className="flex flex-wrap items-center gap-1.5">
+        <SlidersHorizontal aria-hidden="true" className="size-4 shrink-0 text-ink-soft" />
+        <code className="type-data mr-2 min-w-0 flex-1 bg-surface px-2 py-0.5 text-[0.8125rem] break-all text-ink-muted">
+          config.yaml · {profileName}
+        </code>
+        <IconButton
+          label="Export JSON"
+          onClick={() => form && saveJson(form, "indus-config.json")}
+          disabled={!form}
+          className="size-[27px]"
+        >
+          <Download />
+        </IconButton>
+        <label
+          title="Import JSON"
+          className="inline-flex size-[27px] cursor-pointer items-center justify-center text-ink hover:bg-hover [&_svg]:size-4"
+        >
+          <Upload aria-hidden="true" />
+          <span className="sr-only">Import JSON</span>
           <input
             type="file"
             accept="application/json,.json"
@@ -253,68 +298,121 @@ export function ConfigPage() {
             onChange={(e) => void importFile(e)}
           />
         </label>
-      </HeaderActions>
-      <Notice>{APPLY_NOTE}</Notice>
-      <Segmented
-        label="View"
-        value={view}
-        options={[
-          { value: "form", label: "Settings" },
-          { value: "effective", label: "Effective" },
-        ]}
-        onChange={setView}
-      />
-      {view === "effective" ? (
-        <EffectiveView />
-      ) : (
-        <QueryState
-          loading={config.isPending || schema.isPending || form === null}
-          error={config.error ?? schema.error}
+        {view === "form" ? (
+          <IconButton
+            label={searching ? "Reset these results to defaults" : "Reset section to defaults"}
+            onClick={() => setResetting(true)}
+            disabled={!form || scoped.length === 0}
+            className="size-[27px]"
+          >
+            <RotateCcw />
+          </IconButton>
+        ) : null}
+        <span aria-hidden="true" className="mx-1 h-5 w-px bg-line" />
+        <Button
+          size="sm"
+          tone={yaml ? "primary" : "default"}
+          className={toolClass}
+          icon={yaml ? <RectangleEllipsis /> : <Code />}
+          onClick={() => setView(yaml ? "form" : "yaml")}
         >
-          {form ? (
-            <form
-              className="flex flex-col gap-4"
-              onSubmit={(event) => {
-                event.preventDefault();
-                save.mutate(form);
-              }}
-            >
-              {categories.map((category) => (
-                <Card key={category}>
-                  <h2 className="mb-3 text-sm font-semibold capitalize">{category}</h2>
-                  <div className="flex flex-col gap-3">
-                    {Object.entries(fields)
-                      .filter(([, field]) => (field.category || "general") === category)
-                      .map(([name, field]) => (
-                        <FieldControl
-                          key={name}
-                          name={name}
-                          field={field}
-                          value={getPath(form, name)}
-                          onChange={(v) => edit(name, v)}
-                        />
-                      ))}
-                  </div>
-                </Card>
-              ))}
-              <div className="flex gap-2">
-                <Button type="submit" tone="primary" disabled={!dirty || save.isPending}>
-                  Save
-                </Button>
-                <Button
-                  disabled={!dirty}
-                  onClick={() => {
-                    setForm(config.data ?? {});
-                    setDirty(false);
-                  }}
+          {yaml ? "Form" : "YAML"}
+        </Button>
+        <Button
+          size="sm"
+          tone={view === "effective" ? "primary" : "default"}
+          className={toolClass}
+          aria-pressed={view === "effective"}
+          onClick={() => setView(view === "effective" ? "form" : "effective")}
+        >
+          Effective
+        </Button>
+        <Button
+          size="sm"
+          tone="primary"
+          className={saveClass}
+          disabled={yaml || !dirty || !form || save.isPending}
+          title={yaml ? YAML_SAVE_NOTE : undefined}
+          onClick={() => form && save.mutate(form)}
+        >
+          Save
+        </Button>
+      </div>
+
+      {view === "effective" ? <EffectiveView /> : null}
+      {yaml ? <YamlView /> : null}
+      {view === "form" ? (
+        config.isPending || schema.isPending || (form === null && !config.error) ? (
+          <div className="flex justify-center py-24">
+            <Loading />
+          </div>
+        ) : (
+          <QueryState
+            loading={false}
+            error={config.error ?? schema.error}
+            onRetry={() => {
+              void config.refetch();
+              void schema.refetch();
+            }}
+          >
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+              <FilterColumn
+                categories={categories}
+                counts={counts}
+                active={searching ? null : category}
+                onPick={(next) => {
+                  setQuery("");
+                  setPicked(next);
+                }}
+              />
+              {searching ? (
+                <SectionCard icon={Search} title="Search results" count={scoped.length}>
+                  {scoped.length ? (
+                    renderFields(scoped, true)
+                  ) : (
+                    <p className="m-0 py-10 text-center text-[0.8125rem] text-ink-soft">
+                      No fields match '{query.trim()}'
+                    </p>
+                  )}
+                </SectionCard>
+              ) : category ? (
+                <SectionCard
+                  icon={categoryIcon(category)}
+                  title={categoryName(category)}
+                  count={scoped.length}
                 >
-                  Reset
-                </Button>
-              </div>
-            </form>
-          ) : null}
-        </QueryState>
-      )}
+                  {renderFields(scoped, false)}
+                </SectionCard>
+              ) : (
+                <Card className="flex-1">
+                  <p className="m-0 text-[0.8125rem] text-ink-soft">
+                    The schema lists no settings.
+                  </p>
+                </Card>
+              )}
+            </div>
+          </QueryState>
+        )
+      ) : null}
+
+      <ConfirmDialog
+        open={resetting}
+        title="Reset to defaults?"
+        description={
+          searching
+            ? `The ${scoped.length} matching fields go back to their built-in values in the form. Nothing is written until you save.`
+            : `The ${scoped.length} fields of ${category ? categoryName(category) : "this section"} go back to their built-in values in the form. Nothing is written until you save.`
+        }
+        confirmLabel="Reset to defaults"
+        danger
+        busy={defaults.isPending || !defaults.data}
+        onConfirm={resetToDefaults}
+        onCancel={() => setResetting(false)}
+      >
+        {defaults.error ? (
+          <p className={cx("m-0 text-[0.8125rem] text-danger")}>{errorText(defaults.error)}</p>
+        ) : null}
+      </ConfirmDialog>
     </div>
   );
 }

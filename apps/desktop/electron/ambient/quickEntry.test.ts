@@ -12,10 +12,10 @@ import {
 describe("quick entry bounds", () => {
   it("centred a quarter down the pointer's display, inside it", () => {
     expect(quickBounds({ x: 0, y: 0, width: 1920, height: 1080 })).toEqual({
-      x: 650,
+      x: 640,
       y: 270,
-      width: 620,
-      height: 150,
+      width: 640,
+      height: 168,
     });
     expect(quickBounds({ x: 1920, y: 0, width: 500, height: 100 })).toEqual({
       x: 1920,

@@ -9,7 +9,7 @@ import type { BrowserWindowLike } from "../windows/manager.ts";
 import type { Rect } from "../windows/windowState.ts";
 import { type FloatingWindow, floatAbove, type ScreenLike, type Timers } from "./hud.ts";
 
-export const QUICK_SIZE = { width: 620, height: 150 } as const;
+export const QUICK_SIZE = { width: 640, height: 168 } as const;
 /** How far down the display the composer sits (fraction of the work area's height). */
 export const QUICK_TOP_FRACTION = 0.25;
 export const QUICK_RELAY_TIMEOUT_MS = 15_000;

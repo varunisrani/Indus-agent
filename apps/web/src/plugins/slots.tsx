@@ -30,6 +30,7 @@ export const SLOT_PAGES = [
   "config",
   "env",
   "chat",
+  "docs",
 ] as const;
 
 /** Every slot name the shell and pages render. */

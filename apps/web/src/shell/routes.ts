@@ -33,7 +33,10 @@ export interface ExternalLink {
 export const DEFAULT_PATH = "/sessions";
 export const CHAT_PATH = "/chat";
 
-/** Our documentation (the docs domain is still open, P25-20; the repository docs until then). */
+/**
+ * Our documentation (the docs domain is still open, P25-20; the repository docs until then). The
+ * in-app `/docs` page (W52-docs-1) points here.
+ */
 export const DOCS_LINK: ExternalLink = {
   path: "/docs",
   title: "Documentation",
@@ -92,6 +95,7 @@ const ProfileBuilderPage = lazy(() =>
 const SystemPage = lazy(() =>
   import("../pages/SystemPage.tsx").then((m) => ({ default: m.SystemPage })),
 );
+const DocsPage = lazy(() => import("../pages/DocsPage.tsx").then((m) => ({ default: m.DocsPage })));
 
 export const ROUTES: readonly PageRoute[] = [
   { path: CHAT_PATH, title: "Chat", nav: "main", page: null },
@@ -108,10 +112,11 @@ export const ROUTES: readonly PageRoute[] = [
   { path: "/webhooks", title: "Webhooks", nav: "main", page: WebhooksPage },
   { path: "/pairing", title: "Pairing", nav: "main", page: PairingPage },
   { path: "/profiles", title: "Profiles", nav: "main", page: ProfilesPage },
-  { path: "/profiles/new", title: "New profile", nav: "hidden", page: ProfileBuilderPage },
+  { path: "/profiles/new", title: "Profiles/new", nav: "hidden", page: ProfileBuilderPage },
   { path: "/config", title: "Config", nav: "main", page: ConfigPage },
   { path: "/env", title: "Keys", nav: "main", page: EnvPage },
   { path: "/system", title: "System", nav: "main", page: SystemPage },
+  { path: DOCS_LINK.path, title: DOCS_LINK.title, nav: "main", page: DocsPage },
 ];
 
 /** The route for a pathname (exact match), if any. */

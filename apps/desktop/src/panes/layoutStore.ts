@@ -32,6 +32,7 @@ import {
   INTERFACE_MODES,
   type InterfaceMode,
   initialLayout,
+  openInSideGroup,
   PRESET_IDS,
   type PresetId,
   paneAllowed,
@@ -157,7 +158,7 @@ export class LayoutStore {
   /** Open a pane (from the closed stack if it is there) and bring it to front. */
   open(pane: PaneId): boolean {
     if (!paneAllowed(this.currentMode, pane)) return false;
-    this.edit((layout) => openPane(layout, pane));
+    this.edit((layout) => openInSideGroup(layout, pane) ?? openPane(layout, pane));
     return true;
   }
 

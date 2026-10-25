@@ -3,6 +3,7 @@
 // composer, so a session switch mid-capture keeps the capture and its pinned recipient. While a
 // capture runs the button is pressed and a "Listening" label shows (never a silent recording).
 
+import { AudioLines, Mic, MicOff } from "lucide-react";
 import { useEffect, useSyncExternalStore } from "react";
 import type { ChatConnection } from "../../gateway/connectionStore.ts";
 import { type MessageKey, useT } from "../../i18n/index.tsx";
@@ -219,12 +220,12 @@ export function VoiceButtons(props: {
     <span className="flex items-center gap-1">
       <button
         type="button"
-        className="rounded px-2 py-1 text-sm border border-line hover:bg-raised"
+        className="desk-icon-btn"
         aria-pressed={recording}
         aria-label={recording ? t("voice.stopDictation") : t("voice.dictate")}
         onClick={() => void (recording ? dictation.stop() : dictation.start(recipient))}
       >
-        {recording ? t("voice.stop") : t("voice.mic")}
+        {recording ? <MicOff aria-hidden="true" /> : <Mic aria-hidden="true" />}
       </button>
       {recording ? (
         <span role="status" className="text-xs text-danger">
@@ -285,11 +286,12 @@ function ConversationButton(props: {
   return (
     <button
       type="button"
-      className="rounded px-2 py-1 text-sm border border-line hover:bg-raised"
+      className="desk-icon-btn"
       aria-pressed={on}
+      aria-label={on ? t("voice.endConversation") : t("voice.converse")}
       onClick={() => (on ? live.stop() : void live.start(props.recipient).catch(() => undefined))}
     >
-      {on ? t("voice.endConversation") : t("voice.converse")}
+      <AudioLines aria-hidden="true" />
     </button>
   );
 }

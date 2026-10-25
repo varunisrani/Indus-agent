@@ -24,6 +24,8 @@
     "check:asar": "node scripts/check-asar.mjs build/release"
   },
   "dependencies": {
+    "@fontsource/abril-fatface": "5.3.0",
+    "@fontsource/inter": "5.3.0",
     "@indus/client": "workspace:*",
     "@indus/ui": "workspace:*",
     "@radix-ui/react-dialog": "1.1.23",

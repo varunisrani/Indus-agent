@@ -61,8 +61,10 @@ function navIcon(c: Contribution): ReactNode {
 }
 
 /** The `sidebar-nav` entries, as list items of the sidebar's page list. */
-export function ContributedNav() {
-  const list = useContributions("sidebar-nav");
+export function ContributedNav(props: { exclude?: string } = {}) {
+  const list = useContributions("sidebar-nav").filter(
+    (c) => props.exclude === undefined || routeKey(String(c.path)) !== props.exclude,
+  );
   return (
     <>
       {list.map((c) => (

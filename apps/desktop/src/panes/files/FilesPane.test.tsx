@@ -239,3 +239,44 @@ describe("FilesPane (remote)", () => {
     expect((await screen.findByRole("alert")).textContent).toMatch(/That folder cannot be read\./);
   });
 });
+
+describe("FilesPane look (W52-m)", () => {
+  it("tints changed files from git status and collapses every open folder", async () => {
+    const { bridge } = fakeFs(TREE);
+    const git = {
+      status: vi.fn(async () => ({
+        root: WS,
+        branch: "main",
+        upstream: null,
+        ahead: 0,
+        behind: 0,
+        head: null,
+        truncated: false,
+        files: [
+          { path: "README.md", index: " ", worktree: "M" },
+          { path: "src/app.ts", index: "?", worktree: "?" },
+        ],
+      })),
+    };
+    render(<FilesPane workspace={WS} mode="local" source={localSource(bridge)} git={git} />);
+    const readme = await screen.findByText("README.md");
+    await waitFor(() =>
+      expect(readme.closest("[data-tint]")?.getAttribute("data-tint")).toBe("modified"),
+    );
+    expect(screen.queryByRole("button", { name: "Collapse all" })).toBeNull();
+    fireEvent.click(screen.getByText("src"));
+    const app = await screen.findByText("app.ts");
+    expect(app.closest("[data-tint]")?.getAttribute("data-tint")).toBe("added");
+    fireEvent.click(screen.getByRole("button", { name: "Collapse all" }));
+    expect(screen.queryByText("app.ts")).toBeNull();
+  });
+
+  it("a right click opens the row's actions; an empty folder shows a quiet label", async () => {
+    const { bridge } = fakeFs({ ...TREE, [`${WS}/src`]: [] });
+    render(<FilesPane workspace={WS} mode="local" source={localSource(bridge)} git={null} />);
+    fireEvent.contextMenu(await screen.findByText("README.md"));
+    expect(screen.getByRole("button", { name: "Copy path" })).toBeTruthy();
+    fireEvent.click(screen.getByText("src"));
+    expect(await screen.findByText("This folder is empty.")).toBeTruthy();
+  });
+});

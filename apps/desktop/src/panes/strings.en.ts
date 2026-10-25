@@ -138,4 +138,18 @@ export const PANE_STRINGS = {
   "terminal.unavailable": "Terminals are not available: {message}",
   "terminal.remote": "This window is connected to a remote Indus; its terminals run there.",
   "terminal.starting": "Starting the shell",
+  // W52-m: side panel headers, states and the ship bar
+  "files.collapseAll": "Collapse all",
+  "files.noFiles": "No files",
+  "files.noFolder": "No folder",
+  "files.errorTitle": "Folder unreadable",
+  "files.retry": "Try again",
+  "review.close": "Close review",
+  "review.noChangesLabel": "No changes",
+  "review.noDiff": "No diff",
+  "review.commitOptions": "More commit options",
+  "review.messagePlaceholder": "Message (Ctrl+↵ to commit)",
+  "review.askAgentShort": "Ask Indus to open a PR",
+  "review.stop": "Stop",
+  "review.closeDiff": "Close diff",
 } as const satisfies Record<string, string>;

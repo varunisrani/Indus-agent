@@ -59,6 +59,37 @@ afterEach(() => {
 });
 
 describe("skills page", () => {
+  it("counts enabled skills, groups categories and filters by search", async () => {
+    mock.state.skills = [
+      { name: "summarise", description: "Short summaries", category: "writing", enabled: true },
+      { name: "deploy", description: "Ship it", category: "software-development", enabled: false },
+      { name: "notes", description: "Keep notes", category: "", enabled: true },
+    ];
+    renderPage(<SkillsPage />, "/skills");
+    expect(await screen.findByText("2/3 enabled")).toBeTruthy();
+    const filters = within(screen.getByRole("navigation", { name: "Skill filters" }));
+    fireEvent.click(filters.getByRole("button", { name: /Software Development/ }));
+    expect(screen.getByRole("heading", { name: "Software Development" })).toBeTruthy();
+    expect(screen.queryByText("summarise")).toBeNull();
+    expect(screen.getByText("deploy")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Search skills"), { target: { value: "notes" } });
+    expect(screen.getByText("1 results")).toBeTruthy();
+    expect(screen.getByText("notes")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Search skills"), { target: { value: "zzz" } });
+    expect(screen.getByText("No skills match")).toBeTruthy();
+  });
+
+  it("opens the skill editor with a SKILL.md template", async () => {
+    renderPage(<SkillsPage />, "/skills");
+    fireEvent.click(await screen.findByRole("button", { name: "New skill" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "New skill" }));
+    expect((dialog.getByLabelText("SKILL.md") as HTMLTextAreaElement).value).toContain(
+      "name: my-skill",
+    );
+    fireEvent.click(dialog.getByRole("button", { name: "Create skill" }));
+    expect((await dialog.findByRole("alert")).textContent).toContain("Name the skill");
+  });
+
   it("toggles an installed skill", async () => {
     renderPage(<SkillsPage />, "/skills");
     fireEvent.click(await screen.findByRole("switch", { name: "Enable summarise" }));
@@ -72,13 +103,21 @@ describe("skills page", () => {
 
   it("lists toolsets with their tools", async () => {
     renderPage(<SkillsPage />, "/skills");
-    fireEvent.click(await screen.findByRole("button", { name: "Toolsets" }));
-    expect(await screen.findByText("web_search, fetch")).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: /^Toolsets/ }));
+    const tools = await screen.findByRole("list", { name: "web tools" });
+    expect(
+      within(tools)
+        .getAllByRole("listitem")
+        .map((li) => li.textContent),
+    ).toEqual(["web_search", "fetch"]);
+    fireEvent.click(screen.getByRole("button", { name: "Configure" }));
+    const drawer = within(await screen.findByRole("dialog", { name: "Web" }));
+    expect(drawer.getByRole("link", { name: "Open Keys" }).getAttribute("href")).toBe("/env");
   });
 
   it("shows verdicts, blocks dangerous installs and installs safe ones", async () => {
     renderPage(<SkillsPage />, "/skills");
-    fireEvent.click(await screen.findByRole("button", { name: "Hub" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Browse hub" }));
     fireEvent.change(screen.getByLabelText("Search the skills hub"), { target: { value: "" } });
     fireEvent.change(screen.getByLabelText("Search the skills hub"), { target: { value: "i" } });
     fireEvent.click(screen.getByRole("button", { name: "Search" }));
@@ -126,7 +165,7 @@ describe("skills page", () => {
       },
     });
     renderPage(<SkillsPage />, "/skills");
-    fireEvent.click(await screen.findByRole("button", { name: "Hub" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Browse hub" }));
     fireEvent.change(screen.getByLabelText("Search the skills hub"), { target: { value: "sly" } });
     fireEvent.click(screen.getByRole("button", { name: "Search" }));
     const row = within(await screen.findByTestId("hub-hub/sly"));

@@ -98,10 +98,12 @@ export function ProfileSwitcher({ compact }: { compact: boolean }) {
   const { profiles, active, select, defaultName } = useProfileScope();
   if (profiles.length <= 1) return null;
   return (
-    <label className={`flex flex-col gap-1 text-xs text-muted ${compact ? "sr-only" : ""}`}>
+    <label
+      className={`type-label flex flex-col gap-1 border-b border-line px-5 py-2.5 text-ink-soft ${compact ? "sr-only" : ""}`}
+    >
       Profile
       <select
-        className="rounded-md border border-line bg-raised px-2 py-1 text-sm text-fg"
+        className="type-data h-7 border border-line bg-canvas px-2 text-[0.75rem] text-ink normal-case tracking-normal"
         value={active || defaultName}
         onChange={(event) => select(event.currentTarget.value)}
       >
@@ -121,7 +123,10 @@ export function ProfileBanner() {
   const { active, defaultName } = useProfileScope();
   if (!active || !defaultName || active === defaultName) return null;
   return (
-    <div role="status" className="border-b border-warn bg-raised px-4 py-2 text-sm text-warn">
+    <div
+      role="status"
+      className="border-b border-warning/50 bg-warning-wash px-4 py-2 text-[0.8125rem] text-warning lg:px-[1.375rem]"
+    >
       Managing profile <strong>{active}</strong>: changes here apply to that profile, not the
       default one.
     </div>

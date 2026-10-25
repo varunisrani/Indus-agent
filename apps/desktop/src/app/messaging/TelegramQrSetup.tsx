@@ -13,6 +13,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useT } from "../../i18n/index.tsx";
 import { type RestLike, rest } from "../../settings/settingsApi.ts";
+import { PanelPill } from "../kit.tsx";
 
 export const BOTFATHER_URL = "https://t.me/BotFather";
 export const PAIRING_POLL_MS = 2_000;
@@ -170,19 +171,24 @@ export function TelegramQrSetup(props: {
 
   const link = BOT_NAME_RE.exec(botName.trim())?.[1];
   return (
-    <div className="manage-card" data-testid="telegram-setup">
-      <h3>{t("manage.telegram.title")}</h3>
-      <p className="manage-muted">{t("manage.telegram.help")}</p>
+    <div className="msg-quick" data-testid="telegram-setup">
+      <div className="msg-quick-head">
+        <h3>{t("manage.telegram.title")}</h3>
+        <PanelPill tone="good">{t("manage.messaging.recommended")}</PanelPill>
+      </div>
+      <p className="msg-field-help">{t("manage.telegram.help")}</p>
       {error !== "" && (
-        <p className="manage-error" role="alert">
+        <p className="msg-error" role="alert">
           {error}
         </p>
       )}
       {phase === "idle" && (
-        <div className="manage-inline">
+        <div className="msg-quick-row">
           <button
             type="button"
-            className="button button-primary"
+            className="desk-btn"
+            data-variant="primary"
+            data-size="sm"
             onClick={() => {
               props.openExternal(BOTFATHER_URL);
               setPhase("token");
@@ -192,7 +198,9 @@ export function TelegramQrSetup(props: {
           </button>
           <button
             type="button"
-            className="button button-secondary"
+            className="desk-btn"
+            data-variant="secondary"
+            data-size="sm"
             onClick={() => setPhase("token")}
           >
             {t("manage.telegram.haveToken")}
@@ -201,7 +209,7 @@ export function TelegramQrSetup(props: {
       )}
       {(phase === "token" || phase === "saving") && (
         <>
-          <label className="manage-field">
+          <label className="msg-quick-field">
             {t("manage.telegram.token")}
             <input
               type="password"
@@ -210,7 +218,7 @@ export function TelegramQrSetup(props: {
               onChange={(e) => setToken(e.target.value)}
             />
           </label>
-          <label className="manage-field">
+          <label className="msg-quick-field">
             {t("manage.telegram.botName")}
             <input
               value={botName}
@@ -220,7 +228,9 @@ export function TelegramQrSetup(props: {
           </label>
           <button
             type="button"
-            className="button button-primary"
+            className="desk-btn"
+            data-variant="primary"
+            data-size="sm"
             disabled={phase === "saving"}
             onClick={() => void saveToken()}
           >
@@ -231,7 +241,7 @@ export function TelegramQrSetup(props: {
       {phase === "waiting" && (
         <div role="status">
           <p>{t("manage.telegram.sendMessage")}</p>
-          {link !== undefined && <p className="manage-code">{`https://t.me/${link}`}</p>}
+          {link !== undefined && <p className="msg-mono">{`https://t.me/${link}`}</p>}
         </div>
       )}
       {(phase === "detected" || phase === "applying") && (
@@ -241,13 +251,15 @@ export function TelegramQrSetup(props: {
               name: detected?.user_name ?? detected?.user_id ?? "",
             })}
           </p>
-          <label className="manage-field">
+          <label className="msg-quick-field">
             {t("manage.telegram.userId")}
             <input inputMode="numeric" value={userId} onChange={(e) => setUserId(e.target.value)} />
           </label>
           <button
             type="button"
-            className="button button-primary"
+            className="desk-btn"
+            data-variant="primary"
+            data-size="sm"
             disabled={phase === "applying"}
             onClick={() => void apply()}
           >

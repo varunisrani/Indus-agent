@@ -2,7 +2,7 @@
 // these into the workspace's slots next to the chat and settings slots. The Bots page (P24-31) is
 // not a slot: it is a bundled contribution's route (main.tsx, `contrib/shell.tsx`).
 
-import { useLocation } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 import type { RpcLike } from "../../bots/canonicalChat.ts";
 import { desktopPluginSource } from "../../contrib/host.ts";
 import type { GatewayConnection } from "../../gateway/connectionStore.ts";
@@ -11,13 +11,20 @@ import type { AppSlots } from "../App.tsx";
 import { AgentsOverlay, type SessionEventSource } from "../agents/AgentsOverlay.tsx";
 import { ArtifactsPage } from "../artifacts/ArtifactsPage.tsx";
 import { CapabilitiesRoute, type CapabilitySummary } from "../capabilities/CapabilitiesPage.tsx";
-import { CommandCenter } from "../command-center/CommandCenter.tsx";
+import { CommandCenter, isSection } from "../command-center/CommandCenter.tsx";
 import { CronOverlay } from "../cron/CronOverlay.tsx";
 import { LearningMap } from "../learning-map/LearningMap.tsx";
 import { MessagingPage } from "../messaging/MessagingPage.tsx";
 import { ProfilesOverlay } from "../profiles/ProfilesOverlay.tsx";
-import { backgroundOf, classifyPath } from "../routes.ts";
-import { WebhooksPage } from "../webhooks/WebhooksPage.tsx";
+import {
+  backgroundOf,
+  classifyPath,
+  overlayPath,
+  overlayStateFrom,
+  sessionPath,
+} from "../routes.ts";
+import { SessionImport } from "../session-import/SessionImport.tsx";
+import { WebhooksOverlay } from "../webhooks/WebhooksPage.tsx";
 
 const RPC_OF = new WeakMap<GatewayConnection, RpcLike>();
 
@@ -46,6 +53,58 @@ function MessagingRoute(props: { connection: GatewayConnection; profile: string 
   const state = useConnectionState(props.connection);
   return (
     <MessagingPage profile={props.profile} instanceId={state.descriptor?.instanceId ?? null} />
+  );
+}
+
+/** The command center keeps its section in the query (`?section=`), so a re-open lands there. */
+function CommandCenterRoute(props: { profile: string | null; onClose: () => void }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const raw = new URLSearchParams(location.search).get("section");
+  return (
+    <CommandCenter
+      profile={props.profile}
+      section={isSection(raw) ? raw : "sessions"}
+      onSection={(section) =>
+        navigate(
+          { pathname: overlayPath("command-center"), search: `?section=${section}` },
+          { replace: true, state: location.state },
+        )
+      }
+      onClose={props.onClose}
+      onOpenSession={(id) => navigate(sessionPath(id), { replace: true })}
+      onOpenImport={() =>
+        navigate(overlayPath("session-import"), {
+          state: overlayStateFrom(location.pathname, location.state),
+        })
+      }
+    />
+  );
+}
+
+function SessionImportRoute(props: {
+  connection: GatewayConnection;
+  profile: string | null;
+  onClose: () => void;
+}) {
+  const navigate = useNavigate();
+  const state = useConnectionState(props.connection);
+  const remote = state.descriptor?.mode === "remote" ? state.descriptor.wsUrl : null;
+  let host: string | null = null;
+  if (remote !== null) {
+    try {
+      host = new URL(remote).host;
+    } catch {
+      host = null;
+    }
+  }
+  return (
+    <SessionImport
+      profile={props.profile}
+      host={host}
+      onClose={props.onClose}
+      onImported={(id) => navigate(sessionPath(id), { replace: true })}
+    />
   );
 }
 
@@ -82,10 +141,7 @@ export function managementSlots(deps: { connection: GatewayConnection; profile: 
   return {
     pages: {
       messaging: () => <MessagingRoute connection={connection} profile={profile} />,
-      webhooks: () => <WebhooksPage profile={profile} />,
       artifacts: () => <ArtifactsPage profile={profile} />,
-      "command-center": () => <CommandCenter profile={profile} />,
-      "learning-map": () => <LearningMap profile={profile} />,
       // P24-26: the counts from the daemon and the Desktop column from the plugin loader (P24-32)
       capabilities: () => (
         <CapabilitiesRoute
@@ -99,6 +155,13 @@ export function managementSlots(deps: { connection: GatewayConnection; profile: 
       cron: (onClose) => <CronOverlay profile={profile} onClose={onClose} />,
       profiles: (onClose) => <ProfilesOverlay onClose={onClose} />,
       agents: (onClose) => <AgentsRoute connection={connection} onClose={onClose} />,
+      // W52-l-1: the management views are overlays
+      webhooks: (onClose) => <WebhooksOverlay profile={profile} onClose={onClose} />,
+      "command-center": (onClose) => <CommandCenterRoute profile={profile} onClose={onClose} />,
+      "learning-map": (onClose) => <LearningMap profile={profile} onClose={onClose} />,
+      "session-import": (onClose) => (
+        <SessionImportRoute connection={connection} profile={profile} onClose={onClose} />
+      ),
     },
   };
 }

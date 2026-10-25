@@ -17,7 +17,14 @@ import type { ChatConnection } from "../gateway/connectionStore.ts";
 import { browserStorage } from "../profiles/storageFamilies.ts";
 import { freshDraftFolder, newChatTarget } from "../sidebar/projects.ts";
 import type { AppSlots } from "./App.tsx";
-import { backgroundOf, classifyPath, NEW_CHAT_PATH, sessionPath } from "./routes.ts";
+import {
+  backgroundOf,
+  classifyPath,
+  NEW_CHAT_PATH,
+  overlayPath,
+  overlayStateFrom,
+  sessionPath,
+} from "./routes.ts";
 import { StatusBar } from "./StatusBar.tsx";
 
 /** System lines (slash output) kept above the composer. */
@@ -42,6 +49,7 @@ function ComposerSlot(props: {
   voice: VoicePort;
 }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const transcripts = useTranscriptStore();
   const [lines, setLines] = useState<readonly string[]>([]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new conversation starts clean
@@ -73,6 +81,11 @@ function ComposerSlot(props: {
         }}
         onSessionGone={() => navigate(NEW_CHAT_PATH, { replace: true })}
         onNewChat={() => navigate(NEW_CHAT_PATH)}
+        onEditModels={() =>
+          navigate(`${overlayPath("settings")}?view=model&page=main`, {
+            state: overlayStateFrom(location.pathname, location.state),
+          })
+        }
         onReasoningDisplay={(show) => transcripts.setShowReasoning(show)}
         onSystemLine={(line) => setLines((now) => [...now.slice(1 - SYSTEM_LINES), line])}
       />

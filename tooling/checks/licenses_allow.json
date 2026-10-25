@@ -10,10 +10,12 @@
     "MPL-2.0",
     "Unlicense",
     "0BSD",
-    "CC0-1.0"
+    "CC0-1.0",
+    "OFL-1.1"
   ],
   "notes": {
-    "MPL-2.0": "File-level copyleft: fine as an unmodified dependency; if we ever patch an MPL file, the patched file stays MPL-2.0 and its source must be published."
+    "MPL-2.0": "File-level copyleft: fine as an unmodified dependency; if we ever patch an MPL file, the patched file stays MPL-2.0 and its source must be published.",
+    "OFL-1.1": "Font licence (SIL Open Font License 1.1) for the dashboard's open fonts from @fontsource (W51-a): free to bundle and redistribute with software; the fonts may not be sold on their own and renamed derivatives must not use the reserved font names."
   },
   "exceptions": {
     "cffi": {
@@ -47,6 +49,14 @@
     "debian": {
       "licence": "LicenseRef-Debian-packages",
       "reason": "2026-10-21 (P25-17): the Docker image's Debian base: a collection of separately licensed packages, each with its copyright file inside the image; corresponding source on sources.debian.org."
+    },
+    "@fontsource/inter": {
+      "licence": "OFL-1.1",
+      "reason": "2026-10-24 (W51-b): desktop UI fonts from the @fontsource packages (the font files only, unmodified, bundled with the renderer). SIL Open Font License 1.1 allows bundling and redistribution with software; the owner's W51 brief lists OFL fonts as allowed. Notice: THIRD_PARTY_NOTICES."
+    },
+    "@fontsource/abril-fatface": {
+      "licence": "OFL-1.1",
+      "reason": "2026-10-24 (W51-b): desktop UI fonts from the @fontsource packages (the font files only, unmodified, bundled with the renderer). SIL Open Font License 1.1 allows bundling and redistribution with software; the owner's W51 brief lists OFL fonts as allowed. Notice: THIRD_PARTY_NOTICES."
     }
   },
   "obligations": {

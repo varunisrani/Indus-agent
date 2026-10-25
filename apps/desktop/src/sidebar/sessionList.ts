@@ -497,6 +497,52 @@ export class SessionListStore {
     return this.patchRow(row, { pinned }, { ...row, pinned });
   }
 
+  /** Rename (W52-h): PATCH `{title}`; an empty title is ignored. */
+  setTitle(row: SessionRow, title: string): Promise<boolean> {
+    const clean = title.trim().slice(0, 200);
+    if (clean === "" || clean === row.title) return Promise.resolve(false);
+    return this.patchRow(row, { title: clean }, { ...row, title: clean });
+  }
+
+  /** Mark the row unread again (the person asked for it). */
+  markUnread(row: SessionRow): void {
+    this.unread.markUnread(row);
+    this.patch({});
+  }
+
+  /**
+   * Delete the conversation (W52-h): a fenced DELETE of the durable id. The row leaves the list
+   * at once and comes back if the backend refuses (a busy session is a 409).
+   */
+  async remove(row: SessionRow): Promise<boolean> {
+    if (this.api === null) return false;
+    const before = this.state.rows;
+    this.patch({ rows: before.filter((r) => r.durableId !== row.durableId), error: null });
+    try {
+      const answer = await this.fenced(row.durableId, async (fence) =>
+        (this.api as ApiRequest)({
+          method: "DELETE",
+          path: `/api/sessions/${encodeURIComponent(row.durableId)}?${new URLSearchParams(
+            Object.entries(fence).map(([key, value]) => [key, String(value)]),
+          ).toString()}`,
+          profile: this.profile,
+        }),
+      );
+      if (answer.status >= 200 && answer.status < 400) {
+        this.unread.forget(row.durableId);
+        return true;
+      }
+      this.patch({ rows: upsertRow(this.state.rows, row), error: `status ${answer.status}` });
+      return false;
+    } catch (error) {
+      this.patch({
+        rows: upsertRow(this.state.rows, row),
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    }
+  }
+
   setArchived(row: SessionRow, archived: boolean): Promise<boolean> {
     const result = this.patchRow(row, { archived }, { ...row, archived });
     // an archived row leaves the live view (and a restored one the archived view)
@@ -537,12 +583,12 @@ export class SessionListStore {
   }
 
   /**
-   * One fenced write: the backend refuses a PATCH without the session's mutation identity, so
+   * One fenced write: the backend refuses a write without the session's mutation identity, so
    * read the snapshot (revision, generation) first; a stale revision is read again once.
    */
-  private async fencedPatch(
+  private async fenced(
     durableId: string,
-    body: { pinned?: boolean; archived?: boolean },
+    send: (fence: Record<string, string | number>) => ReturnType<ApiRequest>,
   ): Promise<{ status: number }> {
     const api = this.api as ApiRequest;
     const path = `/api/sessions/${encodeURIComponent(durableId)}`;
@@ -556,18 +602,10 @@ export class SessionListStore {
       if (snap.kind !== "response" || snap.status >= 400) return { status: snap.status };
       const fence = snap.body as { revision?: unknown; generation?: unknown } | null;
       this.writes += 1;
-      answer = await api({
-        method: "PATCH",
-        path,
-        body: {
-          ...body,
-          request_id: `sidebar-${Date.now().toString(36)}-${this.writes}`,
-          expected_revision: typeof fence?.revision === "number" ? fence.revision : 0,
-          ...(typeof fence?.generation === "number"
-            ? { expected_generation: fence.generation }
-            : {}),
-        },
-        profile: this.profile,
+      answer = await send({
+        request_id: `sidebar-${Date.now().toString(36)}-${this.writes}`,
+        expected_revision: typeof fence?.revision === "number" ? fence.revision : 0,
+        ...(typeof fence?.generation === "number" ? { expected_generation: fence.generation } : {}),
       });
       const code = (answer.body as { detail?: { code?: unknown } } | null)?.detail?.code;
       if (answer.status !== 409 || code !== "stale_revision") break;
@@ -575,9 +613,23 @@ export class SessionListStore {
     return { status: answer.kind === "not-found" ? 404 : answer.status };
   }
 
+  private fencedPatch(
+    durableId: string,
+    body: { pinned?: boolean; archived?: boolean; title?: string },
+  ): Promise<{ status: number }> {
+    return this.fenced(durableId, (fence) =>
+      (this.api as ApiRequest)({
+        method: "PATCH",
+        path: `/api/sessions/${encodeURIComponent(durableId)}`,
+        body: { ...body, ...fence },
+        profile: this.profile,
+      }),
+    );
+  }
+
   private async patchRow(
     row: SessionRow,
-    body: { pinned?: boolean; archived?: boolean },
+    body: { pinned?: boolean; archived?: boolean; title?: string },
     optimistic: SessionRow,
   ): Promise<boolean> {
     const before = this.state.rows;

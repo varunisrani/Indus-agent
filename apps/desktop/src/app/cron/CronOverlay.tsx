@@ -3,11 +3,29 @@
 // action — pause, resume, run now, edit, delete — goes to the profile that owns the job, never to
 // the window's own. New jobs start blank or from a blueprint (a skill that suggests a schedule).
 // The last run's time, status and (redacted) error are the run history the REST view carries.
+// W52-l look: an overlay panel (list + detail) and a 512px dialog for new / edited jobs; the
+// "All profiles" switch stays (ours, W52-l-5) as a small checkbox under the search.
 
-import { useState } from "react";
+import { Pause, Pencil, Play, Rocket, Watch, Zap } from "lucide-react";
+import { type ReactNode, useState } from "react";
 import { useT } from "../../i18n/index.tsx";
 import { type RestAnswer, type RestLike, rest } from "../../settings/settingsApi.ts";
-import { LoadState, ManageOverlay, useApi, useRestValue, when } from "../manage/common.tsx";
+import { Button } from "../../ui/components.tsx";
+import {
+  CapsLabel,
+  DetailHead,
+  InlineError,
+  MetaGrid,
+  PanelBlock,
+  PanelPill,
+  PanelRow,
+} from "../kit.tsx";
+import { Loader } from "../Loader.tsx";
+import { useApi, useRestValue, when } from "../manage/common.tsx";
+import { ListDetail, OverlayCard } from "../overlay/OverlayFrame.tsx";
+import type { DeliveryTarget } from "../webhooks/WebhooksPage.tsx";
+import { CronDialog } from "./CronDialog.tsx";
+import "./cron.css";
 
 export interface CronJob {
   id: string;
@@ -74,110 +92,10 @@ export function jobAction(
   return rest(api, "POST", `${base}/${action}`, { profile: job.profile });
 }
 
-function JobForm(props: {
-  api: RestLike | null;
-  profile: string;
-  job?: OwnedJob;
-  blueprints: Blueprint[];
-  onDone: () => void;
-  onCancel: () => void;
-}) {
-  const t = useT();
-  const [name, setName] = useState(props.job?.name ?? "");
-  const [prompt, setPrompt] = useState(props.job?.prompt ?? "");
-  const [schedule, setSchedule] = useState(props.job?.schedule ?? "");
-  const [deliver, setDeliver] = useState(props.job?.deliver ?? "");
-  const [skills, setSkills] = useState<string[]>(props.job?.skills ?? []);
-  const [error, setError] = useState("");
-  const submit = async () => {
-    const body = {
-      name: name.trim() || undefined,
-      prompt,
-      schedule,
-      ...(deliver.trim() === "" ? {} : { deliver: deliver.trim() }),
-      ...(skills.length > 0 ? { skills } : {}),
-    };
-    const answer =
-      props.job === undefined
-        ? await rest(props.api, "POST", "/api/cron/jobs", { profile: props.profile, body })
-        : await rest(props.api, "PUT", `/api/cron/jobs/${encodeURIComponent(props.job.id)}`, {
-            profile: props.job.profile,
-            body,
-          });
-    if (!answer.ok) {
-      setError(answer.message);
-      return;
-    }
-    props.onDone();
-  };
-  return (
-    <form
-      className="manage-card"
-      onSubmit={(e) => {
-        e.preventDefault();
-        void submit();
-      }}
-    >
-      <h3>{props.job === undefined ? t("manage.cron.new") : t("manage.cron.edit")}</h3>
-      {props.job === undefined && props.blueprints.length > 0 && (
-        <label className="manage-field">
-          {t("manage.cron.blueprint")}
-          <select
-            defaultValue=""
-            onChange={(e) => {
-              const plan = props.blueprints.find((b) => b.skill === e.target.value);
-              if (plan === undefined) return;
-              setName(plan.skill);
-              setPrompt(plan.prompt ?? plan.description);
-              setSchedule(plan.schedule ?? "");
-              setSkills([plan.skill]);
-            }}
-          >
-            <option value="">{t("manage.cron.blank")}</option>
-            {props.blueprints.map((plan) => (
-              <option key={plan.skill} value={plan.skill}>
-                {plan.skill}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-      <label className="manage-field">
-        {t("manage.cron.name")}
-        <input value={name} onChange={(e) => setName(e.target.value)} />
-      </label>
-      <label className="manage-field">
-        {t("manage.cron.prompt")}
-        <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={3} required />
-      </label>
-      <label className="manage-field">
-        {t("manage.cron.schedule")}
-        <input
-          value={schedule}
-          onChange={(e) => setSchedule(e.target.value)}
-          placeholder="every 2h"
-          required
-        />
-      </label>
-      <label className="manage-field">
-        {t("manage.cron.deliver")}
-        <input value={deliver} onChange={(e) => setDeliver(e.target.value)} placeholder="local" />
-      </label>
-      {error !== "" && (
-        <p className="manage-error" role="alert">
-          {error}
-        </p>
-      )}
-      <div className="manage-inline">
-        <button type="submit" className="button button-primary">
-          {t("manage.save")}
-        </button>
-        <button type="button" className="button button-secondary" onClick={props.onCancel}>
-          {t("manage.cancel")}
-        </button>
-      </div>
-    </form>
-  );
+function stateTone(job: OwnedJob): "info" | "warn" | "muted" {
+  if (job.state === "paused" || !job.enabled) return "muted";
+  if (job.last_status === "error" || job.last_error !== null) return "warn";
+  return "info";
 }
 
 export function CronOverlay(props: {
@@ -189,7 +107,11 @@ export function CronOverlay(props: {
   const api = useApi(props.api);
   const own = props.profile ?? "default";
   const [all, setAll] = useState(false);
-  const [editing, setEditing] = useState<OwnedJob | "new" | null>(null);
+  const [query, setQuery] = useState("");
+  const [picked, setPicked] = useState<string | null>(null);
+  const [dialog, setDialog] = useState<
+    { kind: "new"; blueprint?: Blueprint } | { kind: "edit"; job: OwnedJob } | null
+  >(null);
   const [note, setNote] = useState("");
   const profiles = useRestValue<ProfilesAnswer>(() => rest(api, "GET", "/api/profiles"), [api]);
   const names = all && profiles.state === "ok" ? profiles.data.profiles.map((p) => p.name) : [own];
@@ -198,130 +120,247 @@ export function CronOverlay(props: {
     () => rest(api, "GET", "/api/cron/blueprints", { profile: own }),
     [api, own],
   );
+  const targets = useRestValue<{ targets: DeliveryTarget[] }>(
+    () => rest(api, "GET", "/api/cron/delivery-targets", { profile: own }),
+    [api, own],
+  );
 
   const act = async (job: OwnedJob, action: "pause" | "resume" | "trigger" | "delete") => {
     const answer = await jobAction(api, job, action);
     setNote(answer.ok ? "" : answer.message);
+    if (answer.ok && action === "delete") setPicked(null);
     jobs.reload();
   };
+  const plans = blueprints.state === "ok" ? blueprints.data.blueprints : [];
+  const keyOf = (job: OwnedJob) => `${job.profile}/${job.id}`;
 
-  return (
-    <ManageOverlay title={t("nav.cron")} onClose={props.onClose}>
-      <div className="manage-inline">
-        <label className="manage-inline">
-          <input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} />
-          {t("manage.cron.allProfiles")}
-        </label>
-        <button type="button" className="button button-primary" onClick={() => setEditing("new")}>
-          {t("manage.cron.new")}
-        </button>
+  let body: ReactNode;
+  if (jobs.state === "loading") body = <Loader />;
+  else if (jobs.state === "error") {
+    body = (
+      <div className="cron-pad">
+        <InlineError>
+          {jobs.code === "not-connected" ? t("manage.notConnected") : jobs.message}
+        </InlineError>
+        <Button variant="secondary" size="sm" onClick={jobs.reload}>
+          {t("manage.retry")}
+        </Button>
       </div>
-      {note !== "" && (
-        <p className="manage-error" role="alert">
-          {note}
-        </p>
-      )}
-      {editing !== null && (
-        <JobForm
-          api={api}
-          profile={own}
-          {...(editing === "new" ? {} : { job: editing })}
-          blueprints={blueprints.state === "ok" ? blueprints.data.blueprints : []}
-          onDone={() => {
-            setEditing(null);
-            jobs.reload();
-          }}
-          onCancel={() => setEditing(null)}
-        />
-      )}
-      <LoadState value={jobs}>
-        {(data) => (
+    );
+  } else {
+    const data = jobs.data;
+    const needle = query.trim().toLowerCase();
+    const shown = data.jobs.filter(
+      (job) =>
+        needle === "" ||
+        (job.name || job.id).toLowerCase().includes(needle) ||
+        job.prompt.toLowerCase().includes(needle),
+    );
+    const job = data.jobs.find((j) => keyOf(j) === picked) ?? null;
+    const paused = job !== null && (job.state === "paused" || !job.enabled);
+    const newButton = (
+      <Button variant="primary" size="sm" onClick={() => setDialog({ kind: "new" })}>
+        {t("cron.new")}
+      </Button>
+    );
+    body = (
+      <ListDetail
+        title={t("nav.cron")}
+        subtitle={t(data.jobs.length === 1 ? "cron.countOne" : "cron.count", {
+          count: data.jobs.length,
+        })}
+        whole={data.jobs.length === 0 && plans.length === 0 && !all}
+        banner={
           <>
+            {note !== "" && <InlineError>{note}</InlineError>}
             {data.failed.length > 0 && (
-              <p className="manage-muted">
+              <p className="cron-note">
                 {t("manage.cron.someFailed", { names: data.failed.join(", ") })}
               </p>
             )}
-            <table className="manage-table">
-              <thead>
-                <tr>
-                  <th>{t("manage.cron.name")}</th>
-                  {all && <th>{t("manage.cron.profile")}</th>}
-                  <th>{t("manage.cron.schedule")}</th>
-                  <th>{t("manage.cron.lastRun")}</th>
-                  <th>{t("manage.cron.next")}</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {data.jobs.map((job) => (
-                  <tr key={`${job.profile}/${job.id}`} data-job={job.id}>
-                    <td>
-                      <strong>{job.name || job.id}</strong>
-                      <div className="manage-muted">{job.state}</div>
-                    </td>
-                    {all && <td>{job.profile}</td>}
-                    <td>{job.schedule_display}</td>
-                    <td>
-                      {when(job.last_run_at)}
-                      {job.last_status !== null && (
-                        <div className="manage-muted">{job.last_status}</div>
-                      )}
-                      {job.last_error !== null && (
-                        <div className="manage-error">{job.last_error}</div>
-                      )}
-                    </td>
-                    <td>{when(job.next_run_at)}</td>
-                    <td>
-                      <span className="manage-inline">
-                        {job.state === "paused" || !job.enabled ? (
-                          <button
-                            type="button"
-                            className="button button-secondary"
-                            onClick={() => void act(job, "resume")}
-                          >
-                            {t("manage.cron.resume")}
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            className="button button-secondary"
-                            onClick={() => void act(job, "pause")}
-                          >
-                            {t("manage.cron.pause")}
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          className="button button-secondary"
+          </>
+        }
+        search={{
+          label: t("cron.search"),
+          placeholder: t("cron.searchPlaceholder"),
+          value: query,
+          onChange: setQuery,
+        }}
+        listTop={
+          <label className="cron-all">
+            <input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} />
+            {t("manage.cron.allProfiles")}
+          </label>
+        }
+        add={{ label: t("cron.new"), onAdd: () => setDialog({ kind: "new" }) }}
+        listLabel={t("nav.cron")}
+        listEmpty={
+          data.jobs.length === 0 ? <p className="cron-list-empty">{t("cron.none")}</p> : undefined
+        }
+        list={shown.map((j) => (
+          <PanelRow
+            key={keyOf(j)}
+            title={j.name || j.id}
+            dot={j.state === "paused" || !j.enabled ? "off" : "on"}
+            selected={keyOf(j) === picked}
+            onSelect={() => setPicked(keyOf(j))}
+            data={{ "data-job": j.id }}
+            {...(all ? { meta: j.profile } : {})}
+            menu={{
+              label: t("cron.rowMenu", { name: j.name || j.id }),
+              items: [
+                {
+                  id: "edit",
+                  label: t("manage.cron.edit"),
+                  run: () => setDialog({ kind: "edit", job: j }),
+                },
+                {
+                  id: "delete",
+                  label: t("manage.delete"),
+                  tone: "danger",
+                  run: () => void act(j, "delete"),
+                },
+              ],
+            }}
+          />
+        ))}
+        listFooter={
+          plans.length > 0 ? (
+            <section className="cron-plans">
+              <h3 className="cron-plans-label">{t("cron.blueprints")}</h3>
+              <ul>
+                {plans.map((plan) => (
+                  <li key={plan.skill}>
+                    <button
+                      type="button"
+                      className="cron-plan"
+                      title={plan.description}
+                      onClick={() => setDialog({ kind: "new", blueprint: plan })}
+                    >
+                      <Rocket aria-hidden="true" size={12} />
+                      <span>{plan.skill}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : undefined
+        }
+        {...(job === null
+          ? {}
+          : {
+              detail: (
+                <div className="cron-detail">
+                  <DetailHead
+                    title={job.name || job.id}
+                    pills={<PanelPill tone={stateTone(job)}>{job.state}</PanelPill>}
+                    actions={
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          icon={
+                            paused ? (
+                              <Play aria-hidden="true" size={13} />
+                            ) : (
+                              <Pause aria-hidden="true" size={13} />
+                            )
+                          }
+                          onClick={() => void act(job, paused ? "resume" : "pause")}
+                        >
+                          {paused ? t("manage.cron.resume") : t("manage.cron.pause")}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          icon={<Zap aria-hidden="true" size={13} />}
                           onClick={() => void act(job, "trigger")}
                         >
                           {t("manage.cron.runNow")}
-                        </button>
-                        <button
-                          type="button"
-                          className="button button-secondary"
-                          onClick={() => setEditing(job)}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          icon={<Pencil aria-hidden="true" size={13} />}
+                          onClick={() => setDialog({ kind: "edit", job })}
                         >
                           {t("manage.cron.edit")}
-                        </button>
-                        <button
-                          type="button"
-                          className="button button-secondary"
-                          onClick={() => void act(job, "delete")}
-                        >
-                          {t("manage.delete")}
-                        </button>
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {data.jobs.length === 0 && <p className="manage-muted">{t("manage.cron.none")}</p>}
-          </>
-        )}
-      </LoadState>
-    </ManageOverlay>
+                        </Button>
+                      </>
+                    }
+                  />
+                  <MetaGrid
+                    rows={[
+                      [t("cron.frequency"), job.schedule_display || job.schedule],
+                      [t("cron.nextRun"), when(job.next_run_at)],
+                      [t("manage.cron.lastRun"), when(job.last_run_at)],
+                      [t("manage.cron.deliver"), job.deliver || "—"],
+                      ...(all ? [[t("manage.cron.profile"), job.profile] as const] : []),
+                      ...(job.skills.length > 0
+                        ? [[t("cron.skills"), job.skills.join(", ")] as const]
+                        : []),
+                    ]}
+                  />
+                  <section className="cron-section">
+                    <CapsLabel>{t("manage.cron.prompt")}</CapsLabel>
+                    <PanelBlock>{job.prompt}</PanelBlock>
+                  </section>
+                  <section className="cron-section">
+                    <CapsLabel>{t("cron.runs")}</CapsLabel>
+                    {job.last_run_at === null ? (
+                      <p className="cron-note">{t("cron.noRuns")}</p>
+                    ) : (
+                      <div className="cron-run">
+                        <span>{when(job.last_run_at)}</span>
+                        {job.last_status !== null && (
+                          <PanelPill tone={job.last_error === null ? "good" : "bad"}>
+                            {job.last_status}
+                          </PanelPill>
+                        )}
+                        {job.last_error !== null && (
+                          <span className="cron-run-error">{job.last_error}</span>
+                        )}
+                      </div>
+                    )}
+                  </section>
+                </div>
+              ),
+            })}
+        empty={{
+          icon: <Watch aria-hidden="true" />,
+          title: t("cron.none"),
+          description: t("cron.emptyBody"),
+          action: newButton,
+        }}
+      />
+    );
+  }
+
+  return (
+    <OverlayCard
+      id="cron"
+      title={t("nav.cron")}
+      closeLabel={t("common.close")}
+      onClose={props.onClose}
+    >
+      {body}
+      {dialog !== null && (
+        <CronDialog
+          api={api}
+          profile={own}
+          {...(dialog.kind === "edit" ? { job: dialog.job } : {})}
+          {...(dialog.kind === "new" && dialog.blueprint !== undefined
+            ? { blueprint: dialog.blueprint }
+            : {})}
+          blueprints={plans}
+          targets={targets.state === "ok" ? targets.data.targets : []}
+          onDone={() => {
+            setDialog(null);
+            jobs.reload();
+          }}
+          onClose={() => setDialog(null)}
+        />
+      )}
+    </OverlayCard>
   );
 }

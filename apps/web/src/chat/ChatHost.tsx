@@ -12,6 +12,8 @@
 // a session picked in the rail (or a `/chat?resume=<id>` link from the Sessions page) redials in
 // place with that resume id.
 
+import { useQuery } from "@tanstack/react-query";
+import { Copy, PanelRight, X } from "lucide-react";
 import {
   type ClipboardEvent,
   Component,
@@ -27,10 +29,13 @@ import {
   useState,
 } from "react";
 import { useSearchParams } from "react-router";
+import { api } from "../lib/api.ts";
 import type { ChatHostProps } from "../shell/ChatHostSlot.tsx";
+import { HeaderActions, HeaderTitle } from "../shell/PageHeader.tsx";
 import { useProfileScope } from "../shell/ProfileScope.tsx";
 import { useWideScreen } from "../shell/Sidebar.tsx";
-import { Button } from "../ui/controls.tsx";
+import { Button, IconButton } from "../ui/controls.tsx";
+import { cx } from "../ui/cx.ts";
 import { type AttachTokenKeeper, attachTokens } from "./attachToken.ts";
 import {
   attachImage,
@@ -38,8 +43,9 @@ import {
   type ChatRailProps,
   firstImage,
   storedWorkspace,
+  useEventsFeed,
 } from "./ChatRail.tsx";
-import type { FeedDeps } from "./eventsFeed.ts";
+import { browserFeedDeps, type FeedDeps } from "./eventsFeed.ts";
 import {
   browserPtyDeps,
   PtyConnection,
@@ -70,6 +76,31 @@ export interface ChatHostFullProps extends ChatHostProps {
 }
 
 const NOTICE_MS = 4_000;
+const COPIED_MS = 1_500;
+
+/** Where the side panel's collapsed state is kept, per browser (W52-a). */
+export const PANEL_COLLAPSED_KEY = "indus.chat.panelCollapsed";
+
+function readCollapsed(): boolean {
+  try {
+    return window.localStorage.getItem(PANEL_COLLAPSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeCollapsed(collapsed: boolean): void {
+  try {
+    if (collapsed) window.localStorage.setItem(PANEL_COLLAPSED_KEY, "1");
+    else window.localStorage.removeItem(PANEL_COLLAPSED_KEY);
+  } catch {
+    // storage blocked: the choice lasts for this page only
+  }
+}
+
+/** The small see-through buttons floating on the terminal card ("copy last response", "panel"). */
+const floatingButton =
+  "inline-flex h-7 items-center gap-1.5 rounded-[4px] border border-terminal-fg/30 bg-black/20 px-2.5 font-mono text-[0.75rem] text-terminal-fg opacity-70 transition-opacity hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40 [&_svg]:size-3";
 
 /** A channel id for one mount of the host (ties the PTY child to the rail's feed). */
 export function newChannelId(): string {
@@ -108,14 +139,26 @@ function Overlay({ children }: { children: ReactNode }) {
   return (
     <div
       data-testid="chat-overlay"
-      className="absolute inset-0 flex items-center justify-center bg-bg/80 p-6"
+      className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-black/60 p-6"
     >
       <div
         role="alert"
-        className="flex max-w-md flex-col items-start gap-3 rounded-lg border border-line bg-raised p-4 text-sm"
+        className="flex max-w-md flex-col items-center gap-3 text-center font-mono text-[0.8125rem] text-[#f0e6d2]"
       >
         {children}
       </div>
+    </div>
+  );
+}
+
+/** The amber box at the card's top right while the terminal redials or was taken over. */
+function Corner({ children }: { children: ReactNode }) {
+  return (
+    <div
+      role="status"
+      className="absolute top-4 right-4 z-10 flex max-w-sm items-center gap-3 border border-warning/60 bg-black/80 px-3 py-2 font-mono text-[0.75rem] text-warning"
+    >
+      {children}
     </div>
   );
 }
@@ -132,24 +175,24 @@ function StatusLayer({
   const stop = status.stop;
   if (status.phase === "reconnecting") {
     return (
-      <p role="status" className="absolute inset-x-0 top-0 bg-warn/15 px-3 py-1 text-xs text-warn">
-        {COPY.reconnecting}
-      </p>
+      <Corner>
+        <span className="flex-1">{COPY.reconnecting}</span>
+        <Button size="sm" className="h-6 border-warning text-warning" onClick={onReconnect}>
+          Reconnect now
+        </Button>
+      </Corner>
     );
   }
   if (!stop) return null;
   switch (stop.kind) {
     case "superseded":
       return (
-        <p
-          role="status"
-          className="absolute inset-x-0 top-0 flex items-center gap-2 px-3 py-1 text-xs text-muted"
-        >
+        <Corner>
           <span className="flex-1">{COPY.superseded}</span>
-          <button type="button" className="underline" onClick={onReconnect}>
+          <Button size="sm" className="h-6 border-warning text-warning" onClick={onReconnect}>
             Use it here
-          </button>
-        </p>
+          </Button>
+        </Corner>
       );
     case "exited":
       return (
@@ -235,6 +278,31 @@ export function ChatHost({ active, deps = {} }: ChatHostFullProps) {
   const [notice, setNotice] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [railOpen, setRailOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(readCollapsed);
+  const [copied, setCopied] = useState(false);
+  const feed = useEventsFeed(channel, deps.feed ?? browserFeedDeps);
+  // The header shows the session's title: from the feed when it says so, else from the store
+  // (looked up again after each answer, when the server may have named the session).
+  const liveId = feed.live?.sessionId;
+  const stored = useQuery({
+    queryKey: ["chat", "session-title", liveId, feed.lastAnswer],
+    queryFn: () => api.sessions.one(liveId ?? ""),
+    enabled: active && !!liveId && !feed.live?.title,
+    retry: false,
+    staleTime: 30_000,
+  });
+  const headerTitle = feed.live?.title || (liveId ? stored.data?.title : null) || null;
+
+  const collapse = useCallback((next: boolean) => {
+    setCollapsed(next);
+    writeCollapsed(next);
+  }, []);
+
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), COPIED_MS);
+    return () => clearTimeout(timer);
+  }, [copied]);
 
   const resumeParam = (searchParams.get("resume") ?? "").trim();
   const initialResume = useRef(resumeParam);
@@ -458,8 +526,19 @@ export function ChatHost({ active, deps = {} }: ChatHostFullProps) {
     if (lines !== 0) term.scrollLines(lines);
   };
 
-  const rail = useMemo(
-    () => (
+  const copyLast = async () => {
+    if (!feed.lastAnswer) return;
+    try {
+      await navigator.clipboard.writeText(feed.lastAnswer);
+      setCopied(true);
+      showNotice("Last answer copied.");
+    } catch {
+      showNotice("The browser did not allow copying.");
+    }
+  };
+
+  const railFor = useCallback(
+    (onCollapse?: () => void) => (
       <RailBoundary>
         <Rail
           channel={channel}
@@ -469,28 +548,40 @@ export function ChatHost({ active, deps = {} }: ChatHostFullProps) {
           onResume={resumeSession}
           onNewChat={startFresh}
           typeIntoChat={typeIntoChat}
-          {...(deps.feed ? { feedDeps: deps.feed } : {})}
+          feed={feed}
+          {...(onCollapse ? { onCollapse } : {})}
         />
       </RailBoundary>
     ),
-    [
-      Rail,
-      channel,
-      profile,
-      status.phase,
-      resumeId,
-      resumeSession,
-      startFresh,
-      typeIntoChat,
-      deps.feed,
-    ],
+    [Rail, channel, profile, status.phase, resumeId, resumeSession, startFresh, typeIntoChat, feed],
   );
+  const wideRail = useMemo(() => railFor(() => collapse(true)), [railFor, collapse]);
+  const drawerRail = useMemo(() => railFor(), [railFor]);
+  const panelShown = wide && !collapsed;
 
   return (
-    <div className="flex min-h-0 flex-1" data-testid="chat-layout" data-phase={status.phase}>
+    <div
+      className="flex min-h-0 flex-1 gap-3 px-2 pt-2 lg:pt-[0.9375rem] lg:pr-[1.6875rem] lg:pl-[1.4375rem]"
+      data-testid="chat-layout"
+      data-phase={status.phase}
+    >
+      <HeaderTitle title={active ? headerTitle : null} />
+      {active && !wide ? (
+        <HeaderActions>
+          <button
+            type="button"
+            aria-expanded={railOpen}
+            onClick={() => setRailOpen(true)}
+            className="type-button inline-flex h-7 items-center gap-1.5 border border-ink/20 px-2 text-[0.75rem] text-ink hover:bg-hover [&_svg]:size-3"
+          >
+            <PanelRight aria-hidden="true" />
+            Model &amp; tools
+          </button>
+        </HeaderActions>
+      ) : null}
       <section
         aria-label="Chat terminal"
-        className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-code p-2"
+        className="relative flex min-h-0 min-w-0 flex-1 flex-col rounded-lg bg-terminal p-2 shadow-[0_8px_32px_rgb(0_0_0/0.4)] lg:p-3"
         style={inset ? { paddingBottom: inset } : undefined}
         onPasteCapture={onPaste}
         onDragOver={(event) => {
@@ -506,45 +597,53 @@ export function ChatHost({ active, deps = {} }: ChatHostFullProps) {
           <p
             role="status"
             data-testid="chat-notice"
-            className="absolute bottom-3 left-3 right-3 rounded-md border border-line bg-raised px-3 py-1 text-xs"
+            className="absolute bottom-14 left-4 z-10 max-w-[70%] border border-terminal-fg/30 bg-black/70 px-3 py-1 font-mono text-[0.75rem] text-[#f0e6d2]"
           >
             {notice}
           </p>
         ) : null}
-        {wide ? null : (
+        <button
+          type="button"
+          aria-label="Copy last answer"
+          title={feed.lastAnswer ? "Copy the last answer" : "No answer in this chat yet"}
+          disabled={!feed.lastAnswer}
+          onClick={() => void copyLast()}
+          className={cx(floatingButton, "absolute right-2 bottom-2 z-10 lg:right-4 lg:bottom-4")}
+        >
+          <Copy aria-hidden="true" />
+          <span className="max-[400px]:hidden">{copied ? "copied" : "copy last response"}</span>
+        </button>
+        {wide && collapsed ? (
           <button
             type="button"
-            className="absolute right-3 top-3 rounded-md border border-line bg-raised px-2 py-1 text-xs"
-            aria-expanded={railOpen}
-            onClick={() => setRailOpen(true)}
+            aria-label="Show side panel"
+            onClick={() => collapse(false)}
+            className={cx(floatingButton, "absolute top-2.5 right-3 z-10 h-6")}
           >
-            Details
+            <PanelRight aria-hidden="true" />
+            panel
           </button>
-        )}
+        ) : null}
       </section>
       {wide ? (
-        <aside aria-label="Chat details" className="w-72 shrink-0 border-l border-line bg-raised">
-          {rail}
+        <aside aria-label="Chat details" hidden={!panelShown} className="w-[15rem] shrink-0 pb-3">
+          {wideRail}
         </aside>
       ) : (
         <div
-          className={railOpen ? "fixed inset-0 z-40 flex justify-end bg-bg/60" : "hidden"}
+          className={railOpen ? "fixed inset-0 z-40 flex justify-end bg-overlay" : "hidden"}
           aria-hidden={railOpen ? undefined : true}
         >
           <aside
             aria-label="Chat details"
-            className="flex h-full w-80 max-w-[90vw] flex-col border-l border-line bg-raised"
+            className="flex h-full w-80 max-w-[90vw] flex-col gap-2 border-l border-line bg-canvas p-3 [animation:indus-slide-in_160ms_ease-out]"
           >
-            <div className="flex justify-end p-2">
-              <button
-                type="button"
-                className="rounded-md border border-line px-2 py-1 text-xs"
-                onClick={() => setRailOpen(false)}
-              >
-                Close
-              </button>
+            <div className="flex justify-end">
+              <IconButton label="Close" onClick={() => setRailOpen(false)}>
+                <X />
+              </IconButton>
             </div>
-            <div className="min-h-0 flex-1">{rail}</div>
+            <div className="min-h-0 flex-1">{drawerRail}</div>
           </aside>
         </div>
       )}

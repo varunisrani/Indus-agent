@@ -2,13 +2,12 @@
 // and toasts. Providers that need the browser (router, outer query cache) are set up in main.tsx
 // so tests can supply memory equivalents.
 
-import { useQuery } from "@tanstack/react-query";
+import { Menu } from "lucide-react";
 import { type ComponentType, type ReactNode, Suspense, useEffect, useMemo, useState } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router";
 import { ConsoleEntry } from "./console/ConsoleModal.tsx";
-import { api } from "./lib/api.ts";
 import { consoleEnabled, embeddedChatEnabled } from "./lib/bootstrap.ts";
-import type { ConfigObject } from "./lib/restTypes.ts";
+import { useTokenAnalyticsFlag } from "./lib/useTokenAnalyticsFlag.ts";
 import { mergePluginRoutes, pluginRegistry } from "./plugins/registry.ts";
 import { PluginSlot, pluginPageFor, SLOT_PAGES } from "./plugins/slots.tsx";
 import { usePluginState } from "./plugins/usePluginState.ts";
@@ -25,6 +24,8 @@ import { CHAT_PATH, DEFAULT_PATH, type PageRoute, ROUTES, routeFor } from "./she
 import { readCollapsed, Sidebar, useWideScreen, writeCollapsed } from "./shell/Sidebar.tsx";
 import { StatusStrip } from "./shell/StatusStrip.tsx";
 import { ToastProvider } from "./shell/Toasts.tsx";
+import { ThemeProvider } from "./theme/ThemeProvider.tsx";
+import { Loading } from "./ui/controls.tsx";
 
 export interface AppProps {
   /** The chat terminal host (P18-26); a placeholder until it lands. */
@@ -33,17 +34,11 @@ export interface AppProps {
   sidebarFooter?: ReactNode;
 }
 
-function analyticsFlag(config: ConfigObject | undefined): boolean {
-  const dashboard = config?.dashboard;
-  if (typeof dashboard !== "object" || dashboard === null || Array.isArray(dashboard)) return false;
-  return (dashboard as ConfigObject).show_token_analytics === true;
-}
-
 function RouteFallback() {
   return (
-    <p className="p-6 text-sm text-muted" aria-busy="true">
-      Loading…
-    </p>
+    <div className="p-6">
+      <Loading />
+    </div>
   );
 }
 
@@ -68,12 +63,7 @@ function Shell({ chatHost, sidebarFooter }: Required<Pick<AppProps, "chatHost">>
   }, [mobileOpen]);
   const chatEnabled = embeddedChatEnabled();
 
-  const config = useQuery({
-    queryKey: ["shell", "config", scope.active],
-    queryFn: () => api.config.get(),
-    staleTime: 60_000,
-  });
-  const showAnalytics = analyticsFlag(config.data);
+  const showAnalytics = useTokenAnalyticsFlag().enabled;
 
   const plugins = usePluginState();
   const routes = useMemo(() => {
@@ -109,16 +99,16 @@ function Shell({ chatHost, sidebarFooter }: Required<Pick<AppProps, "chatHost">>
   const menuButton = wide ? null : (
     <button
       type="button"
-      className="rounded-md border border-line px-2 py-1 text-xs"
+      className="inline-flex size-7 items-center justify-center text-ink-muted hover:text-ink"
       aria-label="Open navigation"
       onClick={() => setMobileOpen(true)}
     >
-      Menu
+      <Menu aria-hidden="true" className="size-4" />
     </button>
   );
 
   return (
-    <div className="flex h-full min-h-0 bg-bg text-fg">
+    <div className="flex h-full min-h-0 bg-canvas text-ink">
       <Sidebar
         items={navItems}
         search={scope.search}
@@ -127,14 +117,14 @@ function Shell({ chatHost, sidebarFooter }: Required<Pick<AppProps, "chatHost">>
         onToggleCollapsed={toggleCollapsed}
         mobileOpen={mobileOpen}
         onCloseMobile={() => setMobileOpen(false)}
-        footer={
+        footer={(compact) => (
           <>
             <PluginSlot name="sidebar" />
-            <StatusStrip />
-            <ConsoleEntry enabled={consoleEnabled()} />
-            {sidebarFooter}
+            <StatusStrip compact={compact} />
+            <ConsoleEntry enabled={consoleEnabled()} compact={compact} />
+            {compact ? null : sidebarFooter}
           </>
-        }
+        )}
       />
       <div className="flex min-w-0 flex-1 flex-col">
         <PluginSlot name="backdrop" />
@@ -189,10 +179,12 @@ function Shell({ chatHost, sidebarFooter }: Required<Pick<AppProps, "chatHost">>
 
 export function App({ chatHost = ChatPending, sidebarFooter }: AppProps) {
   return (
-    <ToastProvider>
-      <ProfileScopeProvider>
-        <Shell chatHost={chatHost} sidebarFooter={sidebarFooter} />
-      </ProfileScopeProvider>
-    </ToastProvider>
+    <ThemeProvider>
+      <ToastProvider>
+        <ProfileScopeProvider>
+          <Shell chatHost={chatHost} sidebarFooter={sidebarFooter} />
+        </ProfileScopeProvider>
+      </ToastProvider>
+    </ThemeProvider>
   );
 }

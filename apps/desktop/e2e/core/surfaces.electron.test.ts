@@ -14,6 +14,7 @@ import { cleanupFakes } from "../../testing/fakeIndus.ts";
 import {
   APP_ROOT,
   bridge,
+  clickAt,
   clickButton,
   clickButtonStarting,
   fakeBackend,
@@ -125,8 +126,22 @@ describe.skipIf(skipReason !== "")(
         "the sidebar row",
         30_000,
       );
+      // W52-h: pop-out lives in the row's own menu (right-click), no hover button on the row
+      await app.cdp.eval(`(() => {
+        const row = [...document.querySelectorAll('.session-open')].find((r) =>
+          r.innerText.includes('Demo conversation'),
+        );
+        const box = row.getBoundingClientRect();
+        row.dispatchEvent(new MouseEvent('contextmenu', {
+          bubbles: true, cancelable: true, clientX: box.left + 20, clientY: box.top + 8,
+        }));
+      })()`);
+      await app.cdp.waitFor(
+        `[...document.querySelectorAll('[role="menu"] [role="menuitem"]')].some((i) => i.innerText.trim() === 'Open in window')`,
+        "the row menu",
+      );
       await app.cdp.eval(
-        `document.querySelector('button[aria-label^="Pop Demo conversation out"]').click()`,
+        `[...document.querySelectorAll('[role="menu"] [role="menuitem"]')].find((i) => i.innerText.trim() === 'Open in window').click()`,
       );
       const hud = await app.attach(
         (t) => t.type === "page" && t.url.includes("win=hud"),
@@ -288,11 +303,8 @@ describe.skipIf(skipReason !== "")(
         `!!document.querySelector('.onboarding-form input[type="password"]')`,
         "the key form",
       );
-      await app.cdp.eval(`(() => {
-      const select = document.querySelector('.onboarding-form select');
-      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(select, "openrouter");
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-    })()`);
+      // W52-m: the provider is a tile of the key screen (the native select is gone)
+      await clickAt(app.cdp, '.onboarding-form [data-provider="openrouter"]');
       await fillField(app.cdp, '.onboarding-form input[type="password"]', key);
       await app.cdp.eval(`document.querySelector('.onboarding-form').requestSubmit()`);
       await app.cdp.waitFor(hasButton("Start chatting"), "the model step", 20_000);

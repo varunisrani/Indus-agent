@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Pressure, StatusResponse } from "../lib/restTypes.ts";
 import { createMockApi, type MockApi } from "../testing/mockApi.ts";
-import { renderApp } from "../testing/render.tsx";
+import { renderApp } from "../testing/renderApp.tsx";
 import {
   DISMISSED_KEY,
   forgetRecovered,

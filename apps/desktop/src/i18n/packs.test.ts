@@ -27,7 +27,7 @@ describe("locale packs", () => {
     const keys = ["nav.newChat", "find.count", "common.close"];
     const layered = layerPacks(en, [pseudoPack(keys)], "qps");
     const t = makeTranslate(layered.catalog);
-    expect(t("nav.newChat")).toBe("⟦Néw chát⟧");
+    expect(t("nav.newChat")).toBe("⟦Néw séssíón⟧");
     expect(t("find.count", { current: 2, total: 5 })).toBe("⟦2 óf 5⟧");
     expect(t("common.working")).toBe(en["common.working"]); // not in the pack: English
     expect(layered.translated).toBe(3);

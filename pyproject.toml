@@ -222,7 +222,7 @@ override-dependencies = ["pynacl==1.6.2"]
 line-length = 100
 target-version = "py313"
 # Fixture files are data: a notebook fixture must keep its cells byte for byte.
-extend-exclude = ["tests/fixtures"]
+extend-exclude = [".agents", "tests/fixtures"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "TID251"]
