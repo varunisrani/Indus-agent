@@ -1,7 +1,10 @@
-// The tray glyph (P20-36), drawn in code so the tray needs no image file: a ring with an upright
-// bar through its middle, anti-aliased by supersampling. macOS gets a black template image (the
-// menu bar tints it); other platforms get our accent colour. Pixels are BGRA, the order
-// Electron's `nativeImage.createFromBitmap` reads. A packaged icon (P20-38), when given, wins.
+// The tray glyph (P20-36), drawn in code so the tray needs no image file: the brand mark (W63,
+// `../brandMark.ts`), anti-aliased. macOS gets a black template image (the menu bar tints it);
+// other platforms get the brand ember. Pixels are BGRA, the order Electron's
+// `nativeImage.createFromBitmap` reads. A packaged icon (P20-38), when given, wins.
+
+import { BRAND_COLORS } from "@indus/ui";
+import { markCoverage } from "../brandMark.ts";
 
 export interface TrayBitmap {
   width: number;
@@ -12,39 +15,26 @@ export interface TrayBitmap {
   template: boolean;
 }
 
-/** Our accent (`--indus-color-accent`, dark theme) as [r, g, b]. */
-const ACCENT: readonly [number, number, number] = [0x3d, 0xb6, 0xda];
-const SAMPLES = 4;
+/** The brand ember (`@indus/ui` BRAND_COLORS.ember) as [r, g, b]. */
+const EMBER = hexRgb(BRAND_COLORS.ember);
+/** The mark's box fills this much of the tray square (a little air for the panel). */
+const FILL = 0.9;
 
-function coverage(px: number, py: number, size: number): number {
-  const c = size / 2;
-  const outer = size * 0.44;
-  const inner = size * 0.32;
-  const barHalfWidth = size * 0.07;
-  const barHalfHeight = size * 0.22;
-  let hits = 0;
-  for (let sy = 0; sy < SAMPLES; sy += 1) {
-    for (let sx = 0; sx < SAMPLES; sx += 1) {
-      const x = px + (sx + 0.5) / SAMPLES - c;
-      const y = py + (sy + 0.5) / SAMPLES - c;
-      const r = Math.hypot(x, y);
-      const ring = r <= outer && r >= inner;
-      const bar = Math.abs(x) <= barHalfWidth && Math.abs(y) <= barHalfHeight;
-      if (ring || bar) hits += 1;
-    }
-  }
-  return hits / (SAMPLES * SAMPLES);
+function hexRgb(hex: string): readonly [number, number, number] {
+  const n = Number.parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
 export function trayBitmap(platform: string, scale = 1): TrayBitmap {
   const base = platform === "darwin" ? 18 : 22;
   const size = Math.max(8, Math.round(base * scale));
   const template = platform === "darwin";
-  const [r, g, b] = template ? [0, 0, 0] : ACCENT;
+  const [r, g, b] = template ? [0, 0, 0] : EMBER;
+  const cover = markCoverage(size, FILL, 16);
   const pixels = new Uint8Array(size * size * 4);
   for (let y = 0; y < size; y += 1) {
     for (let x = 0; x < size; x += 1) {
-      const alpha = Math.round(coverage(x, y, size) * 255);
+      const alpha = Math.round((cover[y * size + x] as number) * 255);
       const at = (y * size + x) * 4;
       // Premultiplied BGRA (what Chromium's bitmaps hold).
       pixels[at] = Math.round((b * alpha) / 255);

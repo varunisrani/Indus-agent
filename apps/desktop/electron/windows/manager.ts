@@ -3,6 +3,7 @@
 // sender check trusts. Nothing here focuses a window on its own; `raise` is the explicit
 // user-action path (R08.20).
 
+import { BRAND_COLORS } from "@indus/ui";
 import type { AppOrigin } from "../appOrigin.ts";
 import { CrashReloadBudget, isIntentionalExit } from "./crashReload.ts";
 import { KIND_TRAITS, type TitleBarColors, type WindowKind, windowOptionsFor } from "./factory.ts";
@@ -31,7 +32,8 @@ export const REVEAL_FALLBACK_MS = 4_000;
 export const SAVE_STATE_DEBOUNCE_MS = 500;
 
 export const DEFAULT_TITLE_BAR: TitleBarColors = { color: "#00000000", symbolColor: "#8a8f98" };
-export const DEFAULT_BACKGROUND = "#141518";
+/** The window before the renderer paints: the brand black (the dark scheme's canvas). */
+export const DEFAULT_BACKGROUND = BRAND_COLORS.black;
 
 /** Why a window may be brought to the front: always something the person did. */
 export type UserActionReason =

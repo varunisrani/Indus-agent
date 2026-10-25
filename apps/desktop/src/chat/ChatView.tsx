@@ -9,7 +9,7 @@ import type { GatewayConnection } from "../gateway/connectionStore.ts";
 import { useConnectionState, useMaybeConnectionStore } from "../gateway/react.tsx";
 import { useT } from "../i18n/index.tsx";
 import { useDisplayPrefs } from "../settings/displayPrefs.ts";
-import { Wordmark } from "../ui/components.tsx";
+import { BrandMark, Wordmark } from "../ui/components.tsx";
 import { ComposerDock } from "./ComposerDock.tsx";
 import type { FailureAction } from "./failure.ts";
 import type { ErrorItem } from "./messageStream.ts";
@@ -92,9 +92,9 @@ export function ChatView(props: ChatViewProps) {
       ) : (
         <>
           {display.chatBackdrop && (
-            // W55-F3 chat backdrop: our wordmark, faint, behind the conversation
+            // W55-F3 chat backdrop: our mark, faint, behind the conversation
             <div className="chat-backdrop" aria-hidden="true">
-              {t("chat.empty.title")}
+              <BrandMark className="chat-backdrop-mark" />
             </div>
           )}
           <Transcript

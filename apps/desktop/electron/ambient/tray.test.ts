@@ -238,7 +238,7 @@ describe("minimise to tray", () => {
 });
 
 describe("tray glyph", () => {
-  it("is drawn in code: BGRA, square, with transparent corners and an opaque ring", () => {
+  it("is the brand mark drawn in code: BGRA, square, transparent corners, opaque shapes", () => {
     const linux = trayBitmap("linux");
     expect(linux.width).toBe(22);
     expect(linux.pixels.length).toBe(22 * 22 * 4);

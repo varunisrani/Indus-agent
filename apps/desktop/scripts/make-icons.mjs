@@ -1,6 +1,8 @@
-// Draw the app icon (P20-38, N27: our own artwork). A rounded tile in the accent teal with three
-// white river waves, painted from signed-distance shapes with supersampling and written as PNGs
-// by a tiny encoder (no image library):
+// Draw the app icon (P20-38, N27: our own artwork; W63: the Indus AGI brand). A rounded tile in the
+// brand ember with the white mark inset as in `packages/ui/brand/app-icon.svg` (the mark's 100
+// units in a 160-unit tile), filled from `@indus/ui` MARK_PATH by electron/brandMark.ts (exact
+// row coverage, plain arithmetic, so the bytes are reproducible) and written as PNGs by a tiny
+// encoder (no image library):
 //
 //   resources/icons/icon.png            1024 × 1024 (macOS, Windows; electron-builder converts)
 //   resources/icons/png/<n>x<n>.png     16 … 512 (Linux AppImage, the runtime launcher entry)
@@ -11,13 +13,15 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import zlib from "node:zlib";
+import { BRAND_COLORS } from "@indus/ui";
+import { coverage, MARK_BOX, mark } from "../electron/brandMark.ts";
 
 const APP_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const LINUX_SIZES = Object.freeze([16, 32, 48, 64, 128, 256, 512]);
 
-// @indus/ui accent (light and dark themes) and the white mark.
-const TOP = [0x00, 0x7c, 0x9a];
-const BOTTOM = [0x3d, 0xb6, 0xda];
+const rgb = (hex) => [1, 3, 5].map((at) => Number.parseInt(hex.slice(at, at + 2), 16));
+const TILE_RGB = rgb(BRAND_COLORS.ember);
+const MARK_RGB = rgb(BRAND_COLORS.white);
 
 // -- PNG -------------------------------------------------------------------------------------------
 
@@ -77,87 +81,56 @@ export function pngSize(bytes) {
 
 // -- shapes (in a 1024-unit design space) ----------------------------------------------------------
 
-function roundedRect(x, y) {
-  const half = 412; // tile 824 wide, centred
-  const radius = 184;
-  const qx = Math.abs(x - 512) - (half - radius);
-  const qy = Math.abs(y - 512) - (half - radius);
-  const outside = Math.hypot(Math.max(qx, 0), Math.max(qy, 0));
-  return outside + Math.min(Math.max(qx, qy), 0) - radius;
-}
+const TILE = 824; // centred, the macOS grid's margin around it
+const TILE_RADIUS = 184;
+const TILE_FROM = (1024 - TILE) / 2;
+/** app-icon.svg: the mark's 100 units inset 30 in a 160-unit tile. */
+const MARK_SIZE = (TILE * MARK_BOX) / (MARK_BOX + 2 * 30);
+const MARK_FROM = (1024 - MARK_SIZE) / 2;
+const CORNER_STEPS = 32;
 
-const WAVES = [
-  { y: 392, alpha: 1 },
-  { y: 512, alpha: 0.86 },
-  { y: 632, alpha: 0.72 },
-];
-const WAVE_FROM = 286;
-const WAVE_TO = 738;
-const AMPLITUDE = 34;
-const WAVELENGTH = 226;
-const STROKE = 30; // half-width
-
-// Both ends sit on a crest (flat), so the round caps meet the stroke without a bulge.
-const phase = (x) => ((x - WAVE_FROM) / WAVELENGTH) * 2 * Math.PI;
-
-function waveY(baseY, x) {
-  return baseY + AMPLITUDE * Math.cos(phase(x));
-}
-
-/** Distance from (x, y) to one wave stroke with round caps (negative inside). */
-function wave(baseY, x, y) {
-  const cx = Math.min(Math.max(x, WAVE_FROM), WAVE_TO);
-  const fy = waveY(baseY, cx);
-  if (cx !== x) return Math.hypot(x - cx, y - fy) - STROKE;
-  const slope = -AMPLITUDE * ((2 * Math.PI) / WAVELENGTH) * Math.sin(phase(x));
-  return Math.abs(y - fy) / Math.sqrt(1 + slope * slope) - STROKE;
-}
-
-/** Colour of one design-space point: [r, g, b, a] in 0..1. */
-function shade(x, y, pixel) {
-  const tile = roundedRect(x, y);
-  if (tile > pixel) return [0, 0, 0, 0];
-  const t = Math.min(Math.max((y - 100) / 824, 0), 1);
-  let rgb = TOP.map((c, i) => (c + (BOTTOM[i] - c) * t) / 255);
-  for (const w of WAVES) {
-    const d = wave(w.y, x, y);
-    const cover = Math.min(Math.max(0.5 - d / pixel, 0), 1) * w.alpha;
-    if (cover > 0) rgb = rgb.map((c) => c + (1 - c) * cover);
-  }
-  const edge = Math.min(Math.max(0.5 - tile / pixel, 0), 1);
-  return [rgb[0], rgb[1], rgb[2], edge];
-}
-
-/** Render the icon at `size` px with `samples`² supersampling. */
-export function renderIcon(size, samples = 4) {
-  const out = new Uint8Array(size * size * 4);
-  const scale = 1024 / size;
-  for (let py = 0; py < size; py += 1) {
-    for (let px = 0; px < size; px += 1) {
-      let r = 0;
-      let g = 0;
-      let b = 0;
-      let a = 0;
-      for (let sy = 0; sy < samples; sy += 1) {
-        for (let sx = 0; sx < samples; sx += 1) {
-          const x = (px + (sx + 0.5) / samples) * scale;
-          const y = (py + (sy + 0.5) / samples) * scale;
-          const [cr, cg, cb, ca] = shade(x, y, scale / samples);
-          r += cr * ca;
-          g += cg * ca;
-          b += cb * ca;
-          a += ca;
-        }
-      }
-      const i = (py * size + px) * 4;
-      const n = samples * samples;
-      out[i + 3] = Math.round((a / n) * 255);
-      if (a > 0) {
-        out[i] = Math.round((r / a) * 255);
-        out[i + 1] = Math.round((g / a) * 255);
-        out[i + 2] = Math.round((b / a) * 255);
-      }
+/** The tile's outline: a rounded square, its quarter circles flattened. */
+function tilePolygon() {
+  const points = [];
+  const lo = TILE_FROM + TILE_RADIUS;
+  const hi = TILE_FROM + TILE - TILE_RADIUS;
+  const corners = [
+    [hi, hi, 0],
+    [lo, hi, 0.5],
+    [lo, lo, 1],
+    [hi, lo, 1.5],
+  ];
+  for (const [cx, cy, turn] of corners) {
+    for (let i = 0; i <= CORNER_STEPS; i += 1) {
+      const angle = (turn + (i / CORNER_STEPS) * 0.5) * Math.PI;
+      points.push([cx + TILE_RADIUS * Math.cos(angle), cy + TILE_RADIUS * Math.sin(angle)]);
     }
+  }
+  return points;
+}
+
+/** Render the icon at `size` px as straight RGBA (`rows` coverage samples per pixel row). */
+export function renderIcon(size, rows = size >= 256 ? 4 : 16) {
+  const unit = size / 1024;
+  const tile = coverage([tilePolygon()], size, size, { scale: unit, dx: 0, dy: 0 }, rows);
+  const markScale = (MARK_SIZE / MARK_BOX) * unit;
+  const shape = coverage(
+    mark(),
+    size,
+    size,
+    { scale: markScale, dx: MARK_FROM * unit, dy: MARK_FROM * unit },
+    rows,
+  );
+  const out = new Uint8Array(size * size * 4);
+  for (let i = 0; i < size * size; i += 1) {
+    const a = tile[i];
+    if (a <= 0) continue;
+    // the mark lies inside the tile: its share of the painted part of the pixel
+    const m = Math.min(1, shape[i] / a);
+    for (let c = 0; c < 3; c += 1) {
+      out[i * 4 + c] = Math.round(TILE_RGB[c] + (MARK_RGB[c] - TILE_RGB[c]) * m);
+    }
+    out[i * 4 + 3] = Math.round(a * 255);
   }
   return out;
 }

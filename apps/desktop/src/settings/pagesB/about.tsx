@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { LogsViewer } from "../../app/LogsViewer.tsx";
 import type { IndusUninstallSummary, IndusUpdateStatus } from "../../global.d.ts";
 import { type MessageKey, useT } from "../../i18n/index.tsx";
+import { BrandLockup } from "../../ui/components.tsx";
 import { attempt, useSettings } from "../context.tsx";
 import {
   CompactSelect,
@@ -117,7 +118,7 @@ export function AboutPage() {
         data-highlighted={focusRow === "version" ? "true" : undefined}
       >
         <div className="sb-hero">
-          <span className="sb-hero-mark">INDUS AGENT</span>
+          <BrandLockup className="sb-hero-mark" />
           <span className="sb-hero-name">{t("settings.about2.name")}</span>
           <span className="sb-hero-version">{t("settings.about2.version", { version })}</span>
         </div>

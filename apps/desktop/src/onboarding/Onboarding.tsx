@@ -33,6 +33,7 @@ import { type MessageKey, useT } from "../i18n/index.tsx";
 import type { SaveKey } from "../settings/context.tsx";
 import { SecretInput } from "../settings/customPages.tsx";
 import { bridgeRest, type RestLike, rest } from "../settings/settingsApi.ts";
+import { BrandLockup } from "../ui/components.tsx";
 import {
   deviceProviders,
   type EndpointKind,
@@ -476,6 +477,7 @@ export function Onboarding(props: OnboardingProps) {
         }}
       >
         <header className="onboarding-header">
+          <BrandLockup className="onboarding-brand" />
           <h2 id="onboarding-title">{t("onboarding.title")}</h2>
           <p className="onboarding-lead">{t("onboarding.lead")}</p>
           {state.manual && (

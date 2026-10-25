@@ -17,6 +17,7 @@ import { type MessageKey, useT } from "../i18n/index.tsx";
 import type { InterfaceMode } from "../panes/presets.ts";
 import { useSwitcher } from "../profiles/switcherReact.tsx";
 import { installMarketplaceTheme, useAppearance } from "../theme/AppearancePage.tsx";
+import { BRAND_ACCENT_HUE, deskPalettes } from "../theme/deskTokens.ts";
 import { appearance, syncTui } from "../theme/themeStore.ts";
 import { attempt, type PrefsHandle, usePrefs, useSettings } from "./context.tsx";
 import { PlaceholderSegmentedRow, PlaceholderSwitchRow, Slider, StatusNote } from "./controlsA.tsx";
@@ -238,17 +239,37 @@ export function AppearanceThemePage() {
   const [note, setNote] = useState<{ text: string; error: boolean } | null>(null);
 
   const cards = useMemo<ThemeCard[]>(() => {
-    const out: ThemeCard[] = presets.map((p) => {
+    // the built-in look (no choice stored) is the brand's: Indus Ember dark, Indus Daylight light
+    const desk = deskPalettes[scheme];
+    const out: ThemeCard[] = [
+      {
+        id: null,
+        key: "builtin",
+        label: scheme === "dark" ? t("settingsA.theme.ember") : t("settingsA.theme.daylight"),
+        description:
+          scheme === "dark" ? t("settingsA.theme.desc.ember") : t("settingsA.theme.desc.daylight"),
+        swatches: {
+          canvas: desk["bg-canvas"],
+          band: desk["bg-raised"],
+          line: desk["stroke-1"],
+          fg: desk["fg-1"],
+          muted: desk["fg-2"],
+          bubble: desk.accent,
+        },
+        removable: null,
+      },
+    ];
+    for (const p of presets) {
       const theme = presetTheme(p.id, scheme);
-      return {
-        id: p.id === "indus" ? null : p.id,
+      out.push({
+        id: p.id,
         key: p.id,
         label: p.label,
         description: t(`settingsA.theme.desc.${p.id}` as MessageKey),
         swatches: swatchesFrom((name) => theme[name as keyof typeof theme]?.hex),
         removable: null,
-      };
-    });
+      });
+    }
     for (const u of value.userThemes) {
       out.push({
         id: `user:${u.id}`,
@@ -407,7 +428,7 @@ export function AppearanceThemePage() {
           <span className="settings-inline">
             <Slider
               label={t("appearance.accent")}
-              value={value.accentHue ?? 220}
+              value={value.accentHue ?? BRAND_ACCENT_HUE}
               max={359}
               format={(v) => `${v}°`}
               onChange={(hue) => appearance.setAccent(hue)}

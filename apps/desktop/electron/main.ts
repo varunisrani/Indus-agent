@@ -14,6 +14,7 @@ import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { BRAND_NAME } from "@indus/ui";
 import {
   app,
   BrowserWindow,
@@ -124,6 +125,8 @@ const IDENTITY = runtimeIdentity(
   app.isPackaged,
 );
 const APP_NAME = IDENTITY.appName;
+/** What a window's title bar reads (display only; APP_NAME stays the identity). */
+const WINDOW_TITLE = IDENTITY.channel === "canary" ? `${BRAND_NAME} Canary` : BRAND_NAME;
 
 // -- pre-ready ------------------------------------------------------------------------------------
 
@@ -366,7 +369,7 @@ async function boot(): Promise<void> {
     preloadPath: path.join(HERE, "preload.cjs"),
     dev,
     platform: process.platform,
-    title: APP_NAME,
+    title: WINDOW_TITLE,
     windowStatePath: paths.windowState,
     zoomStatePath: paths.zoomState,
     timers: {

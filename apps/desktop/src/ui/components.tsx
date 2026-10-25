@@ -2,6 +2,7 @@
 // a component and a variant instead of restyling at the call site. See
 // docs/notes/ui-parity/desktop-foundation.md for the catalogue.
 
+import { BRAND_WORDMARK, MARK_PATH, MARK_VIEWBOX } from "@indus/ui";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Check, ChevronDown, ChevronRight, X } from "lucide-react";
 import {
@@ -130,11 +131,54 @@ export function Chip(
   );
 }
 
-/** The large serif product mark of the new-chat screen. */
+/** The brand mark (`@indus/ui` `MARK_PATH`), drawn in `currentColor`; decorative. */
+export function BrandMark(props: { className?: string }) {
+  return (
+    <svg
+      className={props.className === undefined ? "desk-mark" : `desk-mark ${props.className}`}
+      viewBox={MARK_VIEWBOX}
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path fill="currentColor" d={MARK_PATH} />
+    </svg>
+  );
+}
+
+/**
+ * The lockup: the mark beside the two-line wordmark (`INDUS` / `AGI`). With `text` it is an image
+ * of that name; without, decorative (the name is written next to it).
+ */
+export function BrandLockup(props: { text?: string; className?: string }) {
+  const named =
+    props.text === undefined ? { "aria-hidden": true } : { role: "img", "aria-label": props.text };
+  return (
+    <span
+      className={props.className === undefined ? "desk-lockup" : `desk-lockup ${props.className}`}
+      {...named}
+    >
+      <BrandMark className="desk-lockup-mark" />
+      <span className="desk-lockup-words" aria-hidden="true">
+        {BRAND_WORDMARK.map((line) => (
+          <span key={line}>{line}</span>
+        ))}
+      </span>
+    </span>
+  );
+}
+
+/** The product lockup of the new-chat screen (mark and wordmark), with an optional caption. */
 export function Wordmark(props: { text: string; caption?: ReactNode }) {
   return (
     <div className="desk-wordmark-block">
-      <h1 className="desk-wordmark">{props.text}</h1>
+      <h1 className="desk-wordmark" aria-label={props.text}>
+        <BrandMark className="desk-wordmark-mark" />
+        <span className="desk-wordmark-words" aria-hidden="true">
+          {BRAND_WORDMARK.map((line) => (
+            <span key={line}>{line}</span>
+          ))}
+        </span>
+      </h1>
       {props.caption !== undefined && <p className="desk-wordmark-caption">{props.caption}</p>}
     </div>
   );

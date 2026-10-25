@@ -8,6 +8,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { BRAND_NAME } from "@indus/ui";
 
 export const LAUNCHER_ICON_SIZE = 256;
 
@@ -35,7 +36,7 @@ export function desktopEntry(input: LauncherInput): string {
     "[Desktop Entry]",
     "Type=Application",
     `Name=${name}`,
-    "Comment=Desktop app for Indus Agent",
+    `Comment=Desktop app for ${BRAND_NAME}`,
     `Exec=${quoteExecArg(input.execPath)} %U`,
     `Icon=${input.id}`,
     "Terminal=false",

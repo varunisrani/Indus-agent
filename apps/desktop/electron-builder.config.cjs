@@ -232,8 +232,10 @@ const config = {
     executableName: IDENTITY.executableName,
     // The release checklist's placeholder (RM12) until the owner names a monitored address.
     maintainer: "Indus Agent maintainers <maintainers@indus.invalid>",
-    synopsis: "Desktop app for Indus Agent",
-    description: "Chat with Indus Agent, review its edits and run its tools from a desktop window.",
+    // The display name is `@indus/ui` BRAND_NAME (builderConfig.test.ts holds them equal).
+    synopsis: "Desktop app for Indus AGI Agent",
+    description:
+      "Chat with Indus AGI Agent, review its edits and run its tools from a desktop window.",
   },
   deb: {
     // The canary installs beside the stable package.

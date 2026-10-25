@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { BRAND_NAME } from "@indus/ui";
 import { afterAll, describe, expect, it } from "vitest";
 import {
   desktopEntry,
@@ -60,6 +61,7 @@ describe("Linux launcher entry", () => {
     expect(text).toContain("Exec=/opt/Indus.AppImage %U\n");
     expect(text).toContain("MimeType=x-scheme-handler/indus;\n");
     expect(text).toContain("Icon=ai.indus.desktop\n");
+    expect(text).toContain(`Comment=Desktop app for ${BRAND_NAME}\n`);
     expect(text.startsWith("[Desktop Entry]\nType=Application\n")).toBe(true);
   });
 

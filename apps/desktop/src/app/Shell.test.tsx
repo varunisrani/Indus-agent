@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import type { ClientEvent } from "@indus/client";
+import { BRAND_NAME, BRAND_WORDMARK, MARK_PATH } from "@indus/ui";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import axe from "axe-core";
 import { MemoryRouter, useLocation } from "react-router";
@@ -49,7 +50,10 @@ describe("shell", () => {
     mount("/");
     expect(screen.getByRole("navigation", { name: "Main" })).toBeTruthy();
     expect(screen.getByRole("main")).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "INDUS AGENT" })).toBeTruthy();
+    // the new chat's lockup: the brand mark beside INDUS / AGI, named with the product name
+    const lockup = screen.getByRole("heading", { name: BRAND_NAME });
+    expect(lockup.querySelector("svg.desk-mark path")?.getAttribute("d")).toBe(MARK_PATH);
+    expect(lockup.textContent).toBe(BRAND_WORDMARK.join(""));
   });
 
   it("an unknown route opens a new chat", async () => {

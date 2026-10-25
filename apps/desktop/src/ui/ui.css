@@ -219,6 +219,10 @@
 
 /* -- wordmark and empty states -------------------------------------------------------------- */
 
+.desk-mark {
+  display: block;
+}
+
 .desk-wordmark-block {
   display: flex;
   flex-direction: column;
@@ -228,16 +232,53 @@
 }
 
 .desk-wordmark {
+  display: flex;
+  align-items: center;
+  gap: 0.22em;
   margin: 0;
-  color: var(--desk-wordmark);
+  color: var(--desk-fg-1);
   font-family: var(--desk-font-display);
-  font-weight: 400;
-  font-size: clamp(56px, 11.1vw, 180px);
-  line-height: 0.9;
-  letter-spacing: 0.005em;
+  font-weight: 800;
+  font-size: clamp(44px, 7.4vw, 120px);
+  line-height: 0.86;
+  letter-spacing: 0.02em;
   white-space: nowrap;
-  transform: scaleX(0.85);
   user-select: none;
+}
+
+/* the mark spans both lines of the wordmark, in the brand ember */
+.desk-wordmark-mark {
+  flex: none;
+  width: 1.62em;
+  height: 1.62em;
+  color: var(--desk-wordmark);
+}
+
+.desk-wordmark-words,
+.desk-lockup-words {
+  display: flex;
+  flex-direction: column;
+}
+
+/* the small lockup (About, onboarding): the same shapes at text size */
+.desk-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  color: var(--desk-fg-1);
+  font-family: var(--desk-font-display);
+  font-weight: 800;
+  line-height: 0.9;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.desk-lockup-mark {
+  flex: none;
+  width: 1.8em;
+  height: 1.8em;
+  color: var(--desk-wordmark);
 }
 
 .desk-wordmark-caption {

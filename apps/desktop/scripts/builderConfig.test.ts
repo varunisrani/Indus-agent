@@ -2,6 +2,7 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { BRAND_COLORS, BRAND_NAME } from "@indus/ui";
 import { describe, expect, it } from "vitest";
 // @ts-expect-error -- plain JS module without types
 import { parseFlags, targetsFor, unsignedEnv } from "./dist-unsigned.mjs";
@@ -169,8 +170,27 @@ describe("electron-builder config", () => {
   it("the committed icons are the generator's output (our own artwork)", () => {
     const render = renderIcon as (n: number) => Uint8Array;
     const encode = encodePng as (w: number, h: number, rgba: Uint8Array) => Buffer;
-    const committed = fs.readFileSync(path.join(APP_DIR, "resources/icons/png/32x32.png"));
-    expect(encode(32, 32, render(32)).equals(committed)).toBe(true);
+    for (const n of [32, 128]) {
+      const committed = fs.readFileSync(path.join(APP_DIR, `resources/icons/png/${n}x${n}.png`));
+      expect(encode(n, n, render(n)).equals(committed), `${n}x${n}`).toBe(true);
+    }
+  });
+
+  it("the icon is the brand tile: white mark on ember, transparent outside the rounded square", () => {
+    const render = renderIcon as (n: number) => Uint8Array;
+    const px = (rgba: Uint8Array, n: number, x: number, y: number) =>
+      Array.from(rgba.subarray((y * n + x) * 4, (y * n + x) * 4 + 4));
+    const icon = render(128);
+    const ember = [0xf2, 0x40, 0x01, 255];
+    expect(BRAND_COLORS.ember).toBe("#f24001");
+    expect(px(icon, 128, 0, 0)).toEqual([0, 0, 0, 0]); // outside the tile
+    expect(px(icon, 128, 20, 64)).toEqual(ember); // tile, left of the mark
+    expect(px(icon, 128, 64, 64)).toEqual([255, 255, 255, 255]); // the mark's diagonal bar
+  });
+
+  it("names the app with the brand in the Linux package copy", () => {
+    expect(config.linux.synopsis).toBe(`Desktop app for ${BRAND_NAME}`);
+    expect(String(config.linux.description)).toContain(BRAND_NAME);
   });
 });
 

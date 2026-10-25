@@ -2,6 +2,8 @@
 // Providers, Gateways, Keyboard Shortcuts, Tools & Keys, Sessions, Plugins and About. Spread into
 // `src/i18n/en.ts` after the settings shell's strings.
 
+import { BRAND_NAME } from "@indus/ui";
+
 export const SETTINGS_B_STRINGS = {
   "settings.view.voice": "Voice",
   "settings.view.tools": "Tools & Keys",
@@ -220,7 +222,7 @@ export const SETTINGS_B_STRINGS = {
   "settings.sessionDir.clear": "Clear",
   "settings.sessionDir.noWindow": "The default folder is set from the main window.",
 
-  "settings.about2.name": "Indus Agent",
+  "settings.about2.name": BRAND_NAME,
   "settings.about2.version": "Version {version}",
   "settings.about2.upToDate": "You're up to date",
   "settings.about2.available": "Version {version} is available",

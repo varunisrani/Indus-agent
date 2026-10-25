@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
+import { BRAND_NAME, MARK_PATH } from "@indus/ui";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { ThemeProvider } from "../app/theme.tsx";
 import type { IndusProfileState } from "../global.d.ts";
+import { appearance } from "../theme/themeStore.ts";
 import type { SettingsBridge } from "./context.tsx";
 import { DISPLAY_DEFAULTS } from "./displayPrefs.ts";
 import { fakeRest } from "./fakeRest.ts";
@@ -296,6 +298,35 @@ describe("settings overlay", () => {
     const block = document.querySelector('[data-ui="settings-licences-text"]') as HTMLElement;
     expect(block.textContent).toBe(text);
     expect(block.querySelector("b")).toBeNull(); // never parsed as markup
+  });
+
+  it("Appearance → Theme: the brand look (Indus Daylight / Ember) is the default; Indus stays a choice", async () => {
+    render(
+      <Harness initial="view=appearance&page=theme" api={backend(["default"])} bridge={null} />,
+    );
+    await settle();
+    const radios = screen.getAllByRole("radio").filter((r) => r.closest(".settingsA-theme-card"));
+    // jsdom has no dark preference: the light side of the built-in look
+    expect(radios[0]?.textContent).toContain("Indus Daylight");
+    expect(radios[0]?.getAttribute("aria-checked")).toBe("true");
+    const classic = radios.find((r) => r.textContent?.startsWith("Indus") && r !== radios[0]);
+    expect(classic?.textContent).toContain("river blue");
+    expect(classic?.getAttribute("aria-checked")).toBe("false");
+    await act(async () => {
+      fireEvent.click(classic as HTMLElement);
+    });
+    expect(appearance.get().theme).toBe("indus");
+    act(() => appearance.choose(null));
+  });
+
+  it("About shows the brand lockup and the product name", async () => {
+    render(<Harness initial="view=about" api={backend(["default"])} bridge={null} />);
+    await settle();
+    const hero = document.querySelector(".sb-hero") as HTMLElement;
+    expect(hero.querySelector(".desk-lockup svg path")?.getAttribute("d")).toBe(MARK_PATH);
+    expect(hero.querySelector(".desk-lockup")?.getAttribute("aria-hidden")).toBe("true");
+    expect(hero.querySelector(".sb-hero-name")?.textContent).toBe(BRAND_NAME);
+    expect(hero.textContent).not.toContain("INDUS AGENT");
   });
 
   it("Licences without a notices file (a dev run or an old main) says why (W46, F-2)", async () => {

@@ -2,13 +2,16 @@
 // custom properties on `:root[data-theme=…]`. Every renderer stylesheet reads these names.
 //
 // Roles, not colours: `bg-*` are surfaces from the outermost band inwards, `fg-1..4` the text
-// ladder, `stroke-*` the hairlines, `row-*` list states, `accent*` the brand blue. The values were
-// measured from the parity screenshots; they are tuned by hand here, not generated.
+// ladder, `stroke-*` the hairlines, `row-*` list states, `accent*` the brand ember (W63, the Indus
+// AGI palette in `@indus/ui` `BRAND_COLORS`). The values are tuned by hand here, not generated;
+// `deskTokens.test.ts` holds their contrast.
 //
 // The older `--indus-color-*` names (written by `@indus/ui`) are pointed at the same palette so
 // stylesheets that still use them follow. A chosen appearance preset repaints `--indus-color-*`;
 // `deskFromPresetCss` then derives the desk surfaces from the preset's colours so the whole window
 // follows the preset rather than only the parts that use the older names.
+
+import { BRAND_COLORS } from "@indus/ui";
 
 export type DeskScheme = "light" | "dark";
 
@@ -56,7 +59,7 @@ export const deskColourNames = [
   "danger-soft",
   "warning",
   "success",
-  "attention", // orange: an approval waits, the backend needs setup (W52-g)
+  "attention", // gold: an approval waits, the backend needs setup (W52-g); never the accent
   // code
   "code-fg",
   "code-keyword",
@@ -70,103 +73,110 @@ export type DeskColourName = (typeof deskColourNames)[number];
 
 export type DeskPalette = Readonly<Record<DeskColourName, string>>;
 
+// Indus Ember (dark): neutral near-black surfaces around the brand black, the bands a step lifted,
+// neutral grey hairlines, the mark's ember as the accent (dark text on it: white on ember is under
+// AA). Indus Daylight (light): warm paper and cream, a deeper ember that holds AA for text on the
+// paper and for white text on it. The mark itself is the brand ember in both (`wordmark`).
 const dark: DeskPalette = {
-  "bg-band": "#010409",
-  "bg-canvas": "#0d1015",
-  "bg-input": "#0c0e12",
-  "bg-raised": "#151a21",
-  "bg-bubble": "#0f1621",
-  "bg-code": "#0f1116",
-  "bg-table-head": "#11141a",
-  "bg-kbd": "#14171d",
-  backdrop: "rgb(0 0 0 / 0.62)",
-  "row-hover": "#0b111b",
-  "row-active": "#101826",
-  "row-active-soft": "#0d1421",
-  "fg-1": "#d8dfe5",
-  "fg-2": "#aab1b6",
-  "fg-3": "#7f858b",
-  "fg-4": "#4a4e54",
-  "stroke-1": "#1c2027",
-  "stroke-2": "#1d2535",
-  "stroke-3": "#232f47",
-  "stroke-field": "#151b26",
-  "stroke-strong": "#2c3035",
-  "stroke-active": "#1f2c44",
-  "bg-pill": "#1a1e24",
-  "bg-card": "#151a22",
-  "stroke-card": "#232d40",
-  accent: "#4a84fe",
-  "accent-fg": "#151617", // dark text on the light blue, as measured
-  "accent-soft": "#13213d",
-  "accent-tint": "#101722",
-  "accent-ring": "#192643",
-  wordmark: "#c5cbd1",
-  "send-bg": "#d8dfe6",
-  "send-fg": "#0d0e11",
-  danger: "#ef6f86",
-  "danger-soft": "#2a1218",
-  warning: "#d6a24a",
+  "bg-band": "#111111",
+  "bg-canvas": BRAND_COLORS.black,
+  "bg-input": "#0e0e0e",
+  "bg-raised": "#161616",
+  "bg-bubble": "#1a1513",
+  "bg-code": "#101010",
+  "bg-table-head": "#131313",
+  "bg-kbd": "#1a1a1a",
+  backdrop: "rgb(0 0 0 / 0.66)",
+  "row-hover": "#181818",
+  "row-active": "#251712",
+  "row-active-soft": "#1d1411",
+  "fg-1": "#ebe7e1",
+  "fg-2": "#b3aea7",
+  "fg-3": "#86817b",
+  "fg-4": "#4f4b47",
+  "stroke-1": "#1f1f1f",
+  "stroke-2": "#232323",
+  "stroke-3": "#2e2e2e",
+  "stroke-field": "#1c1c1c",
+  "stroke-strong": "#333333",
+  "stroke-active": "#582310",
+  "bg-pill": "#1c1c1c",
+  "bg-card": "#141414",
+  "stroke-card": "#2a2a2a",
+  accent: BRAND_COLORS.ember,
+  "accent-fg": BRAND_COLORS.black, // white on ember fails AA; the brand black reads at 5.2:1
+  "accent-soft": "#2f1309",
+  "accent-tint": "#1a0e09",
+  "accent-ring": "#501a07",
+  wordmark: BRAND_COLORS.ember,
+  "send-bg": BRAND_COLORS.ember,
+  "send-fg": BRAND_COLORS.black,
+  danger: "#f0708f",
+  "danger-soft": "#2a1117",
+  warning: "#e0c84a",
   success: "#55a583",
-  attention: "#fe9a00",
-  "code-fg": "#d8dfe5",
+  attention: "#f8ad04",
+  "code-fg": "#ebe7e1",
   "code-keyword": "#f47067",
   "code-function": "#d2a8ff",
   "code-number": "#79b8ff",
   "code-string": "#a5d6ff",
-  "code-comment": "#7f858b",
-  selection: "rgb(74 132 254 / 0.32)",
+  "code-comment": "#86817b",
+  selection: "rgb(242 64 1 / 0.3)",
 };
 
 const light: DeskPalette = {
-  "bg-band": "#f6f8fa",
-  "bg-canvas": "#ffffff",
-  "bg-input": "#fbfbfc",
+  "bg-band": "#f6f1e9",
+  "bg-canvas": "#fffcf7",
+  "bg-input": "#fffdfa",
   "bg-raised": "#ffffff",
-  "bg-bubble": "#fcfcfd",
-  "bg-code": "#f6f8fa",
-  "bg-table-head": "#fafbfc",
-  "bg-kbd": "#f3f5f6",
-  backdrop: "rgb(0 0 0 / 0.55)",
-  "row-hover": "#e8eef7",
-  "row-active": "#d8e1f0",
-  "row-active-soft": "#dee5f2",
-  "fg-1": "#24292f",
-  "fg-2": "#4f5359",
-  "fg-3": "#71757a",
-  "fg-4": "#b4b7ba",
-  "stroke-1": "#e3e6ea",
-  "stroke-2": "#dae3f4",
-  "stroke-3": "#c8d5f1",
-  "stroke-field": "#e3e9f5",
-  "stroke-strong": "#d0d7de",
-  "stroke-active": "#b9cae8",
-  "bg-pill": "#f3f4f5",
-  "bg-card": "#f0f2f8",
-  "stroke-card": "#ced9ef",
-  accent: "#0053fd",
-  "accent-fg": "#ffffff",
-  "accent-soft": "#e6eeff",
-  "accent-tint": "#eff4fe",
-  "accent-ring": "#cbdcfe",
-  wordmark: "#0053fd",
-  "send-bg": "#2c3035",
-  "send-fg": "#ffffff",
-  danger: "#c4213f",
-  "danger-soft": "#fbeaee",
-  warning: "#9a6516",
+  "bg-bubble": "#fbf5ee",
+  "bg-code": "#f7f2ea",
+  "bg-table-head": "#faf6f0",
+  "bg-kbd": "#f1ebe2",
+  backdrop: "rgb(10 10 10 / 0.5)",
+  "row-hover": "#fbf0e8",
+  "row-active": "#f6e0d4",
+  "row-active-soft": "#f9e8de",
+  "fg-1": "#1f1a16",
+  "fg-2": "#4f4740",
+  "fg-3": "#71685f",
+  "fg-4": "#b6aca1",
+  "stroke-1": "#e8e1d6",
+  "stroke-2": "#ece3d6",
+  "stroke-3": "#e0d3c2",
+  "stroke-field": "#e9e1d5",
+  "stroke-strong": "#d4c9bb",
+  "stroke-active": "#edc0ad",
+  "bg-pill": "#f3eee6",
+  "bg-card": "#f8f3ec",
+  "stroke-card": "#e3d7c7",
+  accent: "#c23300",
+  "accent-fg": BRAND_COLORS.white,
+  "accent-soft": "#f8e4d9",
+  "accent-tint": "#fbf0e8",
+  "accent-ring": "#eec4b2",
+  wordmark: BRAND_COLORS.ember,
+  "send-bg": "#c23300",
+  "send-fg": BRAND_COLORS.white,
+  danger: "#b51747",
+  "danger-soft": "#fbe9ee",
+  warning: "#7a6f00",
   success: "#1a7f5a",
-  attention: "#e17100",
-  "code-fg": "#1f2328",
+  attention: "#9c6a00",
+  "code-fg": "#1f1a16",
   "code-keyword": "#cf222e",
   "code-function": "#8250df",
   "code-number": "#0550ae",
   "code-string": "#0a3069",
-  "code-comment": "#6e7781",
-  selection: "rgb(0 83 253 / 0.18)",
+  "code-comment": "#6e6760",
+  selection: "rgb(194 51 0 / 0.16)",
 };
 
 export const deskPalettes: Readonly<Record<DeskScheme, DeskPalette>> = { light, dark };
+
+/** The brand ember's hue in degrees: where the accent-hue slider rests with no hue chosen. */
+export const BRAND_ACCENT_HUE = 16;
 
 /** Sizes shared by both schemes (px unless named otherwise). */
 export const deskSizes = {
@@ -185,7 +195,8 @@ export const deskSizes = {
   "text-chat": "15px",
   "text-title": "18px",
   "font-ui": '"Inter", system-ui, "Segoe UI Variable", "Segoe UI", "Noto Sans", Ubuntu, sans-serif',
-  "font-display": '"Abril Fatface", "Bodoni Moda", Didot, "Times New Roman", serif',
+  // the wordmark's heavy sans (Inter 800), set beside the mark
+  "font-display": '"Inter", system-ui, "Segoe UI Variable", "Segoe UI", "Noto Sans", sans-serif',
   "shadow-menu": "0 8px 24px rgb(0 0 0 / 0.18), 0 1px 3px rgb(0 0 0 / 0.12)",
   "shadow-card": "0 24px 64px rgb(0 0 0 / 0.35), 0 2px 8px rgb(0 0 0 / 0.2)",
 } as const;
@@ -272,7 +283,7 @@ export function deskFromPresetCss(scheme: DeskScheme): string {
     accent,
     "accent-fg": "var(--indus-color-accent-fg)",
     "accent-soft": mix(accent, 12, base),
-    wordmark: scheme === "dark" ? mix(ink, 85, base) : accent,
+    wordmark: accent,
     "send-bg": ink,
     "send-fg": base,
     danger: "var(--indus-color-danger)",

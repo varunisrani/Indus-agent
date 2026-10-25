@@ -596,10 +596,8 @@
 }
 
 .sb-hero-mark {
-  color: var(--desk-wordmark);
-  font-family: var(--desk-font-display);
-  font-size: 28px;
-  letter-spacing: 0.02em;
+  margin-bottom: 8px;
+  font-size: 26px;
 }
 
 .sb-hero-name {

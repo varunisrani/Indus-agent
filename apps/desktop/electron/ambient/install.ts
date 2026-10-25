@@ -7,6 +7,7 @@
 
 import { randomUUID } from "node:crypto";
 import path from "node:path";
+import { BRAND_NAME, BRAND_SHORT } from "@indus/ui";
 import type { MainContext } from "../context.ts";
 import type { EventChannel } from "../ipc/channels.ts";
 import type { EventTarget } from "../ipc/registry.ts";
@@ -277,7 +278,7 @@ export function installAmbient(
     timers,
     log: line,
     onChange: () => broadcast("indus:ambient:changed", ambientView()),
-    labels: { show: "Show Indus", quit: "Quit Indus", tooltip: "Indus" },
+    labels: { show: `Show ${BRAND_SHORT}`, quit: `Quit ${BRAND_SHORT}`, tooltip: BRAND_NAME },
   });
 
   windows.onWindowCreated((win, kind) => {
@@ -320,7 +321,7 @@ export function installAmbient(
 
   const notifications = new NotificationCenter({
     platform: context.platform,
-    appName: "Indus",
+    appName: BRAND_NAME,
     isSupported: () => electron.notification.isSupported(),
     create: (options) => electron.notification.create(options),
     dbus,

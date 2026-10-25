@@ -1,8 +1,10 @@
 // English strings of Settings → About → Uninstall (P24-34).
 
+import { BRAND_NAME } from "@indus/ui";
+
 export const UNINSTALL_STRINGS = {
   "settings.uninstall.title": "Uninstall",
-  "settings.uninstall.heading": "Uninstall Indus Agent",
+  "settings.uninstall.heading": `Uninstall ${BRAND_NAME}`,
   "settings.uninstall.intro":
     "Indus quits first; a small helper then runs `indus uninstall` and removes what you chose.",
   "settings.uninstall.checking": "Checking how Indus was installed",

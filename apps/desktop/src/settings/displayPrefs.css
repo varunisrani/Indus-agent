@@ -43,7 +43,7 @@
   visibility: hidden;
 }
 
-/* -- chat backdrop: our wordmark, faint, behind the conversation --------------------------------- */
+/* -- chat backdrop: our mark, faint, behind the conversation ------------------------------------ */
 
 .chat {
   position: relative;
@@ -57,14 +57,14 @@
   justify-content: center;
   overflow: hidden;
   color: var(--desk-wordmark);
-  font-family: var(--desk-font-display);
-  font-size: clamp(56px, 11.1vw, 180px);
-  line-height: 0.9;
-  white-space: nowrap;
   opacity: 0.06;
   pointer-events: none;
   user-select: none;
-  transform: scaleX(0.85);
+}
+
+.chat-backdrop-mark {
+  width: clamp(160px, 28vw, 360px);
+  height: clamp(160px, 28vw, 360px);
 }
 
 /* -- session list density ------------------------------------------------------------------------ */

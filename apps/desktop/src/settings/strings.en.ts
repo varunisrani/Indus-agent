@@ -1,6 +1,8 @@
 // English strings of the Settings overlay (P20-32). The app catalogue (`src/i18n/en.ts`) spreads
 // them in; `{name}` placeholders are filled by `t(key, vars)`.
 
+import { BRAND_NAME } from "@indus/ui";
+
 export const SETTINGS_STRINGS = {
   "settings.moreFields": "More settings",
   "settings.expand": "Expand: {section}",
@@ -110,7 +112,7 @@ export const SETTINGS_STRINGS = {
   "settings.updates.installing": "Installing",
   "settings.updates.error": "The update did not work",
   "settings.updates.manual": "Update by hand",
-  "settings.about.title": "About Indus",
+  "settings.about.title": `About ${BRAND_NAME}`,
   "settings.about.app": "App",
   "settings.about.backend": "Indus runtime",
   "settings.about.state": "Updates",

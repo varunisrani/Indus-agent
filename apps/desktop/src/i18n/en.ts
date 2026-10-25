@@ -1,6 +1,7 @@
 // English strings (D-16.51: English only in 1.0, every visible string through `useT`).
 // One flat record; keys are `area.thing`. Other slices append their own block at the end.
 
+import { BRAND_NAME } from "@indus/ui";
 import { AMBIENT_STRINGS } from "../ambient/strings.en.ts";
 import { CAPABILITY_STRINGS } from "../app/capabilities/strings.en.ts";
 import { COMMAND_CENTER_STRINGS } from "../app/command-center/strings.en.ts";
@@ -73,7 +74,7 @@ export const en = {
     "Still trying to reach Indus. Your conversation stays here and you can keep writing.",
 
   "chat.label": "Conversation",
-  "chat.empty.title": "INDUS AGENT",
+  "chat.empty.title": BRAND_NAME,
   "chat.empty.body":
     "Describe a task, ask a question or paste a snippet. Indus keeps the whole session in mind and asks before it guesses.",
   "chat.composer.float": "Float the message box (drag to move)",

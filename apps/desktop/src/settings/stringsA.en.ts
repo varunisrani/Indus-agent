@@ -157,7 +157,7 @@ export const SETTINGS_A_STRINGS = {
   "settingsA.general.language": "Language",
   "settingsA.general.languageBody": "Indus ships in English for now.",
   "settingsA.general.splash": "Intro splash",
-  "settingsA.general.splashBody": "The wordmark and its caption on a new, empty chat.",
+  "settingsA.general.splashBody": "The Indus AGI mark, wordmark and caption on a new, empty chat.",
   "settingsA.general.pricing": "Model pricing",
   "settingsA.general.reopen": "Reopen last chat on launch",
   "settingsA.general.reopenBody":
@@ -175,6 +175,12 @@ export const SETTINGS_A_STRINGS = {
   "settingsA.theme.marketplace": "From the VS Code Marketplace",
   "settingsA.theme.yours": "A theme you added",
   "settingsA.theme.plugin": "From a plugin",
+  "settingsA.theme.ember": "Indus Ember",
+  "settingsA.theme.daylight": "Indus Daylight",
+  "settingsA.theme.desc.ember":
+    "The Indus AGI look: the ember mark on near-black. Light mode uses Indus Daylight.",
+  "settingsA.theme.desc.daylight":
+    "The Indus AGI look: deep ember on warm paper. Dark mode uses Indus Ember.",
   "settingsA.theme.desc.indus": "Clay neutrals with a river blue accent.",
   "settingsA.theme.desc.monsoon": "Rain-washed greys and a deep sky blue.",
   "settingsA.theme.desc.laterite": "Warm brick reds on sun-baked earth.",
@@ -232,7 +238,7 @@ export const SETTINGS_A_STRINGS = {
   "settingsA.window.right": "Right",
   "settingsA.window.left": "Left",
   "settingsA.window.backdrop": "Chat backdrop",
-  "settingsA.window.backdropBody": "A faint Indus wordmark behind the conversation.",
+  "settingsA.window.backdropBody": "A faint Indus AGI mark behind the conversation.",
   "settingsA.window.files": "File browser",
   "settingsA.window.filesBody":
     "Open the Files pane beside the chat whenever this window works in a folder. Closing it lasts until you switch to another folder.",

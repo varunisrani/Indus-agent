@@ -10,7 +10,7 @@ import { useTheme } from "../app/theme.tsx";
 import type { IndusDesktopThemes, IndusMarketplaceItem } from "../global.d.ts";
 import { useT } from "../i18n/index.tsx";
 import { bridgeRest, type RestLike } from "../settings/settingsApi.ts";
-import { deskFromPresetCss } from "./deskTokens.ts";
+import { BRAND_ACCENT_HUE, deskFromPresetCss } from "./deskTokens.ts";
 import { type AppearanceStore, appearance, syncTui, userThemeFrom } from "./themeStore.ts";
 import { base64Bytes, themesFromVsix } from "./vscodeImport.ts";
 
@@ -144,7 +144,7 @@ export function AppearancePresets(props: {
           type="range"
           min={0}
           max={359}
-          value={value.accentHue ?? 220}
+          value={value.accentHue ?? BRAND_ACCENT_HUE}
           onChange={(event) => store.setAccent(Number(event.target.value))}
         />
         <button type="button" className={BUTTON} onClick={() => store.setAccent(null)}>
