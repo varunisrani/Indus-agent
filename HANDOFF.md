@@ -89,14 +89,14 @@ WAVE 54 LANDED (fixes from the side-by-side compare): W1 web `c4243ab` (D-16.127
 History, real Import dialog, mixed-case buttons reversing D-16.1208), D2 desktop settings states `473225c` (D-16.1271: real
 password-manager detection over PATH, keychain switch shows the effective store, wake word waits for the connection),
 D1 desktop chat + panes `6862338` (D-16.1272: prompt bubble CSS clash, terminal block, dots, right sidebar, xterm font).
-WAVES 55–56 LANDED: F1 `f97d8f7` (D-16.1273), F3 `be4bf77` (D-16.1274), F2 `1136463` (D-16.1275: starter cron blueprints,
-profiles skill_count, `/api/mcp/catalog` over the 4 MCP presets), G2 + G1 `fe10143` (D-16.1276 web themes 8 presets AA-tested,
-blueprint slot inputs; D-16.1277 window prefs + session Export IPC). Second compare done (Agent 2 scratchpad `compare2/`:
-26 slugs fixed + 11 partial since the first; fresh gaps.md).
-IN FLIGHT: wave 57 H1 (docs dark panel, Files/right-sidebar width, Messaging raw label, error-card Retry/Open logs, web model
-list; base 383e3f5) and wave 58 J1 (desktop: usage from existing analytics, DevTools/external-links prefs, execution backend
-picker, MoA preset bug, row menu Open in terminal / Move to project) + J2 (web: in-app docs from our docs, raw YAML save,
-skill create, OAuth provider list). Owner calls: Clear Blue preset below AA (D-16.1276).
+LANDED since wave 53 (all D-16.1270–1280, each with a lead gate on the combined tree): wave 54 W1/D2/D1; wave 55 F1, F3,
+F2 (`1136463`); wave 56 G2+G1 (`fe10143`); wave 57 H1 (`b8c14c1`: docs theme, messaging labels, error-card Retry, model list);
+wave 58 J1+J2 (`62a1e7a`: usage api_calls/by_model, Tools opens on Terminal, Open in terminal; in-app docs from docs/user,
+GET/PUT /api/config/raw, POST /api/skills/create, sign-in list). Second compare PDFs + gaps in Agent 2's scratchpad `compare2/`.
+IN FLIGHT: wave 59 — K1 parked (`.agents/wip/w59/w59k1.patch`: alerts 3→6, key-action dispatcher + 8 actions, voice/limits
+rows, reply time + Copy; lead narrowed the not-secret names to record_key/hot_key/secret_store), K2 (web host facts, our own
+TUI ASCII banner) building. Then: combined gate main + K1 + K2, land; a third compare.
+Owner calls: Clear Blue preset below AA (D-16.1276); MCP/connector hosted catalogue (none exists, D-16.1275).
 Older text below (wave 52 era) is history.
 
 UI PARITY IN FLIGHT (owner 2026-10-24: "same to same UI as Hermes, every page and component, web + desktop").
