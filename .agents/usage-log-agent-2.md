@@ -108,3 +108,4 @@ Only Agent 2 writes this file: one row per check, appended, never edited. Agent 
 | 2026-10-25 10:28 UTC | Agent 2 | Account 2 | 5% (reading 10:07) | 95% | 12:30 UTC | third compare sent; started w60 L1 (web model list, Models MoA + usage) + L2 (desktop tool keys, toolsets, palette, pets) |
 | 2026-10-25 11:00 UTC | Agent 2 | Account 2 | 16% (reading 10:54) | 84% | 12:30 UTC | w60 L1 L2 + w61 M1 (OpenAI ChatGPT sign-in) running |
 | 2026-10-25 11:31 UTC | Agent 2 | Account 2 | 26% (reading 11:28) | 74% | 12:30 UTC | w60 L1 L2, w61 M1 (gate) + M2 (UI) running |
+| 2026-10-25 12:02 UTC | Agent 2 | Account 2 | 34% (reading 11:53) | 66% | 12:30 UTC | w60 L1 L2, w61 M1 (gate) + M2 running; resume wake-up 12:35 |
