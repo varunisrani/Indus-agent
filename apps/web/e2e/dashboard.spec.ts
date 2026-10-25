@@ -135,7 +135,7 @@ test("Models: a run shows as a per-model card; a vendor lists the price table's 
   const dialog = page.getByRole("dialog", { name: "Switch model" });
   const openai = dialog
     .getByRole("list", { name: "Providers" })
-    .getByRole("button", { name: /^OpenAI/ });
+    .getByRole("button", { name: /^OpenAI openai\b/ }); // not "OpenAI (ChatGPT sign-in)"
   await expect(openai).toContainText(/openai · \d+ models/);
   await openai.click();
   await expect(dialog.getByTestId("model-list-hint")).toContainText("From our price table");
