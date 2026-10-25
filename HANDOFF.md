@@ -76,6 +76,8 @@ README for reference. Nothing uncommitted on main.
 - `INDUS_REF` — path to the pinned reference checkout (default `/root/reference/hermes-agent`).
 
 ## NEXT STEP (start here)
+**Owner rule (2026-10-25 01:40 UTC, to Agent 2):** no usage guard stops at 75/85/90 %. Keep working until the window is
+100 % used; when it resets, resume at once from this file. Agent 2 keeps a wake-up scheduled just after each reset.
 **Agent 2 ACTIVE (took the turn 21:50 UTC 2026-10-24, owner request).** WAVE 53 LANDED (UI parity, D-16.1190–1269):
 web foundation + all 6 web page groups; desktop foundation + transcript, composer menus, panes/onboarding, settings A+B,
 capabilities/messaging/bots, command center/cron/profiles/agents/artifacts/webhooks/learning map. Full gate green on the
