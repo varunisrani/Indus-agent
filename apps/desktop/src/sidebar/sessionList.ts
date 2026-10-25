@@ -565,7 +565,8 @@ export class SessionListStore {
     if (event.type === TURN_STARTED) {
       if (this.state.running.has(sessionId)) return false;
       this.patch({ running: new Set([...this.state.running, sessionId]) });
-      return false;
+      // a chat the list has not seen yet (a fresh one) is listed while it runs (W54-D1-2)
+      return !this.state.rows.some((row) => row.ids.includes(sessionId));
     }
     if (TURN_DONE.has(event.type)) {
       const running = new Set(this.state.running);

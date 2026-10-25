@@ -714,26 +714,31 @@ export function Composer(props: ComposerProps) {
             ) : null}
             {busy.running ? (
               <>
-                <button
-                  type="button"
-                  className="desk-btn"
-                  data-variant="ghost"
-                  data-size="sm"
-                  disabled={text.trim() === ""}
-                  onClick={() => void steer()}
-                >
-                  {t("composer.steer")}
-                </button>
-                <button
-                  type="button"
-                  className="desk-btn"
-                  data-variant="ghost"
-                  data-size="sm"
-                  disabled={text.trim() === "" || sending}
-                  onClick={() => void submit()}
-                >
-                  {t("composer.queue")}
-                </button>
+                {/* W54-D1-7: one Stop while a reply runs; Steer and Queue join it once there is
+                    something typed to steer with or queue */}
+                {text.trim() !== "" && (
+                  <>
+                    <button
+                      type="button"
+                      className="desk-btn"
+                      data-variant="ghost"
+                      data-size="sm"
+                      onClick={() => void steer()}
+                    >
+                      {t("composer.steer")}
+                    </button>
+                    <button
+                      type="button"
+                      className="desk-btn"
+                      data-variant="ghost"
+                      data-size="sm"
+                      disabled={sending}
+                      onClick={() => void submit()}
+                    >
+                      {t("composer.queue")}
+                    </button>
+                  </>
+                )}
                 <button
                   type="button"
                   className="composer-send"

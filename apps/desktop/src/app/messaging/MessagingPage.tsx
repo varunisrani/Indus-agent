@@ -627,7 +627,7 @@ export function MessagingPage(props: MessagingPageProps) {
                         <PlatformTile name={p.name} id={p.id} />
                         <span className="msg-row-name">{p.name}</span>
                         {pendingCount(p.id) > 0 && (
-                          <span className="msg-bubble">{pendingCount(p.id)}</span>
+                          <span className="msg-pending">{pendingCount(p.id)}</span>
                         )}
                         <span className="msg-dot" data-tone={toneOf(p)} aria-hidden="true" />
                       </button>

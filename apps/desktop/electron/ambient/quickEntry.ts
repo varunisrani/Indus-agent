@@ -9,7 +9,11 @@ import type { BrowserWindowLike } from "../windows/manager.ts";
 import type { Rect } from "../windows/windowState.ts";
 import { type FloatingWindow, floatAbove, type ScreenLike, type Timers } from "./hud.ts";
 
-export const QUICK_SIZE = { width: 640, height: 168 } as const;
+/**
+ * The composer card fills the window (W54-D1-5): no see-through margin, which a desktop without a
+ * compositor paints black.
+ */
+export const QUICK_SIZE = { width: 640, height: 112 } as const;
 /** How far down the display the composer sits (fraction of the work area's height). */
 export const QUICK_TOP_FRACTION = 0.25;
 export const QUICK_RELAY_TIMEOUT_MS = 15_000;

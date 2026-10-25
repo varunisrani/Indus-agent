@@ -187,14 +187,22 @@ export function initialLayout(mode: InterfaceMode, available: Iterable<PaneId>):
 //
 // Opening a tool pane into the chat-only window (or into a window this arrangement built) lays the
 // tool panes out on the right: one column per document pane in a row on top (Preview, Review,
-// Files from left to right) and the Terminal under the whole row. Each side column is about 236px
-// at the usual window width; the shapes other presets build are left alone.
+// Files from left to right) and the Terminal under the whole row. A Files column is about 236px
+// at the usual window width (a narrow right sidebar); Review gets a wider column so a diff line
+// and the commit box fit (W54-D1-3). The chat keeps at least about 40% of the span.
+// The shapes other presets build are left alone.
 
 /** The top row's panes, left to right. */
 const SIDE_TOP: readonly PaneId[] = ["preview", "review", "files"];
 /** The chat area's usual width (window minus the sidebar), for the relative split sizes. */
 const SIDE_SPAN = 1180;
-const SIDE_COLUMN = 236;
+/** Each side column's usual width at that span (relative sizes, so they scale with the window). */
+const SIDE_COLUMN: Readonly<Partial<Record<PaneId, number>>> = {
+  review: 380,
+};
+const SIDE_COLUMN_DEFAULT = 236;
+/** The chat's least share of the span when several wide columns are open. */
+const SIDE_CHAT_MIN = 480;
 const SIDE_TERMINAL = 178;
 const SIDE_HEIGHT = 846;
 
@@ -208,18 +216,22 @@ export function sideTree(panes: Iterable<PaneId>): LayoutNode {
   const available = new Set(panes);
   const chat = zone("z1", [CHAT_PANE]);
   const top = pick(available, SIDE_TOP);
-  const columns = Math.max(top.length, 1);
+  const widthOf = (pane: PaneId) => SIDE_COLUMN[pane] ?? SIDE_COLUMN_DEFAULT;
   const topRow = group(
     "s3",
     "row",
-    top.map((pane, index) => [zone(`z${index + 2}`, [pane]), 1] as [LayoutNode, number]),
+    top.map(
+      (pane, index) => [zone(`z${index + 2}`, [pane]), widthOf(pane)] as [LayoutNode, number],
+    ),
   );
   const terminal = available.has("terminal") ? zone("z9", ["terminal"]) : null;
   const right = group("s2", "column", [
     [topRow, SIDE_HEIGHT - SIDE_TERMINAL],
     [terminal, SIDE_TERMINAL],
   ]);
-  const width = SIDE_COLUMN * columns;
+  const wanted =
+    top.length === 0 ? SIDE_COLUMN_DEFAULT : top.reduce((sum, p) => sum + widthOf(p), 0);
+  const width = Math.min(wanted, SIDE_SPAN - SIDE_CHAT_MIN);
   const tree = group("s1", "row", [
     [chat, SIDE_SPAN - width],
     [right, width],

@@ -195,6 +195,27 @@ html[data-window="quick"] body {
   color: #e6e6e6;
 }
 
+/* W54-D1-6: the sheet shows the latest exchange only, from its question down (earlier turns
+   stay in the main window); no scrollbar on the dark sheet */
+.hud .transcript .turn:has(~ .turn),
+.hud .transcript-earlier {
+  display: none;
+}
+
+.hud .transcript-scroll {
+  padding: 22px 36px 24px;
+  scrollbar-width: none;
+}
+
+.hud .transcript .msg-user .msg-bubble {
+  max-height: none;
+}
+
+/* the answer lines up under its question (no reply indent on the sheet) */
+.hud .transcript .msg-assistant {
+  margin-left: 0;
+}
+
 .hud .tool-row,
 .hud .inline-diff,
 .hud .msg-notice,
@@ -275,27 +296,29 @@ html[data-window="quick"] body {
   cursor: nwse-resize;
 }
 
-/* Quick entry (W52-m): one card centred in a transparent window. */
+/* Quick entry (W52-m): one card in a transparent window. W54-D1-5: the card fills the window
+   (sized to it), so a desktop without a compositor, which paints the see-through part black,
+   shows nothing but the card. */
 .quick {
   position: fixed;
   inset: 0;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  padding: 12px;
   color: var(--desk-fg-1);
   font-family: var(--desk-font-ui);
 }
 
 .quick-card {
   display: flex;
+  flex: 1;
   flex-direction: column;
+  justify-content: center;
   gap: 8px;
+  min-height: 0;
   padding: 10px 14px;
   border: 1px solid var(--desk-stroke-3);
   border-radius: 12px;
   background: color-mix(in srgb, var(--desk-bg-raised) 96%, var(--desk-fg-1));
-  box-shadow: 0 2px 8px rgb(0 0 0 / 0.22);
 }
 
 :root[data-theme="indus-light"] .quick-card {

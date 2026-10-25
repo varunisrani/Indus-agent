@@ -351,6 +351,18 @@
   word-break: break-word;
 }
 
+/* a terminal's output (W54-D1-1): the screen's lines, no inset box */
+.tool-pre[data-plain] {
+  padding: 4px 8px 2px;
+  background: transparent;
+  color: var(--desk-fg-2);
+}
+
+.tool-command-copy {
+  flex: none;
+  color: var(--desk-fg-3);
+}
+
 .tool-pre[data-failed] {
   color: var(--desk-danger);
 }

@@ -58,7 +58,7 @@
   color: hsl(var(--msg-tile-hue) 70% 72%);
 }
 
-.msg-bubble {
+.msg-pending {
   min-width: 16px;
   padding: 0 4px;
   border-radius: 8px;

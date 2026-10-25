@@ -42,6 +42,16 @@ export function terminalTheme(): ITheme {
   };
 }
 
+/**
+ * The screen's font as a plain family list. xterm measures and paints its cells on a canvas,
+ * where `var(...)` means nothing, so the token is read here (a raw `var()` made the canvas fall
+ * back to a proportional font and spread the prompt across wide cells).
+ */
+export function terminalFont(): string {
+  const family = cssVar("--indus-font-mono", "");
+  return family === "" ? "ui-monospace, monospace" : `${family}, monospace`;
+}
+
 export const createXtermView: TerminalViewFactory = async () => {
   const [xterm, fitAddon, unicode, webgl] = await Promise.all([
     import("@xterm/xterm"),
@@ -53,7 +63,8 @@ export const createXtermView: TerminalViewFactory = async () => {
   const term = new xterm.Terminal({
     allowProposedApi: true,
     cursorBlink: true,
-    fontFamily: "var(--indus-font-mono), monospace",
+    // the canvas renderer cannot read a CSS variable: hand it the resolved family (W54-D1-4)
+    fontFamily: terminalFont(),
     fontSize: 13,
     scrollback: 5_000,
     theme: terminalTheme(),

@@ -18,6 +18,8 @@ describe("tab shortcuts", () => {
       key({ key: "∫", code: "KeyB", ctrlKey: true, altKey: true }),
       { kind: "toggle-right" },
     ],
+    ["linux", key({ key: "j", code: "KeyJ", ctrlKey: true }), { kind: "toggle-right" }],
+    ["darwin", key({ key: "j", metaKey: true }), { kind: "toggle-right" }],
     ["linux", key({ key: "3", code: "Digit3", ctrlKey: true }), { kind: "jump", slot: 3 }],
     ["darwin", key({ key: "9", metaKey: true }), { kind: "jump", slot: 9 }],
     ["darwin", key({ key: "PageDown", ctrlKey: true }), { kind: "cycle", step: 1 }],

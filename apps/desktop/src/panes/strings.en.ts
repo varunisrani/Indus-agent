@@ -17,6 +17,7 @@ export const PANE_STRINGS = {
   "panes.close": "Close {pane}",
   "panes.open": "Open {pane}",
   "panes.hiddenSuffix": "(hidden)",
+  "panes.chatWaiting": "(waiting for you)",
   "panes.resize": "Resize panes",
   "panes.layout": "Layout",
   "panes.preset.custom": "Custom",

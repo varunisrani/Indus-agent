@@ -223,6 +223,24 @@
   opacity: 0.6;
 }
 
+/* the chat tab's dot (W54-D1-2): quiet, a turn running, or an approval waiting */
+.pane-tab-dot {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  margin-right: -2px;
+  border-radius: 50%;
+  background: var(--desk-fg-4);
+}
+
+.pane-tab-dot[data-state="running"] {
+  background: var(--desk-accent);
+}
+
+.pane-tab-dot[data-state="attention"] {
+  background: var(--desk-warning);
+}
+
 .pane-slot {
   display: inline-grid;
   place-items: center;

@@ -15,7 +15,7 @@ describe("quick entry bounds", () => {
       x: 640,
       y: 270,
       width: 640,
-      height: 168,
+      height: 112,
     });
     expect(quickBounds({ x: 1920, y: 0, width: 500, height: 100 })).toEqual({
       x: 1920,

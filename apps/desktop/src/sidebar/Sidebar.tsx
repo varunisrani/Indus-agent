@@ -5,6 +5,7 @@
 // shows the other profile's list at once and keeps this one.
 
 import {
+  EllipsisVertical,
   FolderPlus,
   GitBranch,
   ListFilter,
@@ -27,6 +28,7 @@ import {
 import { desktopBridge } from "../app/bridge.ts";
 import { copyText } from "../app/clipboard.ts";
 import { Loader } from "../app/Loader.tsx";
+import { useOpenServerRequests } from "../gateway/react.tsx";
 import { type MessageKey, type Translate, useT } from "../i18n/index.tsx";
 import { browserStorage, type StorageLike } from "../profiles/storageFamilies.ts";
 import {
@@ -144,6 +146,8 @@ export interface SidebarProps {
   onOpenSession(sessionId: string): void;
   /** Pop the conversation out into the HUD (P20-35); no button without it. */
   onPopOut?(sessionId: string): void;
+  /** Branch the conversation (`session.branch`, W54-D1-8); no menu item without it. */
+  onBranch?(sessionId: string): void;
   onNewChat(): void;
   events?: EventSource | null;
   /** The default root of the repo scan. */
@@ -178,20 +182,48 @@ function useStore<S>(store: { subscribe(listener: () => void): () => void; getSt
 interface RowHost {
   list: SessionListStore;
   running: ReadonlySet<string>;
+  /** Sessions with an approval or question waiting for the person (W54-D1-2). */
+  attention: ReadonlySet<string>;
   activeSessionId: string | null;
   now: number;
   onOpen(id: string): void;
   onPopOut?: ((id: string) => void) | undefined;
+  onBranch?: ((id: string) => void) | undefined;
   onDelete(row: SessionRow): void;
 }
 
-function SessionItem(props: Omit<RowHost, "running"> & { row: SessionRow; running: boolean }) {
+/**
+ * The row's dot (W54-D1-2): waiting for the person, a turn running (live events), new activity,
+ * recently live (the list's `is_active`: not ended, active lately), or the quiet bullet.
+ */
+export type SessionDot = "attention" | "running" | "unread" | "live" | "idle";
+
+export function sessionDot(state: {
+  attention: boolean;
+  running: boolean;
+  unread: boolean;
+  live?: boolean;
+}): SessionDot {
+  if (state.attention) return "attention";
+  if (state.running) return "running";
+  if (state.unread) return "unread";
+  return state.live === true ? "live" : "idle";
+}
+
+function SessionItem(
+  props: Omit<RowHost, "running" | "attention"> & {
+    row: SessionRow;
+    running: boolean;
+    attention: boolean;
+  },
+) {
   const t = useT();
   const { row, list } = props;
   const title = rowTitle(t, row);
   const current = props.activeSessionId !== null && row.ids.includes(props.activeSessionId);
   const unread = list.unread.isUnread(row, props.activeSessionId);
-  const running = props.running || row.active;
+  const running = props.running;
+  const dot = sessionDot({ attention: props.attention, running, unread, live: row.active });
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [renaming, setRenaming] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
@@ -263,10 +295,7 @@ function SessionItem(props: Omit<RowHost, "running"> & { row: SessionRow; runnin
         onMouseLeave={tip.bind.onMouseLeave}
       >
         <span className="session-dots" aria-hidden="true">
-          <span
-            className="session-dot"
-            data-kind={running ? "running" : unread ? "unread" : "idle"}
-          />
+          <span className="session-dot" data-kind={dot} />
         </span>
         {row.branch && <GitBranch aria-hidden="true" size={12} className="session-branch" />}
         <span ref={titleRef} className="session-title">
@@ -274,8 +303,23 @@ function SessionItem(props: Omit<RowHost, "running"> & { row: SessionRow; runnin
         </span>
         {unread && <span className="sr-only">{t("sidebar.unread")}</span>}
         {running && <span className="sr-only">{t("sidebar.running")}</span>}
+        {props.attention && <span className="sr-only">{t("sidebar.attention")}</span>}
         {row.branch && <span className="sr-only">{t("sidebar.branch")}</span>}
         <span className="session-time">{relativeTime(t, row.lastActive, props.now)}</span>
+      </button>
+      {/* the row's actions on hover (W54-D1-2): the same menu as a right-click */}
+      <button
+        type="button"
+        className="session-more"
+        aria-label={t("sidebar.more", { title })}
+        aria-haspopup="menu"
+        aria-expanded={menu !== null}
+        onClick={(event) => {
+          const rect = event.currentTarget.getBoundingClientRect();
+          setMenu({ x: rect.left, y: rect.bottom });
+        }}
+      >
+        <EllipsisVertical aria-hidden="true" size={13} />
       </button>
       {truncated ? tip.tip : null}
       {menu !== null && (
@@ -293,6 +337,7 @@ function SessionItem(props: Omit<RowHost, "running"> & { row: SessionRow; runnin
             togglePin: () => void list.setPinned(row, !row.pinned),
             toggleUnread: () => (unread ? list.markSeen(row) : list.markUnread(row)),
             copyId: () => void copyText(row.durableId),
+            branch: props.onBranch === undefined ? undefined : () => props.onBranch?.(row.id),
             toggleArchive: () => void list.setArchived(row, !row.archived),
             remove: () => props.onDelete(row),
           }}
@@ -303,13 +348,14 @@ function SessionItem(props: Omit<RowHost, "running"> & { row: SessionRow; runnin
 }
 
 function RowList(
-  props: Omit<RowHost, "running"> & {
+  props: Omit<RowHost, "running" | "attention"> & {
     rows: readonly SessionRow[];
     running: ReadonlySet<string>;
+    attention: ReadonlySet<string>;
     label: string;
   },
 ) {
-  const { rows, label, running, ...host } = props;
+  const { rows, label, running, attention, ...host } = props;
   return (
     <ul className="session-list" aria-label={label}>
       {rows.map((row) => (
@@ -318,6 +364,7 @@ function RowList(
           {...host}
           row={row}
           running={row.ids.some((id) => running.has(id))}
+          attention={row.ids.some((id) => attention.has(id))}
         />
       ))}
     </ul>
@@ -526,6 +573,9 @@ export function Sidebar(props: SidebarProps) {
     [state.rows, trimmed, hits],
   );
 
+  // approvals and questions waiting anywhere on the connection mark their rows (W54-D1-2)
+  const waiting = useOpenServerRequests(undefined);
+  const attention = useMemo(() => new Set(waiting.map((open) => open.sessionId)), [waiting]);
   const openSession = (id: string) => props.onOpenSession(id);
   const newChat = (project: Project | null) => {
     beginNewChat(props.model, props.profile, project);
@@ -534,10 +584,12 @@ export function Sidebar(props: SidebarProps) {
   const common = {
     list,
     running: state.running,
+    attention,
     activeSessionId: props.activeSessionId,
     now,
     onOpen: openSession,
     onPopOut: props.onPopOut,
+    onBranch: props.onBranch,
     onDelete: (row: SessionRow) => setDeleting(row),
   };
   const confirmDelete = async () => {

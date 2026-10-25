@@ -4,7 +4,7 @@ import axe from "axe-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { translate } from "../i18n/index.tsx";
 import { newChatTarget } from "./projects.ts";
-import { type EventSource, relativeTime, Sidebar, SidebarModel } from "./Sidebar.tsx";
+import { type EventSource, relativeTime, Sidebar, SidebarModel, sessionDot } from "./Sidebar.tsx";
 import type { ApiRequest, SessionInfo } from "./sessionList.ts";
 
 class MemoryStorage {
@@ -102,6 +102,46 @@ describe("sessions sidebar", () => {
     ).toHaveLength(3);
     expect(within(chats).getByText("(branch)")).toBeTruthy();
     expect(api.mock.calls[0]?.[0].profile).toBe("work");
+  });
+
+  it("W54-D1-2: the row's ⋮ button opens its menu; Branch shows only when it can be backed", async () => {
+    mount();
+    fireEvent.click(await screen.findByRole("button", { name: "More actions for Parser work" }));
+    expect(screen.getByRole("menuitem", { name: "Pin" })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: "Branch" })).toBeNull();
+  });
+
+  it("W54-D1-8: Branch asks the host with the row's newest id", async () => {
+    const storage = new MemoryStorage();
+    const model = new SidebarModel({ api: fakeApi(), storage, listDir: null });
+    const onBranch = vi.fn();
+    render(
+      <Sidebar
+        model={model}
+        profile="work"
+        activeSessionId={null}
+        onOpenSession={vi.fn()}
+        onNewChat={vi.fn()}
+        onBranch={onBranch}
+      />,
+    );
+    fireEvent.contextMenu(await screen.findByRole("button", { name: /^Parser work/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Branch" }));
+    expect(onBranch).toHaveBeenCalledWith("s-tip");
+  });
+
+  it("W54-D1-2: dots rank waiting > working > new activity > live > quiet", () => {
+    expect(sessionDot({ attention: true, running: true, unread: true, live: true })).toBe(
+      "attention",
+    );
+    expect(sessionDot({ attention: false, running: true, unread: true })).toBe("running");
+    expect(sessionDot({ attention: false, running: false, unread: true, live: true })).toBe(
+      "unread",
+    );
+    expect(sessionDot({ attention: false, running: false, unread: false, live: true })).toBe(
+      "live",
+    );
+    expect(sessionDot({ attention: false, running: false, unread: false })).toBe("idle");
   });
 
   it("opens a conversation by its newest id", async () => {

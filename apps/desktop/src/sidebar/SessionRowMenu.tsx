@@ -1,12 +1,14 @@
 // The sidebar row's menu (W52-h): right-click a session row, or Shift+F10 / the context-menu key on
 // a focused one. Only actions Indus really has: open in a floating window, rename, pin, unread,
-// copy the id, archive, delete (W52-h-4 lists what the reference has that we leave out).
+// copy the id, branch (`session.branch`, W54-D1-8), archive, delete (W52-h-4 lists what the
+// reference has that we leave out).
 
 import {
   Archive,
   ArchiveRestore,
   Copy,
   ExternalLink,
+  GitBranch,
   Mail,
   MailOpen,
   Pencil,
@@ -23,6 +25,8 @@ export interface RowMenuActions {
   togglePin: () => void;
   toggleUnread: () => void;
   copyId: () => void;
+  /** Start a new chat from this one's history (absent: no connection to ask). */
+  branch?: (() => void) | undefined;
   toggleArchive: () => void;
   remove: () => void;
 }
@@ -80,6 +84,16 @@ export function SessionRowMenu(props: {
         label={t("sidebar.menu.copyId")}
         onSelect={run(a.copyId)}
       />
+      {a.branch !== undefined && (
+        <>
+          <MenuSeparator />
+          <MenuRow
+            icon={<GitBranch aria-hidden="true" />}
+            label={t("sidebar.menu.branch")}
+            onSelect={run(a.branch)}
+          />
+        </>
+      )}
       <MenuSeparator />
       <MenuRow
         icon={

@@ -80,7 +80,7 @@ function Section(props: { label: string; children: ReactNode }) {
   );
 }
 
-function OutputBlock(props: { text: string; failed: boolean }) {
+function OutputBlock(props: { text: string; failed: boolean; plain?: boolean }) {
   const t = useT();
   const [all, setAll] = useState(false);
   const { text } = props;
@@ -88,7 +88,11 @@ function OutputBlock(props: { text: string; failed: boolean }) {
   const shown = all || text.length <= OUTPUT_PREVIEW ? text : text.slice(0, OUTPUT_PREVIEW);
   return (
     <>
-      <pre className="tool-pre" data-failed={props.failed || undefined}>
+      <pre
+        className="tool-pre"
+        data-failed={props.failed || undefined}
+        data-plain={props.plain || undefined}
+      >
         {shown}
       </pre>
       {shown.length < text.length && (
@@ -120,6 +124,17 @@ function ToolBody(props: { part: ToolPart; command: string | null }) {
               {t("tool.exit", { code: terminal.exitCode })}
             </span>
           )}
+          {/* W54-D1-1: the terminal block carries its own copy button (command and output) */}
+          <button
+            type="button"
+            className="desk-icon-btn tool-command-copy"
+            data-size="sm"
+            aria-label={t("tool.copyCommand")}
+            title={t("tool.copyCommand")}
+            onClick={() => void copyText(terminalCopy(props.command ?? "", terminal))}
+          >
+            <Copy aria-hidden="true" size={12} />
+          </button>
         </div>
       ) : (
         part.args !== null &&
@@ -131,12 +146,12 @@ function ToolBody(props: { part: ToolPart; command: string | null }) {
       )}
       {terminal !== null ? (
         (terminal.output !== "" || terminal.error !== "") && (
-          <Section label={t("tool.output")}>
-            <OutputBlock
-              text={[terminal.output, terminal.error].filter((x) => x !== "").join("\n")}
-              failed={failed}
-            />
-          </Section>
+          // a terminal's output reads like the screen it came from: no label, no inset
+          <OutputBlock
+            text={[terminal.output, terminal.error].filter((x) => x !== "").join("\n")}
+            failed={failed}
+            plain
+          />
         )
       ) : part.state !== "running" || result !== "" ? (
         <Section label={t("tool.output")}>
@@ -199,7 +214,7 @@ export function ToolRow(props: { part: ToolPart; settled?: boolean }) {
             </span>
           )}
         </button>
-        {open && copyOf(part) !== "" && (
+        {open && command === null && copyOf(part) !== "" && (
           <button
             type="button"
             className="desk-icon-btn tool-copy"
@@ -230,6 +245,15 @@ function copyOf(part: ToolPart): string {
   const terminal = terminalResult(part.result);
   if (terminal !== null) return terminal.output || terminal.error;
   return part.result ?? "";
+}
+
+/** What the terminal block's copy button puts on the clipboard: `$ command`, then its output. */
+export function terminalCopy(
+  command: string,
+  terminal: { output: string; error: string } | null,
+): string {
+  const output = terminal === null ? [] : [terminal.output, terminal.error];
+  return [`$ ${command}`, ...output.filter((x) => x !== "")].join("\n");
 }
 
 /** The whole command (the summary clips it to one short line). */

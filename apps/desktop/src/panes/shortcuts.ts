@@ -71,6 +71,8 @@ export function actionForKey(event: KeyLike, platform: string): PaneAction | nul
   if (key === "t") return { kind: "new-chat" };
   if (key === "w") return { kind: "close" };
   if (key === "b") return { kind: "toggle-left" };
+  // Ctrl+J: the right sidebar (Files over Terminal), like Ctrl+Alt+B (W54-D1-3)
+  if (key === "j" || event.code === "KeyJ") return { kind: "toggle-right" };
   return null;
 }
 

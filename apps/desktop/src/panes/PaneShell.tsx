@@ -229,6 +229,9 @@ function paneFromDrag(event: DragEvent): PaneId | null {
 
 // -- rendering -----------------------------------------------------------------------------------
 
+/** What the chat tab's dot says about its conversation. */
+export type ChatTabState = "idle" | "running" | "attention";
+
 export interface PaneShellProps {
   store: LayoutStore;
   /** The chat pane's body (the route's content). */
@@ -243,6 +246,8 @@ export interface PaneShellProps {
   bandTools?: ReactNode;
   /** The chat tab's label (the conversation's title, or "New session"); else "Chat". */
   chatTitle?: string;
+  /** The chat tab's dot (W54-D1-2): an approval waits, a turn runs, or quiet. */
+  chatState?: ChatTabState;
   /** What tool panes get besides the route (P20-28..31). */
   workspace?: string | null;
   mode?: "local" | "remote" | null;
@@ -261,6 +266,7 @@ interface ShellContext {
   profile: string | null;
   showSlots: boolean;
   title: (pane: PaneId) => string;
+  chatState: ChatTabState | null;
   tools: Pick<PaneShellProps, "workspace" | "mode" | "connection" | "openPreview" | "addToChat">;
   /** The zone whose header runs under the band's tool cluster (top right), if any. */
   bandEnd: string | null;
@@ -517,7 +523,13 @@ function ZoneView(props: { ctx: ShellContext; zone: ZoneNode }) {
                     {slotLabel(index, z.tabs.length)}
                   </span>
                 )}
+                {pane === CHAT_PANE && ctx.chatState !== null && (
+                  <i className="pane-tab-dot" data-state={ctx.chatState} aria-hidden="true" />
+                )}
                 <span>{ctx.title(pane)}</span>
+                {pane === CHAT_PANE && ctx.chatState === "attention" && (
+                  <span className="sr-only">{t("panes.chatWaiting")}</span>
+                )}
                 {hidden && <span className="sr-only">{t("panes.hiddenSuffix")}</span>}
               </button>
             );
@@ -832,6 +844,7 @@ export function PaneShell(props: PaneShellProps) {
     profile: props.profile,
     showSlots: props.showSlots === true,
     title,
+    chatState: props.chatState ?? null,
     tools: {
       workspace: props.workspace ?? null,
       mode: props.mode ?? null,

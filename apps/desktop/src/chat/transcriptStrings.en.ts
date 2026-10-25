@@ -40,6 +40,7 @@ export const TRANSCRIPT_STRINGS = {
 
   "tool.dismiss": "Hide this step",
   "tool.copy": "Copy output",
+  "tool.copyCommand": "Copy command and output",
   "tool.exit": "exit {code}",
   "tool.blocked": "Not allowed",
 

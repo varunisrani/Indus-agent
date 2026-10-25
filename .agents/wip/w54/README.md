@@ -16,3 +16,12 @@
 - Gate (builder): tsc 0; check-ipc ok; desktop vitest 181 files / 1809 passed; Electron E2E 43 passed / 2 skipped;
   tooling.checks ok. Left: cron blueprint catalogue (backend: serve the 4 built-ins from /api/cron/blueprints), 5 extra
   desktop alerts (no backing), Profiles skills count (no API field).
+
+## w54d1.patch — desktop chat + panes (D1), base 7b59d33 — LANDED with D-16.1272
+- Prompt bubble bug (CSS class clash with Messaging), terminal `$ command` block, streaming chat listed + titled, one Stop
+  button, attention/live/running/unread dots, row ⋮ + Branch, side column widths, Ctrl+J right sidebar, xterm font fix,
+  HUD latest turn, quick entry 640x112.
+- Lead gate on D1 + D2 combined: tsc 0; biome 0 errors; check-ipc + bridge ok; desktop vitest 181 files / 1814 passed;
+  Electron E2E 43 passed / 2 skipped. Builder: tooling.checks ok.
+- Follow-ups: why a 420 px Preview column breaks security.electron's guest attach; session switcher still reads
+  `is_active` as running; Export needs a save-file IPC; per-reply timestamp row (no stored reply time).

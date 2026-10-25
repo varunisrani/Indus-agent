@@ -308,6 +308,9 @@ describe("the profile's list store", () => {
     expect(store.noteEvent({ type: "turn.done", session_id: "a" })).toBe(true);
     expect(store.getState().running.has("a")).toBe(false);
     expect(store.noteEvent({ type: "message.delta" })).toBe(false);
+    // a fresh chat the list does not know yet asks for a refresh at once (W54-D1-2)
+    expect(store.noteEvent({ type: "turn.started", session_id: "fresh" })).toBe(true);
+    expect(store.getState().running.has("fresh")).toBe(true);
     store.wipe();
     expect(store.getState().rows).toEqual([]);
   });

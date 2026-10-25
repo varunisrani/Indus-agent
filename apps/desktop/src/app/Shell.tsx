@@ -30,6 +30,7 @@ import {
 import { NavLink, useLocation, useNavigate } from "react-router";
 import { BotsRoster } from "../bots/BotsRoster.tsx";
 import { draftOf, FRESH, setDraft, windowDrafts } from "../chat/composer/goneSession.ts";
+import { useFirstPrompt } from "../chat/transcriptReact.tsx";
 import {
   CommandPalette,
   ContributedTitleBar,
@@ -38,11 +39,21 @@ import {
 } from "../contrib/areas.tsx";
 import { ContributedNav, useContributedPaths } from "../contrib/shell.tsx";
 import type { GatewayConnection } from "../gateway/connectionStore.ts";
-import { useConnectionState, useMaybeConnectionStore } from "../gateway/react.tsx";
+import {
+  useConnectionState,
+  useMaybeConnectionStore,
+  useOpenServerRequests,
+} from "../gateway/react.tsx";
 import { type MessageKey, useT } from "../i18n/index.tsx";
 import { previewTargets } from "../panes/d2Panes.tsx";
 import { LayoutStore } from "../panes/layoutStore.ts";
-import { focusedPane, PaneShell, paneRegistry, useLayout } from "../panes/PaneShell.tsx";
+import {
+  type ChatTabState,
+  focusedPane,
+  PaneShell,
+  paneRegistry,
+  useLayout,
+} from "../panes/PaneShell.tsx";
 import { CHAT_PANE, isHidden, zones } from "../panes/paneTree.ts";
 import { surfaceShown } from "../panes/presets.ts";
 import type { PreviewTarget } from "../panes/preview/target.ts";
@@ -295,6 +306,26 @@ function LeftSidebar(props: {
             onPopOut={(id) =>
               void desktopBridge()?.hud.open({ sessionId: id, profile: props.profile })
             }
+            {...(props.connection === null
+              ? {}
+              : {
+                  onBranch: (id: string) => {
+                    const connection = props.connection;
+                    if (connection === null) return;
+                    void connection.request("session.branch", { session_id: id }).then(
+                      async (result) => {
+                        await sessions.refresh();
+                        navigate(sessionPath(result.session_id));
+                      },
+                      (error: unknown) =>
+                        notify({
+                          tone: "error",
+                          title: t("sidebar.branchFailed"),
+                          message: error instanceof Error ? error.message : String(error),
+                        }),
+                    );
+                  },
+                })}
             onNewChat={() => navigate(NEW_CHAT_PATH)}
             events={props.connection}
             homeDir={launchFacts().homeDir || null}
@@ -423,7 +454,10 @@ export function addToComposer(sessionId: string | null, text: string): void {
   });
 }
 
-/** The chat tab's label: the open conversation's title, or "New session" for a fresh draft. */
+/**
+ * The chat tab's label: the open conversation's title, or "New session" for a fresh draft. A chat
+ * the list does not hold yet (one that just started) shows its first prompt (W54-D1-2).
+ */
 function useChatTitle(chrome: ShellChrome, profile: string, sessionId: string | null): string {
   const t = useT();
   const list = chrome.sidebar.sessions(profile);
@@ -431,9 +465,29 @@ function useChatTitle(chrome: ShellChrome, profile: string, sessionId: string | 
     (listener) => list.subscribe(listener),
     () => list.getState().rows,
   );
+  const firstPrompt = useFirstPrompt(sessionId);
   if (sessionId === null) return t("nav.newChat");
   const row = rows.find((candidate) => candidate.ids.includes(sessionId));
-  return row === undefined ? t("panes.title.chat") : rowTitle(t, row);
+  if (row !== undefined) return rowTitle(t, row);
+  return firstPrompt ?? t("panes.title.chat");
+}
+
+/** The chat tab's dot: waiting for the person, working, or quiet (W54-D1-2). */
+function useChatState(
+  chrome: ShellChrome,
+  profile: string,
+  sessionId: string | null,
+): ChatTabState {
+  const list = chrome.sidebar.sessions(profile);
+  // the live turn events only: a REST row's `is_active` means attached, not answering
+  const running = useSyncExternalStore(
+    (listener) => list.subscribe(listener),
+    () => list.getState().running,
+  );
+  const waiting = useOpenServerRequests(sessionId);
+  if (sessionId === null) return "idle";
+  if (waiting.length > 0) return "attention";
+  return running.has(sessionId) ? "running" : "idle";
 }
 
 // -- the shell -----------------------------------------------------------------------------------
@@ -465,6 +519,7 @@ export function Shell(props: {
   const sessionId = props.sessionId ?? null;
   const workspace = useWorkspaceFolder(chrome, profile, sessionId);
   const chatTitle = useChatTitle(chrome, profile, sessionId);
+  const chatState = useChatState(chrome, profile, sessionId);
   const connectionMode = useConnectionMode(connection);
   const openPreview = useCallback(
     (target: PreviewTarget) => {
@@ -508,7 +563,7 @@ export function Shell(props: {
   const showRail = !secondary && profiles.length > 0 && surfaceShown(mode, "profileRail", surface);
   const showStatus = surfaceShown(mode, "statusBar", surface);
 
-  const onAction = (action: PaneAction): boolean => {
+  const onAction = (action: PaneAction, event: KeyboardEvent): boolean => {
     const panes = chrome.layout;
     switch (action.kind) {
       case "new-chat":
@@ -539,6 +594,13 @@ export function Shell(props: {
         setLeftOpen((open) => !open);
         return true;
       case "toggle-right": {
+        // Ctrl+J inside a terminal is the shell's own key (a line feed), not the sidebar's
+        if (
+          event.altKey === false &&
+          (document.activeElement?.closest('[data-pane="terminal"]') ?? null) !== null
+        ) {
+          return false;
+        }
         const snapshot = panes.layout();
         const tools = zones(snapshot.root).filter((z) => !z.tabs.includes(CHAT_PANE));
         if (tools.length === 0) {
@@ -721,6 +783,7 @@ export function Shell(props: {
       <main className="pane-area">
         <PaneShell
           chatTitle={chatTitle}
+          chatState={chatState}
           bandTools={
             <IconButton
               label={t("nav.settings")}

@@ -1,0 +1,1238 @@
+diff --git a/apps/desktop/electron/ambient/quickEntry.test.ts b/apps/desktop/electron/ambient/quickEntry.test.ts
+index 8935532..fd791c9 100644
+--- a/apps/desktop/electron/ambient/quickEntry.test.ts
++++ b/apps/desktop/electron/ambient/quickEntry.test.ts
+@@ -15,7 +15,7 @@ describe("quick entry bounds", () => {
+       x: 640,
+       y: 270,
+       width: 640,
+-      height: 168,
++      height: 112,
+     });
+     expect(quickBounds({ x: 1920, y: 0, width: 500, height: 100 })).toEqual({
+       x: 1920,
+diff --git a/apps/desktop/electron/ambient/quickEntry.ts b/apps/desktop/electron/ambient/quickEntry.ts
+index 666e658..49e2ee0 100644
+--- a/apps/desktop/electron/ambient/quickEntry.ts
++++ b/apps/desktop/electron/ambient/quickEntry.ts
+@@ -9,7 +9,11 @@ import type { BrowserWindowLike } from "../windows/manager.ts";
+ import type { Rect } from "../windows/windowState.ts";
+ import { type FloatingWindow, floatAbove, type ScreenLike, type Timers } from "./hud.ts";
+ 
+-export const QUICK_SIZE = { width: 640, height: 168 } as const;
++/**
++ * The composer card fills the window (W54-D1-5): no see-through margin, which a desktop without a
++ * compositor paints black.
++ */
++export const QUICK_SIZE = { width: 640, height: 112 } as const;
+ /** How far down the display the composer sits (fraction of the work area's height). */
+ export const QUICK_TOP_FRACTION = 0.25;
+ export const QUICK_RELAY_TIMEOUT_MS = 15_000;
+diff --git a/apps/desktop/src/ambient/ambient.css b/apps/desktop/src/ambient/ambient.css
+index 2ed5eea..7ab8cbe 100644
+--- a/apps/desktop/src/ambient/ambient.css
++++ b/apps/desktop/src/ambient/ambient.css
+@@ -195,6 +195,27 @@ html[data-window="quick"] body {
+   color: #e6e6e6;
+ }
+ 
++/* W54-D1-6: the sheet shows the latest exchange only, from its question down (earlier turns
++   stay in the main window); no scrollbar on the dark sheet */
++.hud .transcript .turn:has(~ .turn),
++.hud .transcript-earlier {
++  display: none;
++}
++
++.hud .transcript-scroll {
++  padding: 22px 36px 24px;
++  scrollbar-width: none;
++}
++
++.hud .transcript .msg-user .msg-bubble {
++  max-height: none;
++}
++
++/* the answer lines up under its question (no reply indent on the sheet) */
++.hud .transcript .msg-assistant {
++  margin-left: 0;
++}
++
+ .hud .tool-row,
+ .hud .inline-diff,
+ .hud .msg-notice,
+@@ -275,27 +296,29 @@ html[data-window="quick"] body {
+   cursor: nwse-resize;
+ }
+ 
+-/* Quick entry (W52-m): one card centred in a transparent window. */
++/* Quick entry (W52-m): one card in a transparent window. W54-D1-5: the card fills the window
++   (sized to it), so a desktop without a compositor, which paints the see-through part black,
++   shows nothing but the card. */
+ .quick {
+   position: fixed;
+   inset: 0;
+   display: flex;
+   flex-direction: column;
+-  justify-content: center;
+-  padding: 12px;
+   color: var(--desk-fg-1);
+   font-family: var(--desk-font-ui);
+ }
+ 
+ .quick-card {
+   display: flex;
++  flex: 1;
+   flex-direction: column;
++  justify-content: center;
+   gap: 8px;
++  min-height: 0;
+   padding: 10px 14px;
+   border: 1px solid var(--desk-stroke-3);
+   border-radius: 12px;
+   background: color-mix(in srgb, var(--desk-bg-raised) 96%, var(--desk-fg-1));
+-  box-shadow: 0 2px 8px rgb(0 0 0 / 0.22);
+ }
+ 
+ :root[data-theme="indus-light"] .quick-card {
+diff --git a/apps/desktop/src/app/Shell.tsx b/apps/desktop/src/app/Shell.tsx
+index d108278..7df6f00 100644
+--- a/apps/desktop/src/app/Shell.tsx
++++ b/apps/desktop/src/app/Shell.tsx
+@@ -30,6 +30,7 @@ import {
+ import { NavLink, useLocation, useNavigate } from "react-router";
+ import { BotsRoster } from "../bots/BotsRoster.tsx";
+ import { draftOf, FRESH, setDraft, windowDrafts } from "../chat/composer/goneSession.ts";
++import { useFirstPrompt } from "../chat/transcriptReact.tsx";
+ import {
+   CommandPalette,
+   ContributedTitleBar,
+@@ -38,11 +39,21 @@ import {
+ } from "../contrib/areas.tsx";
+ import { ContributedNav, useContributedPaths } from "../contrib/shell.tsx";
+ import type { GatewayConnection } from "../gateway/connectionStore.ts";
+-import { useConnectionState, useMaybeConnectionStore } from "../gateway/react.tsx";
++import {
++  useConnectionState,
++  useMaybeConnectionStore,
++  useOpenServerRequests,
++} from "../gateway/react.tsx";
+ import { type MessageKey, useT } from "../i18n/index.tsx";
+ import { previewTargets } from "../panes/d2Panes.tsx";
+ import { LayoutStore } from "../panes/layoutStore.ts";
+-import { focusedPane, PaneShell, paneRegistry, useLayout } from "../panes/PaneShell.tsx";
++import {
++  type ChatTabState,
++  focusedPane,
++  PaneShell,
++  paneRegistry,
++  useLayout,
++} from "../panes/PaneShell.tsx";
+ import { CHAT_PANE, isHidden, zones } from "../panes/paneTree.ts";
+ import { surfaceShown } from "../panes/presets.ts";
+ import type { PreviewTarget } from "../panes/preview/target.ts";
+@@ -295,6 +306,26 @@ function LeftSidebar(props: {
+             onPopOut={(id) =>
+               void desktopBridge()?.hud.open({ sessionId: id, profile: props.profile })
+             }
++            {...(props.connection === null
++              ? {}
++              : {
++                  onBranch: (id: string) => {
++                    const connection = props.connection;
++                    if (connection === null) return;
++                    void connection.request("session.branch", { session_id: id }).then(
++                      async (result) => {
++                        await sessions.refresh();
++                        navigate(sessionPath(result.session_id));
++                      },
++                      (error: unknown) =>
++                        notify({
++                          tone: "error",
++                          title: t("sidebar.branchFailed"),
++                          message: error instanceof Error ? error.message : String(error),
++                        }),
++                    );
++                  },
++                })}
+             onNewChat={() => navigate(NEW_CHAT_PATH)}
+             events={props.connection}
+             homeDir={launchFacts().homeDir || null}
+@@ -423,7 +454,10 @@ export function addToComposer(sessionId: string | null, text: string): void {
+   });
+ }
+ 
+-/** The chat tab's label: the open conversation's title, or "New session" for a fresh draft. */
++/**
++ * The chat tab's label: the open conversation's title, or "New session" for a fresh draft. A chat
++ * the list does not hold yet (one that just started) shows its first prompt (W54-D1-2).
++ */
+ function useChatTitle(chrome: ShellChrome, profile: string, sessionId: string | null): string {
+   const t = useT();
+   const list = chrome.sidebar.sessions(profile);
+@@ -431,9 +465,29 @@ function useChatTitle(chrome: ShellChrome, profile: string, sessionId: string |
+     (listener) => list.subscribe(listener),
+     () => list.getState().rows,
+   );
++  const firstPrompt = useFirstPrompt(sessionId);
+   if (sessionId === null) return t("nav.newChat");
+   const row = rows.find((candidate) => candidate.ids.includes(sessionId));
+-  return row === undefined ? t("panes.title.chat") : rowTitle(t, row);
++  if (row !== undefined) return rowTitle(t, row);
++  return firstPrompt ?? t("panes.title.chat");
++}
++
++/** The chat tab's dot: waiting for the person, working, or quiet (W54-D1-2). */
++function useChatState(
++  chrome: ShellChrome,
++  profile: string,
++  sessionId: string | null,
++): ChatTabState {
++  const list = chrome.sidebar.sessions(profile);
++  // the live turn events only: a REST row's `is_active` means attached, not answering
++  const running = useSyncExternalStore(
++    (listener) => list.subscribe(listener),
++    () => list.getState().running,
++  );
++  const waiting = useOpenServerRequests(sessionId);
++  if (sessionId === null) return "idle";
++  if (waiting.length > 0) return "attention";
++  return running.has(sessionId) ? "running" : "idle";
+ }
+ 
+ // -- the shell -----------------------------------------------------------------------------------
+@@ -465,6 +519,7 @@ export function Shell(props: {
+   const sessionId = props.sessionId ?? null;
+   const workspace = useWorkspaceFolder(chrome, profile, sessionId);
+   const chatTitle = useChatTitle(chrome, profile, sessionId);
++  const chatState = useChatState(chrome, profile, sessionId);
+   const connectionMode = useConnectionMode(connection);
+   const openPreview = useCallback(
+     (target: PreviewTarget) => {
+@@ -508,7 +563,7 @@ export function Shell(props: {
+   const showRail = !secondary && profiles.length > 0 && surfaceShown(mode, "profileRail", surface);
+   const showStatus = surfaceShown(mode, "statusBar", surface);
+ 
+-  const onAction = (action: PaneAction): boolean => {
++  const onAction = (action: PaneAction, event: KeyboardEvent): boolean => {
+     const panes = chrome.layout;
+     switch (action.kind) {
+       case "new-chat":
+@@ -539,6 +594,13 @@ export function Shell(props: {
+         setLeftOpen((open) => !open);
+         return true;
+       case "toggle-right": {
++        // Ctrl+J inside a terminal is the shell's own key (a line feed), not the sidebar's
++        if (
++          event.altKey === false &&
++          (document.activeElement?.closest('[data-pane="terminal"]') ?? null) !== null
++        ) {
++          return false;
++        }
+         const snapshot = panes.layout();
+         const tools = zones(snapshot.root).filter((z) => !z.tabs.includes(CHAT_PANE));
+         if (tools.length === 0) {
+@@ -721,6 +783,7 @@ export function Shell(props: {
+       <main className="pane-area">
+         <PaneShell
+           chatTitle={chatTitle}
++          chatState={chatState}
+           bandTools={
+             <IconButton
+               label={t("nav.settings")}
+diff --git a/apps/desktop/src/app/messaging/MessagingPage.tsx b/apps/desktop/src/app/messaging/MessagingPage.tsx
+index ab7b9f3..9ad9634 100644
+--- a/apps/desktop/src/app/messaging/MessagingPage.tsx
++++ b/apps/desktop/src/app/messaging/MessagingPage.tsx
+@@ -627,7 +627,7 @@ export function MessagingPage(props: MessagingPageProps) {
+                         <PlatformTile name={p.name} id={p.id} />
+                         <span className="msg-row-name">{p.name}</span>
+                         {pendingCount(p.id) > 0 && (
+-                          <span className="msg-bubble">{pendingCount(p.id)}</span>
++                          <span className="msg-pending">{pendingCount(p.id)}</span>
+                         )}
+                         <span className="msg-dot" data-tone={toneOf(p)} aria-hidden="true" />
+                       </button>
+diff --git a/apps/desktop/src/app/messaging/messaging.css b/apps/desktop/src/app/messaging/messaging.css
+index 6293584..e889587 100644
+--- a/apps/desktop/src/app/messaging/messaging.css
++++ b/apps/desktop/src/app/messaging/messaging.css
+@@ -58,7 +58,7 @@
+   color: hsl(var(--msg-tile-hue) 70% 72%);
+ }
+ 
+-.msg-bubble {
++.msg-pending {
+   min-width: 16px;
+   padding: 0 4px;
+   border-radius: 8px;
+diff --git a/apps/desktop/src/chat/ToolRow.tsx b/apps/desktop/src/chat/ToolRow.tsx
+index 5f00e46..46c35ba 100644
+--- a/apps/desktop/src/chat/ToolRow.tsx
++++ b/apps/desktop/src/chat/ToolRow.tsx
+@@ -80,7 +80,7 @@ function Section(props: { label: string; children: ReactNode }) {
+   );
+ }
+ 
+-function OutputBlock(props: { text: string; failed: boolean }) {
++function OutputBlock(props: { text: string; failed: boolean; plain?: boolean }) {
+   const t = useT();
+   const [all, setAll] = useState(false);
+   const { text } = props;
+@@ -88,7 +88,11 @@ function OutputBlock(props: { text: string; failed: boolean }) {
+   const shown = all || text.length <= OUTPUT_PREVIEW ? text : text.slice(0, OUTPUT_PREVIEW);
+   return (
+     <>
+-      <pre className="tool-pre" data-failed={props.failed || undefined}>
++      <pre
++        className="tool-pre"
++        data-failed={props.failed || undefined}
++        data-plain={props.plain || undefined}
++      >
+         {shown}
+       </pre>
+       {shown.length < text.length && (
+@@ -120,6 +124,17 @@ function ToolBody(props: { part: ToolPart; command: string | null }) {
+               {t("tool.exit", { code: terminal.exitCode })}
+             </span>
+           )}
++          {/* W54-D1-1: the terminal block carries its own copy button (command and output) */}
++          <button
++            type="button"
++            className="desk-icon-btn tool-command-copy"
++            data-size="sm"
++            aria-label={t("tool.copyCommand")}
++            title={t("tool.copyCommand")}
++            onClick={() => void copyText(terminalCopy(props.command ?? "", terminal))}
++          >
++            <Copy aria-hidden="true" size={12} />
++          </button>
+         </div>
+       ) : (
+         part.args !== null &&
+@@ -131,12 +146,12 @@ function ToolBody(props: { part: ToolPart; command: string | null }) {
+       )}
+       {terminal !== null ? (
+         (terminal.output !== "" || terminal.error !== "") && (
+-          <Section label={t("tool.output")}>
+-            <OutputBlock
+-              text={[terminal.output, terminal.error].filter((x) => x !== "").join("\n")}
+-              failed={failed}
+-            />
+-          </Section>
++          // a terminal's output reads like the screen it came from: no label, no inset
++          <OutputBlock
++            text={[terminal.output, terminal.error].filter((x) => x !== "").join("\n")}
++            failed={failed}
++            plain
++          />
+         )
+       ) : part.state !== "running" || result !== "" ? (
+         <Section label={t("tool.output")}>
+@@ -199,7 +214,7 @@ export function ToolRow(props: { part: ToolPart; settled?: boolean }) {
+             </span>
+           )}
+         </button>
+-        {open && copyOf(part) !== "" && (
++        {open && command === null && copyOf(part) !== "" && (
+           <button
+             type="button"
+             className="desk-icon-btn tool-copy"
+@@ -232,6 +247,15 @@ function copyOf(part: ToolPart): string {
+   return part.result ?? "";
+ }
+ 
++/** What the terminal block's copy button puts on the clipboard: `$ command`, then its output. */
++export function terminalCopy(
++  command: string,
++  terminal: { output: string; error: string } | null,
++): string {
++  const output = terminal === null ? [] : [terminal.output, terminal.error];
++  return [`$ ${command}`, ...output.filter((x) => x !== "")].join("\n");
++}
++
+ /** The whole command (the summary clips it to one short line). */
+ function fullCommand(part: ToolPart): string {
+   const args = part.args ?? {};
+diff --git a/apps/desktop/src/chat/composer/Composer.tsx b/apps/desktop/src/chat/composer/Composer.tsx
+index a3efbae..040493a 100644
+--- a/apps/desktop/src/chat/composer/Composer.tsx
++++ b/apps/desktop/src/chat/composer/Composer.tsx
+@@ -714,26 +714,31 @@ export function Composer(props: ComposerProps) {
+             ) : null}
+             {busy.running ? (
+               <>
+-                <button
+-                  type="button"
+-                  className="desk-btn"
+-                  data-variant="ghost"
+-                  data-size="sm"
+-                  disabled={text.trim() === ""}
+-                  onClick={() => void steer()}
+-                >
+-                  {t("composer.steer")}
+-                </button>
+-                <button
+-                  type="button"
+-                  className="desk-btn"
+-                  data-variant="ghost"
+-                  data-size="sm"
+-                  disabled={text.trim() === "" || sending}
+-                  onClick={() => void submit()}
+-                >
+-                  {t("composer.queue")}
+-                </button>
++                {/* W54-D1-7: one Stop while a reply runs; Steer and Queue join it once there is
++                    something typed to steer with or queue */}
++                {text.trim() !== "" && (
++                  <>
++                    <button
++                      type="button"
++                      className="desk-btn"
++                      data-variant="ghost"
++                      data-size="sm"
++                      onClick={() => void steer()}
++                    >
++                      {t("composer.steer")}
++                    </button>
++                    <button
++                      type="button"
++                      className="desk-btn"
++                      data-variant="ghost"
++                      data-size="sm"
++                      disabled={sending}
++                      onClick={() => void submit()}
++                    >
++                      {t("composer.queue")}
++                    </button>
++                  </>
++                )}
+                 <button
+                   type="button"
+                   className="composer-send"
+diff --git a/apps/desktop/src/chat/transcript.css b/apps/desktop/src/chat/transcript.css
+index 7a4b690..d7ff955 100644
+--- a/apps/desktop/src/chat/transcript.css
++++ b/apps/desktop/src/chat/transcript.css
+@@ -351,6 +351,18 @@
+   word-break: break-word;
+ }
+ 
++/* a terminal's output (W54-D1-1): the screen's lines, no inset box */
++.tool-pre[data-plain] {
++  padding: 4px 8px 2px;
++  background: transparent;
++  color: var(--desk-fg-2);
++}
++
++.tool-command-copy {
++  flex: none;
++  color: var(--desk-fg-3);
++}
++
+ .tool-pre[data-failed] {
+   color: var(--desk-danger);
+ }
+diff --git a/apps/desktop/src/chat/transcriptLook.test.tsx b/apps/desktop/src/chat/transcriptLook.test.tsx
+index 26fef65..28eaf32 100644
+--- a/apps/desktop/src/chat/transcriptLook.test.tsx
++++ b/apps/desktop/src/chat/transcriptLook.test.tsx
+@@ -10,7 +10,7 @@ import { fakeRest } from "../settings/fakeRest.ts";
+ import { ErrorCard } from "./ErrorCard.tsx";
+ import { failureEcho } from "./failure.ts";
+ import type { ErrorItem, ToolPart } from "./messageStream.ts";
+-import { ToolRow } from "./ToolRow.tsx";
++import { ToolRow, terminalCopy } from "./ToolRow.tsx";
+ import { terminalResult, toolOutcome } from "./toolSummary.ts";
+ 
+ afterEach(() => {
+@@ -48,6 +48,10 @@ describe("tool row", () => {
+     expect(row.querySelector(".tool-exit")?.textContent).toBe("exit 0");
+     expect(row.querySelector(".tool-exit")?.hasAttribute("data-zero")).toBe(true);
+     expect(screen.getByText("scene-01.fountain")).toBeTruthy();
++    // W54-D1-1: the terminal block has its own copy button and no "Output" label
++    expect(screen.getByRole("button", { name: "Copy command and output" })).toBeTruthy();
++    expect(screen.queryByText("Output")).toBeNull();
++    expect(terminalCopy("ls", { output: "a\nb", error: "" })).toBe("$ ls\na\nb");
+   });
+ 
+   it("a refused call is red even without an error sentence", () => {
+diff --git a/apps/desktop/src/chat/transcriptReact.tsx b/apps/desktop/src/chat/transcriptReact.tsx
+index 90def25..61170cf 100644
+--- a/apps/desktop/src/chat/transcriptReact.tsx
++++ b/apps/desktop/src/chat/transcriptReact.tsx
+@@ -1,6 +1,12 @@
+ // React access to the transcript store (one per connection, provided at the root).
+ 
+-import { createContext, type ReactNode, useContext, useSyncExternalStore } from "react";
++import {
++  createContext,
++  type ReactNode,
++  useCallback,
++  useContext,
++  useSyncExternalStore,
++} from "react";
+ import type { SessionTranscript } from "./messageStream.ts";
+ import type { TranscriptStore } from "./transcriptStore.ts";
+ 
+@@ -31,3 +37,25 @@ export function useShowReasoning(): boolean {
+     () => store.showReasoning,
+   );
+ }
++
++const noSubscribe = () => () => {};
++
++/**
++ * The first prompt of a conversation as this window knows it, or null (no store here, no
++ * session, nothing asked yet). The chat tab shows it until the list has the chat's title.
++ */
++export function useFirstPrompt(sessionId: string | null): string | null {
++  const store = useContext(StoreContext);
++  const subscribe = useCallback(
++    (listener: () => void) =>
++      store === null || sessionId === null ? noSubscribe() : store.subscribe(sessionId, listener),
++    [store, sessionId],
++  );
++  const read = useCallback(() => {
++    if (store === null || sessionId === null) return null;
++    const first = store.get(sessionId).items.find((item) => item.kind === "user");
++    const text = first?.kind === "user" ? first.text.trim().split("\n")[0]?.trim() : "";
++    return text === undefined || text === "" ? null : text;
++  }, [store, sessionId]);
++  return useSyncExternalStore(subscribe, read, read);
++}
+diff --git a/apps/desktop/src/chat/transcriptStrings.en.ts b/apps/desktop/src/chat/transcriptStrings.en.ts
+index 4ca52ed..2753512 100644
+--- a/apps/desktop/src/chat/transcriptStrings.en.ts
++++ b/apps/desktop/src/chat/transcriptStrings.en.ts
+@@ -40,6 +40,7 @@ export const TRANSCRIPT_STRINGS = {
+ 
+   "tool.dismiss": "Hide this step",
+   "tool.copy": "Copy output",
++  "tool.copyCommand": "Copy command and output",
+   "tool.exit": "exit {code}",
+   "tool.blocked": "Not allowed",
+ 
+diff --git a/apps/desktop/src/panes/PaneShell.tsx b/apps/desktop/src/panes/PaneShell.tsx
+index 342c6a1..f6507fa 100644
+--- a/apps/desktop/src/panes/PaneShell.tsx
++++ b/apps/desktop/src/panes/PaneShell.tsx
+@@ -229,6 +229,9 @@ function paneFromDrag(event: DragEvent): PaneId | null {
+ 
+ // -- rendering -----------------------------------------------------------------------------------
+ 
++/** What the chat tab's dot says about its conversation. */
++export type ChatTabState = "idle" | "running" | "attention";
++
+ export interface PaneShellProps {
+   store: LayoutStore;
+   /** The chat pane's body (the route's content). */
+@@ -243,6 +246,8 @@ export interface PaneShellProps {
+   bandTools?: ReactNode;
+   /** The chat tab's label (the conversation's title, or "New session"); else "Chat". */
+   chatTitle?: string;
++  /** The chat tab's dot (W54-D1-2): an approval waits, a turn runs, or quiet. */
++  chatState?: ChatTabState;
+   /** What tool panes get besides the route (P20-28..31). */
+   workspace?: string | null;
+   mode?: "local" | "remote" | null;
+@@ -261,6 +266,7 @@ interface ShellContext {
+   profile: string | null;
+   showSlots: boolean;
+   title: (pane: PaneId) => string;
++  chatState: ChatTabState | null;
+   tools: Pick<PaneShellProps, "workspace" | "mode" | "connection" | "openPreview" | "addToChat">;
+   /** The zone whose header runs under the band's tool cluster (top right), if any. */
+   bandEnd: string | null;
+@@ -517,7 +523,13 @@ function ZoneView(props: { ctx: ShellContext; zone: ZoneNode }) {
+                     {slotLabel(index, z.tabs.length)}
+                   </span>
+                 )}
++                {pane === CHAT_PANE && ctx.chatState !== null && (
++                  <i className="pane-tab-dot" data-state={ctx.chatState} aria-hidden="true" />
++                )}
+                 <span>{ctx.title(pane)}</span>
++                {pane === CHAT_PANE && ctx.chatState === "attention" && (
++                  <span className="sr-only">{t("panes.chatWaiting")}</span>
++                )}
+                 {hidden && <span className="sr-only">{t("panes.hiddenSuffix")}</span>}
+               </button>
+             );
+@@ -832,6 +844,7 @@ export function PaneShell(props: PaneShellProps) {
+     profile: props.profile,
+     showSlots: props.showSlots === true,
+     title,
++    chatState: props.chatState ?? null,
+     tools: {
+       workspace: props.workspace ?? null,
+       mode: props.mode ?? null,
+diff --git a/apps/desktop/src/panes/panes.css b/apps/desktop/src/panes/panes.css
+index 517057f..dcee9db 100644
+--- a/apps/desktop/src/panes/panes.css
++++ b/apps/desktop/src/panes/panes.css
+@@ -223,6 +223,24 @@
+   opacity: 0.6;
+ }
+ 
++/* the chat tab's dot (W54-D1-2): quiet, a turn running, or an approval waiting */
++.pane-tab-dot {
++  flex: none;
++  width: 5px;
++  height: 5px;
++  margin-right: -2px;
++  border-radius: 50%;
++  background: var(--desk-fg-4);
++}
++
++.pane-tab-dot[data-state="running"] {
++  background: var(--desk-accent);
++}
++
++.pane-tab-dot[data-state="attention"] {
++  background: var(--desk-warning);
++}
++
+ .pane-slot {
+   display: inline-grid;
+   place-items: center;
+diff --git a/apps/desktop/src/panes/presets.ts b/apps/desktop/src/panes/presets.ts
+index 443df33..ffb2e1a 100644
+--- a/apps/desktop/src/panes/presets.ts
++++ b/apps/desktop/src/panes/presets.ts
+@@ -187,14 +187,22 @@ export function initialLayout(mode: InterfaceMode, available: Iterable<PaneId>):
+ //
+ // Opening a tool pane into the chat-only window (or into a window this arrangement built) lays the
+ // tool panes out on the right: one column per document pane in a row on top (Preview, Review,
+-// Files from left to right) and the Terminal under the whole row. Each side column is about 236px
+-// at the usual window width; the shapes other presets build are left alone.
++// Files from left to right) and the Terminal under the whole row. A Files column is about 236px
++// at the usual window width (a narrow right sidebar); Review gets a wider column so a diff line
++// and the commit box fit (W54-D1-3). The chat keeps at least about 40% of the span.
++// The shapes other presets build are left alone.
+ 
+ /** The top row's panes, left to right. */
+ const SIDE_TOP: readonly PaneId[] = ["preview", "review", "files"];
+ /** The chat area's usual width (window minus the sidebar), for the relative split sizes. */
+ const SIDE_SPAN = 1180;
+-const SIDE_COLUMN = 236;
++/** Each side column's usual width at that span (relative sizes, so they scale with the window). */
++const SIDE_COLUMN: Readonly<Partial<Record<PaneId, number>>> = {
++  review: 380,
++};
++const SIDE_COLUMN_DEFAULT = 236;
++/** The chat's least share of the span when several wide columns are open. */
++const SIDE_CHAT_MIN = 480;
+ const SIDE_TERMINAL = 178;
+ const SIDE_HEIGHT = 846;
+ 
+@@ -208,18 +216,22 @@ export function sideTree(panes: Iterable<PaneId>): LayoutNode {
+   const available = new Set(panes);
+   const chat = zone("z1", [CHAT_PANE]);
+   const top = pick(available, SIDE_TOP);
+-  const columns = Math.max(top.length, 1);
++  const widthOf = (pane: PaneId) => SIDE_COLUMN[pane] ?? SIDE_COLUMN_DEFAULT;
+   const topRow = group(
+     "s3",
+     "row",
+-    top.map((pane, index) => [zone(`z${index + 2}`, [pane]), 1] as [LayoutNode, number]),
++    top.map(
++      (pane, index) => [zone(`z${index + 2}`, [pane]), widthOf(pane)] as [LayoutNode, number],
++    ),
+   );
+   const terminal = available.has("terminal") ? zone("z9", ["terminal"]) : null;
+   const right = group("s2", "column", [
+     [topRow, SIDE_HEIGHT - SIDE_TERMINAL],
+     [terminal, SIDE_TERMINAL],
+   ]);
+-  const width = SIDE_COLUMN * columns;
++  const wanted =
++    top.length === 0 ? SIDE_COLUMN_DEFAULT : top.reduce((sum, p) => sum + widthOf(p), 0);
++  const width = Math.min(wanted, SIDE_SPAN - SIDE_CHAT_MIN);
+   const tree = group("s1", "row", [
+     [chat, SIDE_SPAN - width],
+     [right, width],
+diff --git a/apps/desktop/src/panes/shortcuts.test.ts b/apps/desktop/src/panes/shortcuts.test.ts
+index 805683b..c25b41c 100644
+--- a/apps/desktop/src/panes/shortcuts.test.ts
++++ b/apps/desktop/src/panes/shortcuts.test.ts
+@@ -18,6 +18,8 @@ describe("tab shortcuts", () => {
+       key({ key: "∫", code: "KeyB", ctrlKey: true, altKey: true }),
+       { kind: "toggle-right" },
+     ],
++    ["linux", key({ key: "j", code: "KeyJ", ctrlKey: true }), { kind: "toggle-right" }],
++    ["darwin", key({ key: "j", metaKey: true }), { kind: "toggle-right" }],
+     ["linux", key({ key: "3", code: "Digit3", ctrlKey: true }), { kind: "jump", slot: 3 }],
+     ["darwin", key({ key: "9", metaKey: true }), { kind: "jump", slot: 9 }],
+     ["darwin", key({ key: "PageDown", ctrlKey: true }), { kind: "cycle", step: 1 }],
+diff --git a/apps/desktop/src/panes/shortcuts.ts b/apps/desktop/src/panes/shortcuts.ts
+index 715d353..8a72722 100644
+--- a/apps/desktop/src/panes/shortcuts.ts
++++ b/apps/desktop/src/panes/shortcuts.ts
+@@ -71,6 +71,8 @@ export function actionForKey(event: KeyLike, platform: string): PaneAction | nul
+   if (key === "t") return { kind: "new-chat" };
+   if (key === "w") return { kind: "close" };
+   if (key === "b") return { kind: "toggle-left" };
++  // Ctrl+J: the right sidebar (Files over Terminal), like Ctrl+Alt+B (W54-D1-3)
++  if (key === "j" || event.code === "KeyJ") return { kind: "toggle-right" };
+   return null;
+ }
+ 
+diff --git a/apps/desktop/src/panes/strings.en.ts b/apps/desktop/src/panes/strings.en.ts
+index 3281dfa..7c35af0 100644
+--- a/apps/desktop/src/panes/strings.en.ts
++++ b/apps/desktop/src/panes/strings.en.ts
+@@ -17,6 +17,7 @@ export const PANE_STRINGS = {
+   "panes.close": "Close {pane}",
+   "panes.open": "Open {pane}",
+   "panes.hiddenSuffix": "(hidden)",
++  "panes.chatWaiting": "(waiting for you)",
+   "panes.resize": "Resize panes",
+   "panes.layout": "Layout",
+   "panes.preset.custom": "Custom",
+diff --git a/apps/desktop/src/panes/terminal/xtermView.ts b/apps/desktop/src/panes/terminal/xtermView.ts
+index c0a624f..c41cb6d 100644
+--- a/apps/desktop/src/panes/terminal/xtermView.ts
++++ b/apps/desktop/src/panes/terminal/xtermView.ts
+@@ -42,6 +42,16 @@ export function terminalTheme(): ITheme {
+   };
+ }
+ 
++/**
++ * The screen's font as a plain family list. xterm measures and paints its cells on a canvas,
++ * where `var(...)` means nothing, so the token is read here (a raw `var()` made the canvas fall
++ * back to a proportional font and spread the prompt across wide cells).
++ */
++export function terminalFont(): string {
++  const family = cssVar("--indus-font-mono", "");
++  return family === "" ? "ui-monospace, monospace" : `${family}, monospace`;
++}
++
+ export const createXtermView: TerminalViewFactory = async () => {
+   const [xterm, fitAddon, unicode, webgl] = await Promise.all([
+     import("@xterm/xterm"),
+@@ -53,7 +63,8 @@ export const createXtermView: TerminalViewFactory = async () => {
+   const term = new xterm.Terminal({
+     allowProposedApi: true,
+     cursorBlink: true,
+-    fontFamily: "var(--indus-font-mono), monospace",
++    // the canvas renderer cannot read a CSS variable: hand it the resolved family (W54-D1-4)
++    fontFamily: terminalFont(),
+     fontSize: 13,
+     scrollback: 5_000,
+     theme: terminalTheme(),
+diff --git a/apps/desktop/src/sidebar/SessionRowMenu.tsx b/apps/desktop/src/sidebar/SessionRowMenu.tsx
+index bd181f7..80cce4c 100644
+--- a/apps/desktop/src/sidebar/SessionRowMenu.tsx
++++ b/apps/desktop/src/sidebar/SessionRowMenu.tsx
+@@ -1,12 +1,14 @@
+ // The sidebar row's menu (W52-h): right-click a session row, or Shift+F10 / the context-menu key on
+ // a focused one. Only actions Indus really has: open in a floating window, rename, pin, unread,
+-// copy the id, archive, delete (W52-h-4 lists what the reference has that we leave out).
++// copy the id, branch (`session.branch`, W54-D1-8), archive, delete (W52-h-4 lists what the
++// reference has that we leave out).
+ 
+ import {
+   Archive,
+   ArchiveRestore,
+   Copy,
+   ExternalLink,
++  GitBranch,
+   Mail,
+   MailOpen,
+   Pencil,
+@@ -23,6 +25,8 @@ export interface RowMenuActions {
+   togglePin: () => void;
+   toggleUnread: () => void;
+   copyId: () => void;
++  /** Start a new chat from this one's history (absent: no connection to ask). */
++  branch?: (() => void) | undefined;
+   toggleArchive: () => void;
+   remove: () => void;
+ }
+@@ -80,6 +84,16 @@ export function SessionRowMenu(props: {
+         label={t("sidebar.menu.copyId")}
+         onSelect={run(a.copyId)}
+       />
++      {a.branch !== undefined && (
++        <>
++          <MenuSeparator />
++          <MenuRow
++            icon={<GitBranch aria-hidden="true" />}
++            label={t("sidebar.menu.branch")}
++            onSelect={run(a.branch)}
++          />
++        </>
++      )}
+       <MenuSeparator />
+       <MenuRow
+         icon={
+diff --git a/apps/desktop/src/sidebar/Sidebar.test.tsx b/apps/desktop/src/sidebar/Sidebar.test.tsx
+index 2eda3a1..2a388a7 100644
+--- a/apps/desktop/src/sidebar/Sidebar.test.tsx
++++ b/apps/desktop/src/sidebar/Sidebar.test.tsx
+@@ -4,7 +4,7 @@ import axe from "axe-core";
+ import { afterEach, describe, expect, it, vi } from "vitest";
+ import { translate } from "../i18n/index.tsx";
+ import { newChatTarget } from "./projects.ts";
+-import { type EventSource, relativeTime, Sidebar, SidebarModel } from "./Sidebar.tsx";
++import { type EventSource, relativeTime, Sidebar, SidebarModel, sessionDot } from "./Sidebar.tsx";
+ import type { ApiRequest, SessionInfo } from "./sessionList.ts";
+ 
+ class MemoryStorage {
+@@ -104,6 +104,46 @@ describe("sessions sidebar", () => {
+     expect(api.mock.calls[0]?.[0].profile).toBe("work");
+   });
+ 
++  it("W54-D1-2: the row's ⋮ button opens its menu; Branch shows only when it can be backed", async () => {
++    mount();
++    fireEvent.click(await screen.findByRole("button", { name: "More actions for Parser work" }));
++    expect(screen.getByRole("menuitem", { name: "Pin" })).toBeTruthy();
++    expect(screen.queryByRole("menuitem", { name: "Branch" })).toBeNull();
++  });
++
++  it("W54-D1-8: Branch asks the host with the row's newest id", async () => {
++    const storage = new MemoryStorage();
++    const model = new SidebarModel({ api: fakeApi(), storage, listDir: null });
++    const onBranch = vi.fn();
++    render(
++      <Sidebar
++        model={model}
++        profile="work"
++        activeSessionId={null}
++        onOpenSession={vi.fn()}
++        onNewChat={vi.fn()}
++        onBranch={onBranch}
++      />,
++    );
++    fireEvent.contextMenu(await screen.findByRole("button", { name: /^Parser work/ }));
++    fireEvent.click(screen.getByRole("menuitem", { name: "Branch" }));
++    expect(onBranch).toHaveBeenCalledWith("s-tip");
++  });
++
++  it("W54-D1-2: dots rank waiting > working > new activity > live > quiet", () => {
++    expect(sessionDot({ attention: true, running: true, unread: true, live: true })).toBe(
++      "attention",
++    );
++    expect(sessionDot({ attention: false, running: true, unread: true })).toBe("running");
++    expect(sessionDot({ attention: false, running: false, unread: true, live: true })).toBe(
++      "unread",
++    );
++    expect(sessionDot({ attention: false, running: false, unread: false, live: true })).toBe(
++      "live",
++    );
++    expect(sessionDot({ attention: false, running: false, unread: false })).toBe("idle");
++  });
++
+   it("opens a conversation by its newest id", async () => {
+     const { onOpenSession } = mount();
+     fireEvent.click(await screen.findByRole("button", { name: /^Parser work/ }));
+diff --git a/apps/desktop/src/sidebar/Sidebar.tsx b/apps/desktop/src/sidebar/Sidebar.tsx
+index bffdaf2..5cabf0b 100644
+--- a/apps/desktop/src/sidebar/Sidebar.tsx
++++ b/apps/desktop/src/sidebar/Sidebar.tsx
+@@ -5,6 +5,7 @@
+ // shows the other profile's list at once and keeps this one.
+ 
+ import {
++  EllipsisVertical,
+   FolderPlus,
+   GitBranch,
+   ListFilter,
+@@ -27,6 +28,7 @@ import {
+ import { desktopBridge } from "../app/bridge.ts";
+ import { copyText } from "../app/clipboard.ts";
+ import { Loader } from "../app/Loader.tsx";
++import { useOpenServerRequests } from "../gateway/react.tsx";
+ import { type MessageKey, type Translate, useT } from "../i18n/index.tsx";
+ import { browserStorage, type StorageLike } from "../profiles/storageFamilies.ts";
+ import {
+@@ -144,6 +146,8 @@ export interface SidebarProps {
+   onOpenSession(sessionId: string): void;
+   /** Pop the conversation out into the HUD (P20-35); no button without it. */
+   onPopOut?(sessionId: string): void;
++  /** Branch the conversation (`session.branch`, W54-D1-8); no menu item without it. */
++  onBranch?(sessionId: string): void;
+   onNewChat(): void;
+   events?: EventSource | null;
+   /** The default root of the repo scan. */
+@@ -178,20 +182,48 @@ function useStore<S>(store: { subscribe(listener: () => void): () => void; getSt
+ interface RowHost {
+   list: SessionListStore;
+   running: ReadonlySet<string>;
++  /** Sessions with an approval or question waiting for the person (W54-D1-2). */
++  attention: ReadonlySet<string>;
+   activeSessionId: string | null;
+   now: number;
+   onOpen(id: string): void;
+   onPopOut?: ((id: string) => void) | undefined;
++  onBranch?: ((id: string) => void) | undefined;
+   onDelete(row: SessionRow): void;
+ }
+ 
+-function SessionItem(props: Omit<RowHost, "running"> & { row: SessionRow; running: boolean }) {
++/**
++ * The row's dot (W54-D1-2): waiting for the person, a turn running (live events), new activity,
++ * recently live (the list's `is_active`: not ended, active lately), or the quiet bullet.
++ */
++export type SessionDot = "attention" | "running" | "unread" | "live" | "idle";
++
++export function sessionDot(state: {
++  attention: boolean;
++  running: boolean;
++  unread: boolean;
++  live?: boolean;
++}): SessionDot {
++  if (state.attention) return "attention";
++  if (state.running) return "running";
++  if (state.unread) return "unread";
++  return state.live === true ? "live" : "idle";
++}
++
++function SessionItem(
++  props: Omit<RowHost, "running" | "attention"> & {
++    row: SessionRow;
++    running: boolean;
++    attention: boolean;
++  },
++) {
+   const t = useT();
+   const { row, list } = props;
+   const title = rowTitle(t, row);
+   const current = props.activeSessionId !== null && row.ids.includes(props.activeSessionId);
+   const unread = list.unread.isUnread(row, props.activeSessionId);
+-  const running = props.running || row.active;
++  const running = props.running;
++  const dot = sessionDot({ attention: props.attention, running, unread, live: row.active });
+   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+   const [renaming, setRenaming] = useState(false);
+   const button = useRef<HTMLButtonElement>(null);
+@@ -263,10 +295,7 @@ function SessionItem(props: Omit<RowHost, "running"> & { row: SessionRow; runnin
+         onMouseLeave={tip.bind.onMouseLeave}
+       >
+         <span className="session-dots" aria-hidden="true">
+-          <span
+-            className="session-dot"
+-            data-kind={running ? "running" : unread ? "unread" : "idle"}
+-          />
++          <span className="session-dot" data-kind={dot} />
+         </span>
+         {row.branch && <GitBranch aria-hidden="true" size={12} className="session-branch" />}
+         <span ref={titleRef} className="session-title">
+@@ -274,9 +303,24 @@ function SessionItem(props: Omit<RowHost, "running"> & { row: SessionRow; runnin
+         </span>
+         {unread && <span className="sr-only">{t("sidebar.unread")}</span>}
+         {running && <span className="sr-only">{t("sidebar.running")}</span>}
++        {props.attention && <span className="sr-only">{t("sidebar.attention")}</span>}
+         {row.branch && <span className="sr-only">{t("sidebar.branch")}</span>}
+         <span className="session-time">{relativeTime(t, row.lastActive, props.now)}</span>
+       </button>
++      {/* the row's actions on hover (W54-D1-2): the same menu as a right-click */}
++      <button
++        type="button"
++        className="session-more"
++        aria-label={t("sidebar.more", { title })}
++        aria-haspopup="menu"
++        aria-expanded={menu !== null}
++        onClick={(event) => {
++          const rect = event.currentTarget.getBoundingClientRect();
++          setMenu({ x: rect.left, y: rect.bottom });
++        }}
++      >
++        <EllipsisVertical aria-hidden="true" size={13} />
++      </button>
+       {truncated ? tip.tip : null}
+       {menu !== null && (
+         <SessionRowMenu
+@@ -293,6 +337,7 @@ function SessionItem(props: Omit<RowHost, "running"> & { row: SessionRow; runnin
+             togglePin: () => void list.setPinned(row, !row.pinned),
+             toggleUnread: () => (unread ? list.markSeen(row) : list.markUnread(row)),
+             copyId: () => void copyText(row.durableId),
++            branch: props.onBranch === undefined ? undefined : () => props.onBranch?.(row.id),
+             toggleArchive: () => void list.setArchived(row, !row.archived),
+             remove: () => props.onDelete(row),
+           }}
+@@ -303,13 +348,14 @@ function SessionItem(props: Omit<RowHost, "running"> & { row: SessionRow; runnin
+ }
+ 
+ function RowList(
+-  props: Omit<RowHost, "running"> & {
++  props: Omit<RowHost, "running" | "attention"> & {
+     rows: readonly SessionRow[];
+     running: ReadonlySet<string>;
++    attention: ReadonlySet<string>;
+     label: string;
+   },
+ ) {
+-  const { rows, label, running, ...host } = props;
++  const { rows, label, running, attention, ...host } = props;
+   return (
+     <ul className="session-list" aria-label={label}>
+       {rows.map((row) => (
+@@ -318,6 +364,7 @@ function RowList(
+           {...host}
+           row={row}
+           running={row.ids.some((id) => running.has(id))}
++          attention={row.ids.some((id) => attention.has(id))}
+         />
+       ))}
+     </ul>
+@@ -526,6 +573,9 @@ export function Sidebar(props: SidebarProps) {
+     [state.rows, trimmed, hits],
+   );
+ 
++  // approvals and questions waiting anywhere on the connection mark their rows (W54-D1-2)
++  const waiting = useOpenServerRequests(undefined);
++  const attention = useMemo(() => new Set(waiting.map((open) => open.sessionId)), [waiting]);
+   const openSession = (id: string) => props.onOpenSession(id);
+   const newChat = (project: Project | null) => {
+     beginNewChat(props.model, props.profile, project);
+@@ -534,10 +584,12 @@ export function Sidebar(props: SidebarProps) {
+   const common = {
+     list,
+     running: state.running,
++    attention,
+     activeSessionId: props.activeSessionId,
+     now,
+     onOpen: openSession,
+     onPopOut: props.onPopOut,
++    onBranch: props.onBranch,
+     onDelete: (row: SessionRow) => setDeleting(row),
+   };
+   const confirmDelete = async () => {
+diff --git a/apps/desktop/src/sidebar/sessionList.test.ts b/apps/desktop/src/sidebar/sessionList.test.ts
+index b1fde13..3fa6a4c 100644
+--- a/apps/desktop/src/sidebar/sessionList.test.ts
++++ b/apps/desktop/src/sidebar/sessionList.test.ts
+@@ -308,6 +308,9 @@ describe("the profile's list store", () => {
+     expect(store.noteEvent({ type: "turn.done", session_id: "a" })).toBe(true);
+     expect(store.getState().running.has("a")).toBe(false);
+     expect(store.noteEvent({ type: "message.delta" })).toBe(false);
++    // a fresh chat the list does not know yet asks for a refresh at once (W54-D1-2)
++    expect(store.noteEvent({ type: "turn.started", session_id: "fresh" })).toBe(true);
++    expect(store.getState().running.has("fresh")).toBe(true);
+     store.wipe();
+     expect(store.getState().rows).toEqual([]);
+   });
+diff --git a/apps/desktop/src/sidebar/sessionList.ts b/apps/desktop/src/sidebar/sessionList.ts
+index d7f7258..cf50e83 100644
+--- a/apps/desktop/src/sidebar/sessionList.ts
++++ b/apps/desktop/src/sidebar/sessionList.ts
+@@ -565,7 +565,8 @@ export class SessionListStore {
+     if (event.type === TURN_STARTED) {
+       if (this.state.running.has(sessionId)) return false;
+       this.patch({ running: new Set([...this.state.running, sessionId]) });
+-      return false;
++      // a chat the list has not seen yet (a fresh one) is listed while it runs (W54-D1-2)
++      return !this.state.rows.some((row) => row.ids.includes(sessionId));
+     }
+     if (TURN_DONE.has(event.type)) {
+       const running = new Set(this.state.running);
+diff --git a/apps/desktop/src/sidebar/sidebar.css b/apps/desktop/src/sidebar/sidebar.css
+index 8dd7e72..5e352d1 100644
+--- a/apps/desktop/src/sidebar/sidebar.css
++++ b/apps/desktop/src/sidebar/sidebar.css
+@@ -181,15 +181,72 @@
+ }
+ 
+ .session-dot[data-kind="running"] {
+-  background: var(--desk-success);
++  background: var(--desk-accent);
+   animation: session-pulse 1.2s ease-in-out infinite;
+ }
+ 
++/* W54-D1-2: new activity is a teal dot; a chat that is still live (not ended, active lately)
++   but has nothing new is a teal ring */
++.session-dot[data-kind="unread"] {
++  background: var(--desk-success);
++}
++
++.session-dot[data-kind="live"] {
++  box-sizing: border-box;
++  border: 1.5px solid var(--desk-success);
++  background: transparent;
++}
++
++/* an approval or question waits in this chat (W54-D1-2) */
++.session-dot[data-kind="attention"] {
++  background: var(--desk-warning);
++}
++
+ .session-branch {
+   flex: none;
+   color: var(--desk-fg-3);
+ }
+ 
++/* the row's ⋮ button: shown on hover or focus, in the place of the time (W54-D1-2) */
++.session-more {
++  position: absolute;
++  top: 50%;
++  right: 4px;
++  display: inline-grid;
++  place-items: center;
++  width: 20px;
++  height: 20px;
++  padding: 0;
++  border: 0;
++  border-radius: var(--desk-radius-control);
++  background: transparent;
++  color: var(--desk-fg-3);
++  cursor: pointer;
++  opacity: 0;
++  transform: translateY(-50%);
++}
++
++.session-more:hover {
++  background: var(--desk-row-hover);
++  color: var(--desk-fg-1);
++}
++
++.session-more:focus-visible {
++  outline: 1px solid var(--desk-accent);
++  outline-offset: -1px;
++}
++
++.session-row:hover .session-more,
++.session-row:focus-within .session-more,
++.session-more[aria-expanded="true"] {
++  opacity: 1;
++}
++
++.session-row:hover .session-time,
++.session-row:focus-within .session-time {
++  visibility: hidden;
++}
++
+ .project-group {
+   margin-top: 4px;
+ }
+diff --git a/apps/desktop/src/sidebar/strings.en.ts b/apps/desktop/src/sidebar/strings.en.ts
+index ade2b2d..9ae07b1 100644
+--- a/apps/desktop/src/sidebar/strings.en.ts
++++ b/apps/desktop/src/sidebar/strings.en.ts
+@@ -20,6 +20,8 @@ export const SIDEBAR_STRINGS = {
+   "sidebar.untitled": "Untitled conversation",
+   "sidebar.unread": "(new activity)",
+   "sidebar.running": "(working)",
++  "sidebar.attention": "(waiting for you)",
++  "sidebar.more": "More actions for {title}",
+   "sidebar.branch": "(branch)",
+   "sidebar.pin": "Pin {title}",
+   "sidebar.unpin": "Unpin {title}",
+@@ -58,6 +60,8 @@ export const SIDEBAR_STRINGS = {
+   "sidebar.menu.unread": "Mark as unread",
+   "sidebar.menu.read": "Mark as read",
+   "sidebar.menu.copyId": "Copy ID",
++  "sidebar.menu.branch": "Branch",
++  "sidebar.branchFailed": "Could not branch this chat",
+   "sidebar.menu.archive": "Archive",
+   "sidebar.menu.unarchive": "Unarchive",
+   "sidebar.menu.delete": "Delete",
+diff --git a/docs/notes/ui-parity/w54-d1-desktop-chat-panes.md b/docs/notes/ui-parity/w54-d1-desktop-chat-panes.md
+new file mode 100644
+index 0000000..a96d20a
+--- /dev/null
++++ b/docs/notes/ui-parity/w54-d1-desktop-chat-panes.md
+@@ -0,0 +1,104 @@
++# Task: Desktop chat + panes parity fixes (W54-D1) Phase: ui-parity Owner: builder w54d1
++
++Status: Done for wave 54 (2026-10-25), except the items under "Not taken" and "Follow-ups".
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): no reference source opened by this
++builder; the wave-53 side-by-side gap list (per-slug lines) and the reference screenshots were the
++input.
++Evidence: reference screenshots of the wave-53 compare set (never in the repo), desktop slugs
++`chat-conversation`, `chat-streaming`, `tool-row`, `tool-row-expanded`, `approval-card`,
++`session-sidebar`, `context-menu`, `right-sidebar`, `files-pane`, `review-pane`, `hud`, each
++`--light` and `--dark`; Indus-only `quick-entry`.
++
++What it does (own words): closes the visible gaps of the chat column, the session list and the
++tool-pane side group.
++- The prompt box reads at body size, left aligned: a pending-count badge class of the Messaging page
++  (`.msg-bubble`) leaked into the transcript (same class name, global CSS) and shrank every prompt
++  to a tiny centred banner. The badge class is now `.msg-pending`.
++- A terminal call opens into a `$ command` block with its exit badge and its own copy button
++  (command and output), and the output reads like a screen (no "Output" label, no inset box). Other
++  tools keep the labelled argument/output sections.
++- The chat tab carries a dot (grey quiet, blue while a turn runs, orange while an approval or
++  question waits) and, for a chat the list does not hold yet, its first prompt as the title
++  instead of "Chat". A fresh chat is listed in the sidebar as soon as its turn starts (the list
++  refreshes on `turn.started` for an unknown session).
++- Sidebar rows: an orange dot for a chat waiting for the person, blue pulse while working, teal
++  for new activity, a teal ring for a chat that is still live (`is_active`), grey otherwise; a ⋮
++  button on hover (in the place of the time) opens the same menu as a right-click; the menu gains
++  Branch (`session.branch`, then the new chat opens).
++- While a reply runs the composer shows one Stop; Steer and Queue appear only once something is
++  typed (they were disabled-but-visible before).
++- Side group: the Review column is wider (about 380 px at the usual width; Files and Preview
++  stay about 236 px), the chat keeps at least about 40 % of the span; Ctrl+J toggles the right
++  sidebar (Files over Terminal) like Ctrl+Alt+B, except inside a terminal where Ctrl+J is the
++  shell's line feed. The terminal's canvas got a real font family (a raw `var(--…)` made xterm
++  fall back to a proportional font with wide cells).
++- HUD: the sheet shows the latest exchange from its question down, no scrollbar.
++- Quick entry: the card fills its window (640×112), so a desktop without a compositor no longer
++  paints a black margin around it.
++
++Inputs → outputs: transcript items, open server requests, `turn.started` / `turn.done` events,
++`GET /api/sessions` rows, `session.branch` → DOM of the chat column, the tab strip, the sidebar and
++the side panes. No protocol or API change.
++
++Files: `apps/desktop/src/chat/{ToolRow,transcriptReact}.tsx`, `chat/{transcript.css,
++transcriptStrings.en.ts}`, `chat/composer/Composer.tsx`, `app/Shell.tsx`,
++`app/messaging/{MessagingPage.tsx,messaging.css}`, `sidebar/{Sidebar,SessionRowMenu}.tsx`,
++`sidebar/{sessionList.ts,sidebar.css,strings.en.ts}`, `panes/{PaneShell.tsx,panes.css,presets.ts,
++shortcuts.ts,strings.en.ts}`, `panes/terminal/xtermView.ts`, `ambient/ambient.css`,
++`electron/ambient/quickEntry.ts`, tests next to them.
++
++Edge cases / failure modes:
++- `turn.started` for a session already listed does not refresh (no extra request per turn).
++- Branch of a busy session: the backend answers `SESSION_BUSY`; a toast says the branch failed.
++- Branch is offered only when the sidebar host has a connection (no dead menu item).
++- Ctrl+J with focus inside a terminal pane goes to the shell.
++- The tab dot uses live turn events only; `is_active` (recently active) is not "working".
++
++Our design differences / decisions:
++- W54-D1-1: terminal block copy copies `$ command` plus the output; other tools keep the head copy.
++- W54-D1-2: dot ranking attention > running > unread > live > idle; live is a ring, not a fill.
++- W54-D1-3: side columns sized per pane (Review 380, the others 236 at a 1180 span), the chat
++  keeps ≥ 480 of it; Ctrl+J is an alias of the right-sidebar toggle. A wider Preview column (420)
++  was tried and dropped: with it `e2e/core/security.electron.test.ts` (hostile guest
++  window-open.html) no longer found the preview guest; cause not found in the time box.
++- W54-D1-4: xterm gets the resolved mono family (`terminalFont()`), never a CSS variable.
++- W54-D1-5: quick-entry window 640×112 with the card filling it (was 640×168 with a margin).
++- W54-D1-6: the HUD sheet shows the latest turn only (earlier turns stay in the main window).
++- W54-D1-7: one Stop while a reply runs; Steer/Queue only with text typed.
++- W54-D1-8: row menu adds Branch only; Open in terminal, Appearance, Export and Move to project stay
++  out (no desktop file-writer bridge for an export file, no per-chat appearance or project move in
++  our backend, no terminal-resume flow in the desktop).
++- The "Chat:" title prefix in the captures comes from the scripted fake model's title answer
++  (`tests/fakes/model/http_serve.py`), not from the product; nothing to drop in product code.
++
++Tests we will write:
++- ToolRow: terminal block copy button, no "Output" label, `terminalCopy` text.
++- sessionList: `turn.started` for an unknown session asks for a refresh.
++- Sidebar: ⋮ opens the row menu; Branch only with a host handler and called with the newest id;
++  dot ranking.
++- shortcuts: Ctrl+J / ⌘J → toggle-right.
++- quick entry bounds at the new height.
++
++Compare checklist (re-shot with the w54d1 kit copy, both themes, next to the reference PNGs):
++- [x] chat-conversation: prompt box body size, left aligned (test: none, CSS class rename)
++- [x] tool-row / tool-row-expanded: terminal block + copy (test: `transcriptLook.test.tsx`)
++- [x] chat-streaming: chat listed at once, tab titled by its prompt, one Stop
++  (test: `sessionList.test.ts::running dots follow turn events…`)
++- [x] approval-card: orange dot on tab and row (kit shot)
++- [x] session-sidebar: ⋮ on hover, unread/live dots (test: `Sidebar.test.tsx::W54-D1-2…`)
++- [x] context-menu: Branch added (test: `Sidebar.test.tsx::W54-D1-8…`)
++- [x] right-sidebar / files-pane / review-pane: wider review column, monospace terminal, Ctrl+J
++  (test: `shortcuts.test.ts`)
++- [x] hud: starts at the question (kit shot)
++- [x] quick-entry: no black margin (test: `quickEntry.test.ts`)
++- Deliberate differences: our terminal pane keeps its instance rail; the side group remains our
++  pane tree (a Ctrl+J toggle over it, not a separate sidebar component).
++- Not taken: per-message timestamp/actions row under replies (no reply time in our history rows),
++  the context-menu items listed in W54-D1-8.
++
++## Decisions for the lead
++- W54-D1-5 changes the quick-entry window height (main process constant); revert the constant and
++  the CSS together if a margin is wanted back.
++- Follow-up: the session switcher (Shell) still treats `is_active` as running; align it with the
++  sidebar's live/running split if wanted.

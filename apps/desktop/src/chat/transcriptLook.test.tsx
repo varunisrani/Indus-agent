@@ -10,7 +10,7 @@ import { fakeRest } from "../settings/fakeRest.ts";
 import { ErrorCard } from "./ErrorCard.tsx";
 import { failureEcho } from "./failure.ts";
 import type { ErrorItem, ToolPart } from "./messageStream.ts";
-import { ToolRow } from "./ToolRow.tsx";
+import { ToolRow, terminalCopy } from "./ToolRow.tsx";
 import { terminalResult, toolOutcome } from "./toolSummary.ts";
 
 afterEach(() => {
@@ -48,6 +48,10 @@ describe("tool row", () => {
     expect(row.querySelector(".tool-exit")?.textContent).toBe("exit 0");
     expect(row.querySelector(".tool-exit")?.hasAttribute("data-zero")).toBe(true);
     expect(screen.getByText("scene-01.fountain")).toBeTruthy();
+    // W54-D1-1: the terminal block has its own copy button and no "Output" label
+    expect(screen.getByRole("button", { name: "Copy command and output" })).toBeTruthy();
+    expect(screen.queryByText("Output")).toBeNull();
+    expect(terminalCopy("ls", { output: "a\nb", error: "" })).toBe("$ ls\na\nb");
   });
 
   it("a refused call is red even without an error sentence", () => {

@@ -181,13 +181,70 @@
 }
 
 .session-dot[data-kind="running"] {
-  background: var(--desk-success);
+  background: var(--desk-accent);
   animation: session-pulse 1.2s ease-in-out infinite;
+}
+
+/* W54-D1-2: new activity is a teal dot; a chat that is still live (not ended, active lately)
+   but has nothing new is a teal ring */
+.session-dot[data-kind="unread"] {
+  background: var(--desk-success);
+}
+
+.session-dot[data-kind="live"] {
+  box-sizing: border-box;
+  border: 1.5px solid var(--desk-success);
+  background: transparent;
+}
+
+/* an approval or question waits in this chat (W54-D1-2) */
+.session-dot[data-kind="attention"] {
+  background: var(--desk-warning);
 }
 
 .session-branch {
   flex: none;
   color: var(--desk-fg-3);
+}
+
+/* the row's ⋮ button: shown on hover or focus, in the place of the time (W54-D1-2) */
+.session-more {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--desk-radius-control);
+  background: transparent;
+  color: var(--desk-fg-3);
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(-50%);
+}
+
+.session-more:hover {
+  background: var(--desk-row-hover);
+  color: var(--desk-fg-1);
+}
+
+.session-more:focus-visible {
+  outline: 1px solid var(--desk-accent);
+  outline-offset: -1px;
+}
+
+.session-row:hover .session-more,
+.session-row:focus-within .session-more,
+.session-more[aria-expanded="true"] {
+  opacity: 1;
+}
+
+.session-row:hover .session-time,
+.session-row:focus-within .session-time {
+  visibility: hidden;
 }
 
 .project-group {
