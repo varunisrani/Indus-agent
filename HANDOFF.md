@@ -89,12 +89,14 @@ WAVE 54 LANDED (fixes from the side-by-side compare): W1 web `c4243ab` (D-16.127
 History, real Import dialog, mixed-case buttons reversing D-16.1208), D2 desktop settings states `473225c` (D-16.1271: real
 password-manager detection over PATH, keychain switch shows the effective store, wake word waits for the connection),
 D1 desktop chat + panes `6862338` (D-16.1272: prompt bubble CSS clash, terminal block, dots, right sidebar, xterm font).
-WAVE 55: F1 landed `f97d8f7` (D-16.1273: TUI/web tool-call tree, switcher dots, Preview 420 px — the band cluster covered
-a narrow zone's tabs, root cause of the security E2E failure), F3 landed `be4bf77` (D-16.1274: ten desktop display prefs
-made real). F2 (built-in cron blueprints served, profiles skill_count, `/api/mcp/catalog` over the 4 MCP presets) parked
-in `.agents/wip/w55/w55f2.patch`; full gate running on main + F2 in Agent 2's scratchpad (`land2`); F2's own Electron
-run saw a lifecycle E2E failure (passed alone) — must be root-caused if it repeats. Re-capture of Indus + fresh
-side-by-side PDFs running (scratchpad `compare2/`). Then: follow-ups in the w54/w55 READMEs and the new gaps list.
+WAVES 55–56 LANDED: F1 `f97d8f7` (D-16.1273), F3 `be4bf77` (D-16.1274), F2 `1136463` (D-16.1275: starter cron blueprints,
+profiles skill_count, `/api/mcp/catalog` over the 4 MCP presets), G2 + G1 `fe10143` (D-16.1276 web themes 8 presets AA-tested,
+blueprint slot inputs; D-16.1277 window prefs + session Export IPC). Second compare done (Agent 2 scratchpad `compare2/`:
+26 slugs fixed + 11 partial since the first; fresh gaps.md).
+IN FLIGHT: wave 57 H1 (docs dark panel, Files/right-sidebar width, Messaging raw label, error-card Retry/Open logs, web model
+list; base 383e3f5) and wave 58 J1 (desktop: usage from existing analytics, DevTools/external-links prefs, execution backend
+picker, MoA preset bug, row menu Open in terminal / Move to project) + J2 (web: in-app docs from our docs, raw YAML save,
+skill create, OAuth provider list). Owner calls: Clear Blue preset below AA (D-16.1276).
 Older text below (wave 52 era) is history.
 
 UI PARITY IN FLIGHT (owner 2026-10-24: "same to same UI as Hermes, every page and component, web + desktop").
