@@ -1,0 +1,1275 @@
+diff --git a/apps/desktop/src/app/manage/strings.en.ts b/apps/desktop/src/app/manage/strings.en.ts
+index 5ead538..77ea381 100644
+--- a/apps/desktop/src/app/manage/strings.en.ts
++++ b/apps/desktop/src/app/manage/strings.en.ts
+@@ -292,12 +292,42 @@ export const MANAGE_STRINGS = {
+   "manage.messaging.field.allowAll": "Allow everyone",
+   "manage.messaging.field.homeserver": "Server address",
+   "manage.messaging.field.userId": "Account",
++  "manage.messaging.field.allowBots": "Other bots",
++  "manage.messaging.field.allowedGroups": "Allowed groups",
++  "manage.messaging.field.allowedGroupUsers": "Allowed group members",
++  "manage.messaging.field.serviceAccount": "Service account JSON",
++  "manage.messaging.field.aesKey": "Encoding AES key",
++  "manage.messaging.field.privateKey": "Private key",
++  "manage.messaging.field.clientSecret": "Client secret",
++  "manage.messaging.field.appSecret": "App secret",
++  "manage.messaging.field.clientState": "Client state",
++  "manage.messaging.field.clientId": "Client ID",
++  "manage.messaging.field.tenantId": "Tenant ID",
++  "manage.messaging.field.appId": "App ID",
++  "manage.messaging.field.botId": "Bot ID",
++  "manage.messaging.field.corpId": "Corp ID",
++  "manage.messaging.field.accountSid": "Account SID",
++  "manage.messaging.field.accountId": "Account ID",
++  "manage.messaging.field.phoneNumberId": "Phone number ID",
++  "manage.messaging.field.phoneNumber": "Phone number",
++  "manage.messaging.field.account": "Account",
++  "manage.messaging.field.address": "Address",
++  "manage.messaging.field.server": "Server",
++  "manage.messaging.field.nickname": "Nickname",
++  "manage.messaging.field.topic": "Topic",
++  "manage.messaging.field.wsUrl": "WebSocket address",
++  "manage.messaging.field.profile": "Profile",
+   "manage.messaging.help.botToken": "The token the platform gave you when you made the bot.",
+   "manage.messaging.help.appToken": "A second token some platforms need for live events.",
+   "manage.messaging.help.token": "Stored in this profile's secret store, never shown again.",
+   "manage.messaging.help.allowedUsers": "Only these user IDs may talk to the bot.",
+   "manage.messaging.help.homeChannel": "Where scheduled jobs and notices are posted.",
+   "manage.messaging.help.allowAll": "Answer anyone who writes, not only allowed users.",
++  "manage.messaging.help.allowBots":
++    "Whether it answers other bots: none, mentions (only when they mention it) or all.",
++  "manage.messaging.help.allowedGroups": "Only these group chat IDs may talk to the bot.",
++  "manage.messaging.help.allowedGroupUsers": "Only these user IDs may talk to it in groups.",
++  "manage.messaging.help.phoneNumber": "The full number with its country code.",
+ 
+   "manage.bots.refreshGroups": "Refresh gateway groups",
+   "manage.bots.label": "Bots",
+diff --git a/apps/desktop/src/app/messaging/MessagingPage.tsx b/apps/desktop/src/app/messaging/MessagingPage.tsx
+index 9ad9634..b3faae8 100644
+--- a/apps/desktop/src/app/messaging/MessagingPage.tsx
++++ b/apps/desktop/src/app/messaging/MessagingPage.tsx
+@@ -31,7 +31,7 @@ import {
+   PageHeader,
+   usePlaceholderTerm,
+ } from "../masterDetail.tsx";
+-import { fieldCopy, listEntries } from "./fieldCopy.ts";
++import { fallbackLabel, fieldCopy, listEntries } from "./fieldCopy.ts";
+ import "./messaging.css";
+ import { TelegramQrSetup } from "./TelegramQrSetup.tsx";
+ 
+@@ -116,6 +116,8 @@ export function PlatformTile(props: { name: string; id: string }) {
+ 
+ function FieldInput(props: {
+   field: PlatformField;
++  /** The platform's id, so a key without copy drops its own prefix (W57-H1-3). */
++  platform?: string;
+   value: string;
+   onChange: (value: string) => void;
+   onClear?: () => void;
+@@ -129,7 +131,7 @@ function FieldInput(props: {
+       ? t("manage.messaging.keep", { preview: field.preview ?? "" })
+       : t("manage.messaging.notSet")
+     : "";
+-  const label = copy.label === null ? field.key : t(copy.label);
++  const label = copy.label === null ? fallbackLabel(field.key, props.platform) : t(copy.label);
+   const clear =
+     props.onClear !== undefined && field.is_set ? (
+       <IconButton
+@@ -141,7 +143,7 @@ function FieldInput(props: {
+   return (
+     <div className="msg-field" data-field={field.key}>
+       <div className="msg-field-label">
+-        <span className={copy.label === null ? "msg-mono" : undefined}>{label}</span>
++        <span title={field.key}>{label}</span>
+         {field.is_set && <span className="msg-saved">{t("manage.messaging.savedTag")}</span>}
+       </div>
+       {copy.help !== null && <p className="msg-field-help">{t(copy.help)}</p>}
+@@ -278,6 +280,7 @@ function PlatformDetail(props: {
+     <FieldInput
+       key={f.key}
+       field={f}
++      platform={platform.id}
+       value={shownValue(f)}
+       onChange={(value) => setDraft({ ...draft, [f.key]: value })}
+       onClear={() => void put({ clear_env: [f.key] })}
+diff --git a/apps/desktop/src/app/messaging/fieldCopy.test.ts b/apps/desktop/src/app/messaging/fieldCopy.test.ts
+new file mode 100644
+index 0000000..83e00dc
+--- /dev/null
++++ b/apps/desktop/src/app/messaging/fieldCopy.test.ts
+@@ -0,0 +1,198 @@
++import { describe, expect, it } from "vitest";
++import { en } from "../../i18n/en.ts";
++import { fallbackLabel, fieldCopy } from "./fieldCopy.ts";
++
++// Every key the gateway catalogue sends (`indus.web.routes.messaging.catalog()`, all built-in
++// platforms, dumped at 383e3f5). W57-H1-3: each one has a label and none shows its env name.
++const CATALOGUE_KEYS = [
++  "TELEGRAM_BOT_TOKEN",
++  "INDUS_TELEGRAM_ALLOWED_USERS",
++  "INDUS_TELEGRAM_ALLOW_ALL_USERS",
++  "INDUS_TELEGRAM_ALLOW_BOTS",
++  "INDUS_TELEGRAM_HOME_CHANNEL",
++  "DISCORD_BOT_TOKEN",
++  "INDUS_DISCORD_ALLOWED_USERS",
++  "INDUS_DISCORD_ALLOW_ALL_USERS",
++  "INDUS_DISCORD_ALLOW_BOTS",
++  "INDUS_DISCORD_HOME_CHANNEL",
++  "SLACK_BOT_TOKEN",
++  "SLACK_APP_TOKEN",
++  "INDUS_SLACK_ALLOWED_USERS",
++  "INDUS_SLACK_ALLOW_ALL_USERS",
++  "INDUS_SLACK_ALLOW_BOTS",
++  "INDUS_SLACK_HOME_CHANNEL",
++  "SIGNAL_ACCOUNT",
++  "INDUS_SIGNAL_ALLOWED_USERS",
++  "INDUS_SIGNAL_ALLOW_ALL_USERS",
++  "INDUS_SIGNAL_ALLOW_BOTS",
++  "INDUS_SIGNAL_HOME_CHANNEL",
++  "INDUS_SIGNAL_GROUP_ALLOWED_CHATS",
++  "MATRIX_ACCESS_TOKEN",
++  "INDUS_MATRIX_ALLOWED_USERS",
++  "INDUS_MATRIX_ALLOW_ALL_USERS",
++  "INDUS_MATRIX_ALLOW_BOTS",
++  "INDUS_MATRIX_HOME_CHANNEL",
++  "MATTERMOST_TOKEN",
++  "INDUS_MATTERMOST_ALLOWED_USERS",
++  "INDUS_MATTERMOST_ALLOW_ALL_USERS",
++  "INDUS_MATTERMOST_ALLOW_BOTS",
++  "INDUS_MATTERMOST_HOME_CHANNEL",
++  "EMAIL_ADDRESS",
++  "EMAIL_PASSWORD",
++  "INDUS_EMAIL_ALLOWED_USERS",
++  "INDUS_EMAIL_ALLOW_ALL_USERS",
++  "INDUS_EMAIL_ALLOW_BOTS",
++  "INDUS_EMAIL_HOME_CHANNEL",
++  "INDUS_WHATSAPP_ALLOWED_USERS",
++  "INDUS_WHATSAPP_ALLOW_ALL_USERS",
++  "INDUS_WHATSAPP_ALLOW_BOTS",
++  "INDUS_WHATSAPP_HOME_CHANNEL",
++  "WHATSAPP_CLOUD_ACCESS_TOKEN",
++  "WHATSAPP_CLOUD_PHONE_NUMBER_ID",
++  "INDUS_WHATSAPP_CLOUD_ALLOWED_USERS",
++  "INDUS_WHATSAPP_CLOUD_ALLOW_ALL_USERS",
++  "INDUS_WHATSAPP_CLOUD_ALLOW_BOTS",
++  "INDUS_WHATSAPP_CLOUD_HOME_CHANNEL",
++  "TWILIO_ACCOUNT_SID",
++  "TWILIO_AUTH_TOKEN",
++  "TWILIO_PHONE_NUMBER",
++  "INDUS_SMS_ALLOWED_USERS",
++  "INDUS_SMS_ALLOW_ALL_USERS",
++  "INDUS_SMS_ALLOW_BOTS",
++  "INDUS_SMS_HOME_CHANNEL",
++  "LINE_CHANNEL_ACCESS_TOKEN",
++  "LINE_CHANNEL_SECRET",
++  "INDUS_LINE_ALLOWED_USERS",
++  "INDUS_LINE_ALLOW_ALL_USERS",
++  "INDUS_LINE_ALLOW_BOTS",
++  "INDUS_LINE_HOME_CHANNEL",
++  "NTFY_TOPIC",
++  "INDUS_NTFY_ALLOWED_USERS",
++  "INDUS_NTFY_ALLOW_ALL_USERS",
++  "INDUS_NTFY_ALLOW_BOTS",
++  "INDUS_NTFY_HOME_CHANNEL",
++  "IRC_SERVER",
++  "IRC_NICKNAME",
++  "INDUS_IRC_ALLOWED_USERS",
++  "INDUS_IRC_ALLOW_ALL_USERS",
++  "INDUS_IRC_ALLOW_BOTS",
++  "INDUS_IRC_HOME_CHANNEL",
++  "TEAMS_CLIENT_ID",
++  "TEAMS_CLIENT_SECRET",
++  "TEAMS_TENANT_ID",
++  "INDUS_TEAMS_ALLOWED_USERS",
++  "INDUS_TEAMS_ALLOW_ALL_USERS",
++  "INDUS_TEAMS_ALLOW_BOTS",
++  "INDUS_TEAMS_HOME_CHANNEL",
++  "GOOGLE_CHAT_SERVICE_ACCOUNT_JSON",
++  "INDUS_GOOGLE_CHAT_ALLOWED_USERS",
++  "INDUS_GOOGLE_CHAT_ALLOW_ALL_USERS",
++  "INDUS_GOOGLE_CHAT_ALLOW_BOTS",
++  "INDUS_GOOGLE_CHAT_HOME_CHANNEL",
++  "QQ_APP_ID",
++  "QQ_CLIENT_SECRET",
++  "INDUS_QQBOT_ALLOWED_USERS",
++  "INDUS_QQBOT_ALLOW_ALL_USERS",
++  "INDUS_QQBOT_ALLOW_BOTS",
++  "INDUS_QQBOT_HOME_CHANNEL",
++  "DINGTALK_CLIENT_ID",
++  "DINGTALK_CLIENT_SECRET",
++  "INDUS_DINGTALK_ALLOWED_USERS",
++  "INDUS_DINGTALK_ALLOW_ALL_USERS",
++  "INDUS_DINGTALK_ALLOW_BOTS",
++  "INDUS_DINGTALK_HOME_CHANNEL",
++  "WECOM_BOT_ID",
++  "WECOM_SECRET",
++  "INDUS_WECOM_ALLOWED_USERS",
++  "INDUS_WECOM_ALLOW_ALL_USERS",
++  "INDUS_WECOM_ALLOW_BOTS",
++  "INDUS_WECOM_HOME_CHANNEL",
++  "WECOM_CALLBACK_CORP_ID",
++  "WECOM_CALLBACK_CORP_SECRET",
++  "WECOM_CALLBACK_TOKEN",
++  "WECOM_CALLBACK_ENCODING_AES_KEY",
++  "INDUS_WECOM_CALLBACK_ALLOWED_USERS",
++  "INDUS_WECOM_CALLBACK_ALLOW_ALL_USERS",
++  "INDUS_WECOM_CALLBACK_ALLOW_BOTS",
++  "INDUS_WECOM_CALLBACK_HOME_CHANNEL",
++  "WEIXIN_TOKEN",
++  "WEIXIN_ACCOUNT_ID",
++  "INDUS_WEIXIN_ALLOWED_USERS",
++  "INDUS_WEIXIN_ALLOW_ALL_USERS",
++  "INDUS_WEIXIN_ALLOW_BOTS",
++  "INDUS_WEIXIN_HOME_CHANNEL",
++  "FEISHU_APP_ID",
++  "FEISHU_APP_SECRET",
++  "INDUS_FEISHU_ALLOWED_USERS",
++  "INDUS_FEISHU_ALLOW_ALL_USERS",
++  "INDUS_FEISHU_ALLOW_BOTS",
++  "INDUS_FEISHU_HOME_CHANNEL",
++  "BLUEBUBBLES_PASSWORD",
++  "INDUS_BLUEBUBBLES_ALLOWED_USERS",
++  "INDUS_BLUEBUBBLES_ALLOW_ALL_USERS",
++  "INDUS_BLUEBUBBLES_ALLOW_BOTS",
++  "INDUS_BLUEBUBBLES_HOME_CHANNEL",
++  "INDUS_PHOTON_ALLOWED_USERS",
++  "INDUS_PHOTON_ALLOW_ALL_USERS",
++  "INDUS_PHOTON_ALLOW_BOTS",
++  "INDUS_PHOTON_HOME_CHANNEL",
++  "SIMPLEX_WS_URL",
++  "INDUS_SIMPLEX_ALLOWED_USERS",
++  "INDUS_SIMPLEX_ALLOW_ALL_USERS",
++  "INDUS_SIMPLEX_ALLOW_BOTS",
++  "INDUS_SIMPLEX_HOME_CHANNEL",
++  "INDUS_SIMPLEX_GROUP_ALLOWED_CHATS",
++  "BUZZ_PRIVATE_KEY",
++  "INDUS_BUZZ_ALLOWED_USERS",
++  "INDUS_BUZZ_ALLOW_ALL_USERS",
++  "INDUS_BUZZ_ALLOW_BOTS",
++  "INDUS_BUZZ_HOME_CHANNEL",
++  "YUANBAO_APP_ID",
++  "YUANBAO_APP_SECRET",
++  "INDUS_YUANBAO_ALLOWED_USERS",
++  "INDUS_YUANBAO_ALLOW_ALL_USERS",
++  "INDUS_YUANBAO_ALLOW_BOTS",
++  "INDUS_YUANBAO_HOME_CHANNEL",
++  "RAFT_PROFILE",
++  "MSGRAPH_WEBHOOK_CLIENT_STATE",
++  "INDUS_A2A_ALLOWED_USERS",
++  "INDUS_A2A_ALLOW_ALL_USERS",
++  "INDUS_A2A_HOME_CHANNEL",
++];
++
++describe("messaging field copy", () => {
++  it("labels every key the gateway catalogue sends", () => {
++    const unlabelled = CATALOGUE_KEYS.filter((key) => fieldCopy(key).label === null);
++    expect(unlabelled).toEqual([]);
++    for (const key of CATALOGUE_KEYS) {
++      const copy = fieldCopy(key);
++      expect(copy.label === null ? undefined : en[copy.label]).toBeTruthy();
++      if (copy.help !== null) expect(en[copy.help]).toBeTruthy();
++    }
++  });
++
++  it("names the bot-sender policy in words", () => {
++    const copy = fieldCopy("INDUS_TELEGRAM_ALLOW_BOTS");
++    expect(copy.label).toBe("manage.messaging.field.allowBots");
++    expect(copy.help).toBe("manage.messaging.help.allowBots");
++    expect(copy.list).toBe(false);
++    expect(fieldCopy("INDUS_SIGNAL_GROUP_ALLOWED_CHATS")).toEqual({
++      label: "manage.messaging.field.allowedGroups",
++      help: "manage.messaging.help.allowedGroups",
++      list: true,
++    });
++    // the longer ending wins
++    expect(fieldCopy("WHATSAPP_CLOUD_PHONE_NUMBER_ID").label).toBe(
++      "manage.messaging.field.phoneNumberId",
++    );
++    expect(fieldCopy("TWILIO_PHONE_NUMBER").label).toBe("manage.messaging.field.phoneNumber");
++  });
++
++  it("a key with no copy reads as words, without INDUS_ or the platform prefix", () => {
++    expect(fieldCopy("INDUS_SIGNAL_GROUP_MODE").label).toBeNull();
++    expect(fallbackLabel("INDUS_SIGNAL_GROUP_MODE", "signal")).toBe("Group mode");
++    expect(fallbackLabel("WECOM_CALLBACK_REGION", "wecom_callback")).toBe("Region");
++    expect(fallbackLabel("SOME_SETTING")).toBe("Some setting");
++    expect(fallbackLabel("SIGNAL_", "signal")).toBe("Signal");
++  });
++});
+diff --git a/apps/desktop/src/app/messaging/fieldCopy.ts b/apps/desktop/src/app/messaging/fieldCopy.ts
+index 901d077..eb59b99 100644
+--- a/apps/desktop/src/app/messaging/fieldCopy.ts
++++ b/apps/desktop/src/app/messaging/fieldCopy.ts
+@@ -1,6 +1,8 @@
+ // Labels and help lines for messaging fields (W52-k). The backend sends only the env key
+ // (`TELEGRAM_BOT_TOKEN`); the page shows a short label in our words, picked by the key's ending.
+-// An unknown key shows itself (in mono) with no help line.
++// W57-H1-3: every key the gateway catalogue sends has copy here (the bot-sender policy showed as a
++// raw `INDUS_TELEGRAM_ALLOW_BOTS`); a key added later still gets a readable label made from its
++// words (`fallbackLabel`), never the env name itself.
+ 
+ import type { MessageKey } from "../../i18n/index.tsx";
+ 
+@@ -11,9 +13,22 @@ export interface FieldCopy {
+   readonly list: boolean;
+ }
+ 
++// Longer endings first: the first match wins (`_PHONE_NUMBER_ID` before `_PHONE_NUMBER`).
+ const ENDINGS: ReadonlyArray<readonly [string, MessageKey, MessageKey | null, boolean?]> = [
+   ["_BOT_TOKEN", "manage.messaging.field.botToken", "manage.messaging.help.botToken"],
+   ["_APP_TOKEN", "manage.messaging.field.appToken", "manage.messaging.help.appToken"],
++  [
++    "_GROUP_ALLOWED_CHATS",
++    "manage.messaging.field.allowedGroups",
++    "manage.messaging.help.allowedGroups",
++    true,
++  ],
++  [
++    "_GROUP_ALLOWED_USERS",
++    "manage.messaging.field.allowedGroupUsers",
++    "manage.messaging.help.allowedGroupUsers",
++    true,
++  ],
+   [
+     "_ALLOWED_USERS",
+     "manage.messaging.field.allowedUsers",
+@@ -21,17 +36,56 @@ const ENDINGS: ReadonlyArray<readonly [string, MessageKey, MessageKey | null, bo
+     true,
+   ],
+   ["_ALLOW_ALL_USERS", "manage.messaging.field.allowAll", "manage.messaging.help.allowAll"],
++  ["_ALLOW_BOTS", "manage.messaging.field.allowBots", "manage.messaging.help.allowBots"],
+   ["_HOME_CHANNEL", "manage.messaging.field.homeChannel", "manage.messaging.help.homeChannel"],
+   ["_HOMESERVER", "manage.messaging.field.homeserver", null],
++  ["_SERVICE_ACCOUNT_JSON", "manage.messaging.field.serviceAccount", "manage.messaging.help.token"],
++  ["_ENCODING_AES_KEY", "manage.messaging.field.aesKey", "manage.messaging.help.token"],
++  ["_PRIVATE_KEY", "manage.messaging.field.privateKey", "manage.messaging.help.token"],
+   ["_API_KEY", "manage.messaging.field.apiKey", "manage.messaging.help.token"],
+   ["_ACCESS_TOKEN", "manage.messaging.field.token", "manage.messaging.help.token"],
+   ["_TOKEN", "manage.messaging.field.token", "manage.messaging.help.token"],
+   ["_PASSWORD", "manage.messaging.field.password", "manage.messaging.help.token"],
+   ["_SIGNING_SECRET", "manage.messaging.field.secret", "manage.messaging.help.token"],
++  ["_CLIENT_SECRET", "manage.messaging.field.clientSecret", "manage.messaging.help.token"],
++  ["_APP_SECRET", "manage.messaging.field.appSecret", "manage.messaging.help.token"],
+   ["_SECRET", "manage.messaging.field.secret", "manage.messaging.help.token"],
++  ["_CLIENT_STATE", "manage.messaging.field.clientState", "manage.messaging.help.token"],
++  ["_CLIENT_ID", "manage.messaging.field.clientId", null],
++  ["_TENANT_ID", "manage.messaging.field.tenantId", null],
++  ["_APP_ID", "manage.messaging.field.appId", null],
++  ["_BOT_ID", "manage.messaging.field.botId", null],
++  ["_CORP_ID", "manage.messaging.field.corpId", null],
++  ["_ACCOUNT_SID", "manage.messaging.field.accountSid", null],
++  ["_ACCOUNT_ID", "manage.messaging.field.accountId", null],
++  ["_PHONE_NUMBER_ID", "manage.messaging.field.phoneNumberId", null],
++  ["_PHONE_NUMBER", "manage.messaging.field.phoneNumber", "manage.messaging.help.phoneNumber"],
+   ["_USER_ID", "manage.messaging.field.userId", null],
++  ["_ACCOUNT", "manage.messaging.field.account", "manage.messaging.help.phoneNumber"],
++  ["_ADDRESS", "manage.messaging.field.address", null],
++  ["_SERVER", "manage.messaging.field.server", null],
++  ["_NICKNAME", "manage.messaging.field.nickname", null],
++  ["_TOPIC", "manage.messaging.field.topic", null],
++  ["_WS_URL", "manage.messaging.field.wsUrl", null],
++  ["_PROFILE", "manage.messaging.field.profile", null],
+ ];
+ 
++/**
++ * A readable label for a key with no copy: the words after `INDUS_` and the platform's own prefix
++ * (`INDUS_SIGNAL_GROUP_MODE` on Signal reads "Group mode").
++ */
++export function fallbackLabel(key: string, platform?: string): string {
++  let rest = key.toUpperCase().replace(/^INDUS_/, "");
++  const prefix = platform === undefined ? "" : `${platform.toUpperCase()}_`;
++  if (prefix !== "_" && rest.startsWith(prefix) && rest.length > prefix.length) {
++    rest = rest.slice(prefix.length);
++  }
++  const words = rest.split("_").filter((word) => word !== "");
++  if (words.length === 0) return key;
++  const text = words.join(" ").toLowerCase();
++  return text.charAt(0).toUpperCase() + text.slice(1);
++}
++
+ export function fieldCopy(key: string): FieldCopy {
+   const upper = key.toUpperCase();
+   for (const [ending, label, help, list] of ENDINGS) {
+diff --git a/apps/desktop/src/chat/ChatView.tsx b/apps/desktop/src/chat/ChatView.tsx
+index 3592f4e..22626d0 100644
+--- a/apps/desktop/src/chat/ChatView.tsx
++++ b/apps/desktop/src/chat/ChatView.tsx
+@@ -51,7 +51,9 @@ export function ChatView(props: ChatViewProps) {
+         if (connection !== null) void connection.probeLiveness();
+         return;
+       case "open-logs":
+-        void desktopBridge()?.logs.reveal();
++        void desktopBridge()
++          ?.logs.reveal()
++          .catch(() => undefined);
+         return;
+       case "new-session":
+         navigate(NEW_CHAT_PATH);
+@@ -97,6 +99,7 @@ export function ChatView(props: ChatViewProps) {
+             sessionId={sessionId}
+             footer={props.cards}
+             onFailureAction={props.onFailureAction ?? defaultAction}
++            canRetry={props.onRetry !== undefined}
+           />
+         </>
+       )}
+diff --git a/apps/desktop/src/chat/ErrorCard.tsx b/apps/desktop/src/chat/ErrorCard.tsx
+index cf42e5b..aad2d1f 100644
+--- a/apps/desktop/src/chat/ErrorCard.tsx
++++ b/apps/desktop/src/chat/ErrorCard.tsx
+@@ -79,6 +79,8 @@ export function ErrorCard(props: {
+   /** The failure sentence the turn's reply carried (hidden above the card, shown in details). */
+   echo?: string | null;
+   onAction?: ((action: FailureAction, item: ErrorItem) => void) | undefined;
++  /** The host can send the failed turn again (W57-H1-4); without it there is no Retry. */
++  canRetry?: boolean | undefined;
+ }) {
+   const { item } = props;
+   const t = useT();
+@@ -87,7 +89,10 @@ export function ErrorCard(props: {
+   const said = [props.echo ?? "", item.message].filter((line) => line.trim() !== "");
+   const fallback = t(REASON_KEYS[item.reason] ?? "failure.reason.default");
+   const details = said.length > 0 ? said : [fallback];
+-  const actions = failureActions(item.layer, item.retryable);
++  const actions = failureActions(
++    item.layer,
++    props.canRetry === true && props.onAction !== undefined,
++  );
+   return (
+     <div className="error-card" role="alert" data-layer={item.layer}>
+       <div className="error-head">
+diff --git a/apps/desktop/src/chat/Transcript.test.tsx b/apps/desktop/src/chat/Transcript.test.tsx
+index f58de18..8bb95cf 100644
+--- a/apps/desktop/src/chat/Transcript.test.tsx
++++ b/apps/desktop/src/chat/Transcript.test.tsx
+@@ -196,7 +196,7 @@ describe("Transcript", () => {
+ 
+   it("a failed turn ends in an error card whose actions are reported", async () => {
+     const onFailureAction = vi.fn();
+-    const { source } = await show([], { onFailureAction });
++    const { source } = await show([], { onFailureAction, canRetry: true });
+     act(() => {
+       source.emit({ type: "turn.started", turn_id: "t1", generation: 1 });
+       source.emit({
+diff --git a/apps/desktop/src/chat/Transcript.tsx b/apps/desktop/src/chat/Transcript.tsx
+index a05a1a1..a054328 100644
+--- a/apps/desktop/src/chat/Transcript.tsx
++++ b/apps/desktop/src/chat/Transcript.tsx
+@@ -55,6 +55,8 @@ export function resetReadingPositions(): void {
+ export interface TranscriptProps {
+   sessionId: string;
+   onFailureAction?: (action: FailureAction, item: ErrorItem) => void;
++  /** The failure action handler can send a failed turn again (the error card's Retry). */
++  canRetry?: boolean;
+   /** Rendered after the last item, inside the scroll area (the card stack host). */
+   footer?: ReactNode;
+ }
+@@ -181,6 +183,7 @@ function Row(props: {
+   /** The failure sentence the turn's reply repeated (shown in the card's details, not above it). */
+   echo: { assistantKey: string; text: string } | null;
+   onFailureAction?: ((action: FailureAction, item: ErrorItem) => void) | undefined;
++  canRetry?: boolean | undefined;
+ }) {
+   const { item } = props;
+   switch (item.kind) {
+@@ -196,7 +199,12 @@ function Row(props: {
+       );
+     case "error":
+       return (
+-        <ErrorCard item={item} echo={props.echo?.text ?? null} onAction={props.onFailureAction} />
++        <ErrorCard
++          item={item}
++          echo={props.echo?.text ?? null}
++          onAction={props.onFailureAction}
++          canRetry={props.canRetry}
++        />
+       );
+     case "async":
+       return <AsyncRow item={item} />;
+@@ -343,6 +351,7 @@ export function Transcript(props: TranscriptProps) {
+                   showReasoning={showReasoning}
+                   echo={echo}
+                   onFailureAction={props.onFailureAction}
++                  canRetry={props.canRetry}
+                 />
+               ))}
+             </section>
+diff --git a/apps/desktop/src/chat/errorActions.test.tsx b/apps/desktop/src/chat/errorActions.test.tsx
+new file mode 100644
+index 0000000..d64a859
+--- /dev/null
++++ b/apps/desktop/src/chat/errorActions.test.tsx
+@@ -0,0 +1,103 @@
++// @vitest-environment jsdom
++// W57-H1-4: the chat error card's Retry sends the failed turn again through the window's retry
++// slot, and Open logs reveals the log folder through the bridge; no Retry where nothing can resend.
++import type { ClientEvent, Clock } from "@indus/client";
++import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
++import { MemoryRouter } from "react-router";
++import { afterEach, describe, expect, it, vi } from "vitest";
++import { ChatView } from "./ChatView.tsx";
++import type { ErrorItem } from "./messageStream.ts";
++import { TranscriptStoreProvider } from "./transcriptReact.tsx";
++import { type TranscriptSource, TranscriptStore } from "./transcriptStore.ts";
++
++const immediate: Clock = {
++  now: () => 0,
++  setTimeout: (run) => {
++    run();
++    return 0 as unknown as ReturnType<Clock["setTimeout"]>;
++  },
++  clearTimeout: () => undefined,
++};
++
++function fakeSource() {
++  const listeners = new Set<(event: ClientEvent) => void>();
++  let seq = 0;
++  const source: TranscriptSource & { emit(event: Record<string, unknown>): void } = {
++    onEvent: (listener) => {
++      listeners.add(listener);
++      return () => listeners.delete(listener);
++    },
++    request: (async () => ({
++      messages: [{ role: "user", text: "Summarise the open issues", row_id: 1 }],
++    })) as unknown as TranscriptSource["request"],
++    watchSession: async () => undefined,
++    unwatchSession: () => undefined,
++    emit: (event) => {
++      seq += 1;
++      for (const listener of listeners) {
++        listener({ session_id: "s1", seq, ...event } as unknown as ClientEvent);
++      }
++    },
++  };
++  return source;
++}
++
++async function failedTurn() {
++  const source = fakeSource();
++  const store = new TranscriptStore(source, { clock: immediate });
++  await act(async () => {
++    await store.open("s1");
++  });
++  act(() => {
++    source.emit({ type: "turn.started", turn_id: "t1", generation: 1 });
++    source.emit({
++      type: "turn.done",
++      turn_id: "t1",
++      reason: "provider_failed",
++      // a provider refusal (HTTP 400) is not marked transient by the backend
++      failure: { reason: "HTTP 400 bad request from the model provider", retryable: false },
++    });
++  });
++  return store;
++}
++
++afterEach(() => {
++  cleanup();
++  delete (globalThis as { indusDesktop?: unknown }).indusDesktop;
++});
++
++describe("the chat error card's actions", () => {
++  it("Retry goes to the retry slot and Open logs to the bridge", async () => {
++    const reveal = vi.fn(async () => ({ ok: true as const }));
++    (globalThis as { indusDesktop?: unknown }).indusDesktop = { logs: { reveal } };
++    const store = await failedTurn();
++    const onRetry = vi.fn<(item: ErrorItem) => void>();
++    render(
++      <MemoryRouter>
++        <TranscriptStoreProvider store={store}>
++          <ChatView sessionId="s1" onRetry={onRetry} />
++        </TranscriptStoreProvider>
++      </MemoryRouter>,
++    );
++    expect(screen.getByRole("alert").getAttribute("data-layer")).toBe("provider");
++    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
++    expect(onRetry).toHaveBeenCalledOnce();
++    expect(onRetry.mock.calls[0]?.[0].turnId).toBe("t1");
++    fireEvent.click(screen.getByRole("button", { name: "Open logs" }));
++    expect(reveal).toHaveBeenCalledOnce();
++  });
++
++  it("a view with no retry slot (the HUD) shows no Retry", async () => {
++    const store = await failedTurn();
++    render(
++      <MemoryRouter>
++        <TranscriptStoreProvider store={store}>
++          <ChatView sessionId="s1" />
++        </TranscriptStoreProvider>
++      </MemoryRouter>,
++    );
++    expect(screen.getByRole("alert")).toBeTruthy();
++    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
++    expect(screen.getByRole("button", { name: "Open logs" })).toBeTruthy();
++  });
++});
+diff --git a/apps/desktop/src/chat/failure.ts b/apps/desktop/src/chat/failure.ts
+index 44005bd..bf577d9 100644
+--- a/apps/desktop/src/chat/failure.ts
++++ b/apps/desktop/src/chat/failure.ts
+@@ -66,18 +66,24 @@ export function classifyFailure(reason: string, text: string): FailureLayer {
+   return "runtime";
+ }
+ 
+-/** What the card offers, most useful first. */
+-export function failureActions(layer: FailureLayer, retryable: boolean): FailureAction[] {
+-  const retry: FailureAction[] = retryable ? ["retry"] : [];
++/**
++ * What the card offers, most useful first. W57-H1-4: Retry is offered on every layer but the
++ * connection one whenever the host can send the failed turn again (`canRetry`: the window's chat
++ * slot re-sends its message as a new input), not only when the backend marked the failure
++ * transient: after picking another model or fixing a key the same message is worth sending again.
++ * Open logs (the bridge's log folder) is offered on every layer.
++ */
++export function failureActions(layer: FailureLayer, canRetry: boolean): FailureAction[] {
++  const retry: FailureAction[] = canRetry ? ["retry"] : [];
+   switch (layer) {
+     case "provider":
+-      return [...retry, "choose-model", "open-settings"];
++      return [...retry, "choose-model", "open-settings", "open-logs"];
+     case "endpoint":
+-      return [...retry, "open-settings"];
++      return [...retry, "open-settings", "open-logs"];
+     case "streaming":
+-      return ["retry"];
++      return [...retry, "open-logs"];
+     case "auth":
+-      return ["sign-in", "open-settings"];
++      return ["sign-in", "open-settings", ...retry, "open-logs"];
+     case "daemon":
+       return ["reconnect", "open-logs"];
+     case "disk":
+diff --git a/apps/desktop/src/chat/messageStream.test.ts b/apps/desktop/src/chat/messageStream.test.ts
+index 03a23fb..4e9ff5e 100644
+--- a/apps/desktop/src/chat/messageStream.test.ts
++++ b/apps/desktop/src/chat/messageStream.test.ts
+@@ -448,8 +448,21 @@ describe("failure layers", () => {
+   });
+ 
+   it("offers sign-in for auth and reconnect for the daemon", () => {
+-    expect(failureActions("auth", true)).toEqual(["sign-in", "open-settings"]);
+-    expect(failureActions("daemon", false)).toEqual(["reconnect", "open-logs"]);
++    expect(failureActions("auth", false)).toEqual(["sign-in", "open-settings", "open-logs"]);
++    expect(failureActions("auth", true)).toEqual([
++      "sign-in",
++      "open-settings",
++      "retry",
++      "open-logs",
++    ]);
++    expect(failureActions("daemon", true)).toEqual(["reconnect", "open-logs"]);
++    // W57-H1-4: Retry follows the host's ability to send again, not the failure's transient flag
++    expect(failureActions("provider", true)).toEqual([
++      "retry",
++      "choose-model",
++      "open-settings",
++      "open-logs",
++    ]);
+     expect(failureActions("provider", false)).not.toContain("retry");
+   });
+ });
+diff --git a/apps/desktop/src/chat/transcriptLook.test.tsx b/apps/desktop/src/chat/transcriptLook.test.tsx
+index 28eaf32..ffab9ea 100644
+--- a/apps/desktop/src/chat/transcriptLook.test.tsx
++++ b/apps/desktop/src/chat/transcriptLook.test.tsx
+@@ -111,13 +111,33 @@ describe("error card", () => {
+ 
+   it("actions reach the host; dismiss hides the card for this view", () => {
+     const onAction = vi.fn();
+-    render(<ErrorCard item={failure} onAction={onAction} />);
++    render(<ErrorCard item={failure} onAction={onAction} canRetry />);
+     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+     expect(onAction).toHaveBeenCalledWith("retry", failure);
++    fireEvent.click(screen.getByRole("button", { name: "Open logs" }));
++    expect(onAction).toHaveBeenCalledWith("open-logs", failure);
+     fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+     expect(screen.queryByRole("alert")).toBeNull();
+   });
+ 
++  it("a provider failure offers Retry and Open logs even when not marked transient (W57-H1-4)", () => {
++    const refused: ErrorItem = { ...failure, retryable: false, message: "HTTP 400 bad request" };
++    const view = render(<ErrorCard item={refused} onAction={vi.fn()} canRetry />);
++    const pills = [...view.container.querySelectorAll(".error-pill")].map((b) => b.textContent);
++    expect(pills).toEqual([
++      "Retry",
++      "Choose a model",
++      "Open settings",
++      "Open logs",
++      "Copy error details",
++    ]);
++    view.unmount();
++    // a host that cannot send the turn again gets no Retry (never a dead button)
++    render(<ErrorCard item={refused} onAction={vi.fn()} />);
++    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
++    expect(screen.getByRole("button", { name: "Open logs" })).toBeTruthy();
++  });
++
+   it("recognises the backend's own failure replies only", () => {
+     expect(failureEcho("The model provider could not answer: demo")).toBe(true);
+     expect(failureEcho("The turn stopped because of an internal error: boom")).toBe(true);
+diff --git a/apps/desktop/src/panes/layoutStore.test.ts b/apps/desktop/src/panes/layoutStore.test.ts
+index 77f987e..7431e81 100644
+--- a/apps/desktop/src/panes/layoutStore.test.ts
++++ b/apps/desktop/src/panes/layoutStore.test.ts
+@@ -189,6 +189,33 @@ describe("the right-side group (W52-m)", () => {
+     expect(allPanes(s.layout().root)).toEqual(["chat", "files", "terminal"]);
+   });
+ 
++  it("Ctrl+J's Files over Terminal column gets 236 of the 1180 span; Review 380, Preview 420 (W57-H1-2)", () => {
++    // The split sizes are relative flex weights: at the 1440 px capture the chat area spans
++    // 1143 px, so the column draws at 236 / 1180 × 1143 ≈ 229 px (measured live: 228 px).
++    const s = store(memoryStorage(), ALL, true);
++    const share = () => {
++      const root = s.layout().root;
++      if (root?.kind !== "split") return null;
++      const total = root.sizes.reduce((sum, size) => sum + size, 0);
++      return Math.round((root.sizes[1] ?? 0) * (1180 / total));
++    };
++    s.open("files");
++    s.open("terminal");
++    expect(share()).toBe(236);
++    const right = (() => {
++      const root = s.layout().root;
++      return root?.kind === "split" ? root.children[1] : null;
++    })();
++    expect(right?.kind === "split" && right.orientation).toBe("column");
++    s.close("files");
++    s.close("terminal");
++    s.open("review");
++    expect(share()).toBe(380);
++    s.close("review");
++    s.open("preview");
++    expect(share()).toBe(420);
++  });
++
+   it("an arrangement the group did not build opens panes the usual way", () => {
+     const s = store(); // the Default preset: every pane already placed
+     s.close("review");
+diff --git a/apps/web/src/lib/api.ts b/apps/web/src/lib/api.ts
+index dbec996..8d1e893 100644
+--- a/apps/web/src/lib/api.ts
++++ b/apps/web/src/lib/api.ts
+@@ -18,6 +18,8 @@ import type {
+   DeliveryTarget,
+   DownloadTicket,
+   EffectiveConfig,
++  EndpointTest,
++  EndpointTestResult,
+   EnvKeys,
+   EnvWriteResponse,
+   FileContent,
+@@ -618,6 +620,9 @@ export const api = {
+     options: () => request<ModelOptions>("/api/model/options"),
+     auxiliary: () => request<AuxiliaryResponse>("/api/model/auxiliary"),
+     set: (body: ModelAssignment) => request<OkResponse>("/api/model/set", { json: body }),
++    /** An OpenAI-compatible endpoint's model list, asked from the backend (W57-H1-5 picker). */
++    testEndpoint: (body: EndpointTest) =>
++      request<EndpointTestResult>("/api/model/test-endpoint", { json: body }),
+   },
+ 
+   providerLogin: {
+diff --git a/apps/web/src/lib/restTypes.ts b/apps/web/src/lib/restTypes.ts
+index eb0b290..7706aed 100644
+--- a/apps/web/src/lib/restTypes.ts
++++ b/apps/web/src/lib/restTypes.ts
+@@ -247,6 +247,21 @@ export interface ModelAssignment {
+   base_url?: string;
+ }
+ 
++/** `POST /api/model/test-endpoint`: an OpenAI-compatible endpoint's own `/models`, asked by the
++ * backend (P20-32/33); the key is the one given, else the stored `key_env`. */
++export interface EndpointTest {
++  base_url: string;
++  api_key?: string;
++  key_env?: string;
++}
++
++export interface EndpointTestResult {
++  ok: boolean;
++  status: number | null;
++  models: string[];
++  message: string;
++}
++
+ export interface AuxiliaryTask {
+   task: string;
+   provider: string;
+diff --git a/apps/web/src/pages/DocsPage.test.tsx b/apps/web/src/pages/DocsPage.test.tsx
+index 845da58..499520d 100644
+--- a/apps/web/src/pages/DocsPage.test.tsx
++++ b/apps/web/src/pages/DocsPage.test.tsx
+@@ -13,4 +13,15 @@ describe("docs page", () => {
+     expect(link.getAttribute("target")).toBe("_blank");
+     expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+   });
++
++  it("draws the panel with theme tokens, never a fixed light sheet (W57-H1-1)", () => {
++    const { container } = render(<DocsPage />);
++    const panel = screen.getByRole("region", { name: "Documentation" });
++    expect(panel.className).toContain("bg-surface");
++    // no fixed colours anywhere in the page: dark themes must not get a white block or navy text
++    for (const el of container.querySelectorAll("*")) {
++      const cls = el.getAttribute("class") ?? "";
++      expect(cls).not.toMatch(/bg-white|color-scheme:light|#[0-9a-fA-F]{3,8}/);
++    }
++  });
+ });
+diff --git a/apps/web/src/pages/DocsPage.tsx b/apps/web/src/pages/DocsPage.tsx
+index 3cdd33e..988fb6b 100644
+--- a/apps/web/src/pages/DocsPage.tsx
++++ b/apps/web/src/pages/DocsPage.tsx
+@@ -1,6 +1,8 @@
+ // Documentation (W52-docs-1): an in-app page with the framed panel the docs will live in. Until
+ // our docs site exists (P25-20) the panel holds a pointer that opens the docs in a new tab; once
+ // it does, the panel becomes an iframe of `DOCS_LINK.href` (needs a `frame-src` for that origin).
++// W57-H1-1: the panel takes the theme's surface and ink tokens (it was a fixed white sheet with
++// navy text, so the dark themes showed a bright unthemed block).
+ 
+ import { BookOpen, ExternalLink } from "lucide-react";
+ import { DOCS_LINK } from "../shell/routes.ts";
+@@ -10,20 +12,18 @@ export function DocsPage() {
+     <div className="flex min-h-0 flex-1 flex-col px-[1.4375rem] py-[1.875rem]">
+       <section
+         aria-label="Documentation"
+-        className="flex min-h-[24rem] flex-1 flex-col items-center justify-center gap-3 rounded-[2px] border border-line bg-white px-6 text-center [color-scheme:light]"
++        className="flex min-h-[24rem] flex-1 flex-col items-center justify-center gap-3 rounded-[2px] border border-line bg-surface px-6 text-center"
+       >
+-        <BookOpen aria-hidden="true" className="size-8 text-[#0b1d3a]/70" />
+-        <h2 className="m-0 text-[1.125rem] font-semibold text-[#0b1d3a]">
+-          Indus Agent documentation
+-        </h2>
+-        <p className="m-0 max-w-md text-[0.875rem] text-[#0b1d3a]/70">
++        <BookOpen aria-hidden="true" className="size-8 text-ink-muted" />
++        <h2 className="m-0 text-[1.125rem] font-semibold text-ink">Indus Agent documentation</h2>
++        <p className="m-0 max-w-md text-[0.875rem] text-ink-muted">
+           The guides and reference pages open in a new browser tab.
+         </p>
+         <a
+           href={DOCS_LINK.href}
+           target="_blank"
+           rel="noopener noreferrer"
+-          className="type-button mt-2 inline-flex h-[1.875rem] items-center gap-2 border border-[#0b1d3a] px-3 text-[#0b1d3a] uppercase hover:bg-[#0b1d3a]/5 [&_svg]:size-3.5"
++          className="type-button mt-2 inline-flex h-[1.875rem] items-center gap-2 border border-ink px-3 text-ink uppercase hover:bg-hover [&_svg]:size-3.5"
+         >
+           <ExternalLink aria-hidden="true" />
+           Open docs
+diff --git a/apps/web/src/pages/ModelsPage.test.tsx b/apps/web/src/pages/ModelsPage.test.tsx
+index e46fbd9..d7c4231 100644
+--- a/apps/web/src/pages/ModelsPage.test.tsx
++++ b/apps/web/src/pages/ModelsPage.test.tsx
+@@ -90,6 +90,103 @@ describe("models page", () => {
+     expect(screen.queryByRole("dialog", { name: "Switch model" })).toBeNull();
+   });
+ 
++  it("lists a custom endpoint's own models and keeps the typed id as a fallback (W57-H1-5)", async () => {
++    mock.state.modelOptions.providers.push({
++      name: "custom",
++      label: "Custom endpoint",
++      description: "any OpenAI-compatible endpoint",
++      family: "custom",
++      auth_type: "api_key_optional",
++      configured: true,
++      device_login: false,
++      supports_model_listing: true,
++    });
++    mock.state.modelOptions.current = { provider: "custom", model: "fake-model" };
++    mock.state.config = { model: { provider: "custom", base_url: "http://127.0.0.1:9/v1" } };
++    mock.state.endpointModels["http://127.0.0.1:9/v1"] = ["fake-model", "fake-model-1"];
++    renderPage(<ModelsPage />, "/models");
++    await screen.findByTestId("provider-fake");
++    fireEvent.click(screen.getByRole("button", { name: "Change" }));
++    const dialog = within(await screen.findByRole("dialog", { name: "Switch model" }));
++    const models = within(await dialog.findByRole("list", { name: "Models" }));
++    await models.findByRole("button", { name: /fake-model-1/ });
++    expect(mock.callsTo("POST", "/api/model/test-endpoint")[0]?.body).toEqual({
++      base_url: "http://127.0.0.1:9/v1",
++    });
++    expect(models.getAllByRole("button").map((b) => b.textContent)).toEqual([
++      "fake-modelCURRENT",
++      "fake-model-1",
++    ]);
++    expect(dialog.getByTestId("model-list-hint").textContent).toBe(
++      "Pick a model, or type another id.",
++    );
++    const providers = within(dialog.getByRole("list", { name: "Providers" }));
++    expect(providers.getByRole("button", { name: /Custom endpoint/ }).textContent).toContain(
++      "custom · 2 models",
++    );
++    expect(dialog.getByLabelText("Model id")).toBeTruthy();
++    fireEvent.click(models.getByRole("button", { name: /fake-model-1/ }));
++    fireEvent.click(dialog.getByRole("button", { name: "Switch" }));
++    await waitFor(() =>
++      expect(mock.callsTo("POST", "/api/model/set")[0]?.body).toEqual({
++        scope: "main",
++        provider: "custom",
++        model: "fake-model-1",
++      }),
++    );
++  });
++
++  it("a saved endpoint that does not answer says so and leaves the typed id", async () => {
++    mock.state.modelOptions.providers.push({
++      name: "my-llm",
++      label: "my-llm",
++      description: "",
++      family: "custom",
++      auth_type: "api_key_optional",
++      configured: true,
++      device_login: false,
++      supports_model_listing: true,
++    });
++    mock.state.config = {
++      model: { provider: "fake" },
++      providers: {
++        "my-llm": {
++          base_url: "http://127.0.0.1:7/v1",
++          key_env: "MY_LLM_API_KEY",
++          models: ["saved-one"],
++        },
++      },
++    };
++    renderPage(<ModelsPage />, "/models");
++    await screen.findByTestId("provider-fake");
++    fireEvent.click(screen.getByRole("button", { name: "Change" }));
++    const dialog = within(await screen.findByRole("dialog", { name: "Switch model" }));
++    const list = within(await dialog.findByRole("list", { name: "Providers" }));
++    fireEvent.click(list.getByRole("button", { name: /my-llm/ }));
++    await waitFor(() =>
++      expect(dialog.getByTestId("model-list-hint").textContent).toBe(
++        "The endpoint did not answer (ConnectError). Type the model id instead.",
++      ),
++    );
++    expect(mock.callsTo("POST", "/api/model/test-endpoint")[0]?.body).toEqual({
++      base_url: "http://127.0.0.1:7/v1",
++      key_env: "MY_LLM_API_KEY",
++    });
++    // the entry's saved models are still offered
++    const models = within(dialog.getByRole("list", { name: "Models" }));
++    expect(models.getByRole("button", { name: /saved-one/ })).toBeTruthy();
++  });
++
++  it("a vendor provider asks no endpoint and explains the typed id", async () => {
++    renderPage(<ModelsPage />, "/models");
++    await screen.findByTestId("provider-fake");
++    fireEvent.click(screen.getByRole("button", { name: "Change" }));
++    const dialog = within(await screen.findByRole("dialog", { name: "Switch model" }));
++    await dialog.findByRole("list", { name: "Models" });
++    expect(dialog.getByTestId("model-list-hint").textContent).toContain("cannot list them");
++    expect(mock.callsTo("POST", "/api/model/test-endpoint")).toEqual([]);
++  });
++
+   it("picks another provider in the dialog and filters the list", async () => {
+     renderPage(<ModelsPage />, "/models");
+     await screen.findByTestId("provider-fake");
+diff --git a/apps/web/src/testing/mockApi.ts b/apps/web/src/testing/mockApi.ts
+index 851c0f0..4b45b6c 100644
+--- a/apps/web/src/testing/mockApi.ts
++++ b/apps/web/src/testing/mockApi.ts
+@@ -110,6 +110,9 @@ export interface MockState {
+   webhooks: WebhookRoute[];
+   modelInfo: ModelInfo;
+   modelOptions: ModelOptions;
++  /** Endpoint URL → the models its `/models` lists (`POST /api/model/test-endpoint`); others
++   * do not answer. */
++  endpointModels: Record<string, string[]>;
+   auxiliary: AuxiliaryResponse;
+   /** The device-code grant a sign-in start answers; null → 400 `no_device_flow`. */
+   deviceGrant: Omit<LoginStarted, "session_id" | "provider" | "status" | "message"> | null;
+@@ -318,6 +321,7 @@ export function defaultMockState(): MockState {
+       ],
+       current: { provider: "fake", model: "fake-model" },
+     },
++    endpointModels: {},
+     auxiliary: { tasks: [], main: { provider: "fake", model: "fake-model" } },
+     deviceGrant: null,
+     loginPolls: ["pending"],
+@@ -1292,6 +1296,30 @@ function adminRoutes(state: MockState): Array<[string, RegExp, Handler]> {
+     ["GET", /^\/api\/model\/info$/, () => ok(state.modelInfo)],
+     ["GET", /^\/api\/model\/options$/, () => ok(state.modelOptions)],
+     ["GET", /^\/api\/model\/auxiliary$/, () => ok(state.auxiliary)],
++    [
++      "POST",
++      /^\/api\/model\/test-endpoint$/,
++      (call) => {
++        const base = text(asRecord(call.body).base_url).replace(/\/+$/, "");
++        if (!/^https?:\/\//.test(base))
++          return fail(400, "invalid_url", "The endpoint URL is not valid.");
++        const models = state.endpointModels[base];
++        if (!models) {
++          return ok({
++            ok: false,
++            status: null,
++            models: [],
++            message: "The endpoint did not answer (ConnectError).",
++          });
++        }
++        return ok({
++          ok: true,
++          status: 200,
++          models,
++          message: `The endpoint offers ${models.length} models.`,
++        });
++      },
++    ],
+     [
+       "POST",
+       /^\/api\/model\/set$/,
+diff --git a/apps/web/src/ui/ModelPickerDialog.tsx b/apps/web/src/ui/ModelPickerDialog.tsx
+index 0300c3f..0857477 100644
+--- a/apps/web/src/ui/ModelPickerDialog.tsx
++++ b/apps/web/src/ui/ModelPickerDialog.tsx
+@@ -1,15 +1,19 @@
+ // "Switch model" dialog, shared by the chat rail and the Models page (W52-a / W52-b, one picker
+ // since the wave 53 integration). Providers on the left, models on the right, a fuzzy filter over
+ // both, the provider and model in use tagged CURRENT. Our server lists providers but not each
+-// provider's models, so the model column shows the model in use (for its provider) and a field to
+-// type a model id. The caller decides what applying means (`onApply`), and owns the request.
++// vendor's models; it can ask an OpenAI-compatible endpoint for its own list
++// (`POST /api/model/test-endpoint`). W57-H1-5: so a custom or local endpoint (a saved
++// `providers.<name>` entry with a base URL, or the main model's own `model.base_url`) lists its
++// models, with the entry's saved models; every other provider shows the model in use. The typed
++// model id field stays as the fallback. The caller decides what applying means (`onApply`), and
++// owns the request.
+ 
+ import { useQuery } from "@tanstack/react-query";
+ import { Check, LoaderCircle, RefreshCw, Search } from "lucide-react";
+ import { type ReactNode, useEffect, useMemo, useState } from "react";
+ import { Link } from "react-router";
+ import { api } from "../lib/api.ts";
+-import type { ProviderOption } from "../lib/restTypes.ts";
++import type { ConfigObject, EndpointTest, ProviderOption } from "../lib/restTypes.ts";
+ import { errorText } from "../shell/Toasts.tsx";
+ import { Button } from "./controls.tsx";
+ import { cx } from "./cx.ts";
+@@ -57,6 +61,32 @@ function Highlighted({ text, query }: { text: string; query: string }) {
+   return <>{out}</>;
+ }
+ 
++/** Where a provider's models can be asked for: its endpoint and saved models, or null. */
++export function endpointSource(
++  config: ConfigObject | undefined,
++  provider: string | null,
++  currentProvider: string | null,
++): { query: EndpointTest; saved: string[] } | null {
++  if (!config || !provider) return null;
++  const record = (value: unknown): Record<string, unknown> =>
++    value !== null && typeof value === "object" && !Array.isArray(value)
++      ? (value as Record<string, unknown>)
++      : {};
++  const entry = record(record(config.providers)[provider]);
++  const url = typeof entry.base_url === "string" ? entry.base_url.trim() : "";
++  if (url) {
++    const keyEnv = typeof entry.key_env === "string" ? entry.key_env.trim() : "";
++    const saved = Array.isArray(entry.models)
++      ? entry.models.filter((m): m is string => typeof m === "string" && m.trim() !== "")
++      : [];
++    return { query: { base_url: url, ...(keyEnv ? { key_env: keyEnv } : {}) }, saved };
++  }
++  const main = record(config.model);
++  const mainUrl = typeof main.base_url === "string" ? main.base_url.trim() : "";
++  if (provider === currentProvider && mainUrl) return { query: { base_url: mainUrl }, saved: [] };
++  return null;
++}
++
+ function CurrentTag() {
+   return <span className="type-heading shrink-0 text-[0.75rem] text-ink">CURRENT</span>;
+ }
+@@ -113,10 +143,41 @@ export function ModelPickerDialog({
+   }, [options.data, current.provider, current.model, filter]);
+ 
+   const shownProvider = provider ?? current.provider ?? providers[0]?.name ?? null;
+-  const models =
+-    shownProvider && shownProvider === current.provider && current.model
+-      ? [current.model].filter((m) => fuzzyHits(m, filter) !== null)
+-      : [];
++  const config = useQuery({
++    queryKey: ["config", "file"],
++    queryFn: () => api.config.get(),
++    enabled: open,
++  });
++  const source = endpointSource(config.data, shownProvider, current.provider);
++  const listed = useQuery({
++    queryKey: ["models", "endpoint", source?.query.base_url ?? "", source?.query.key_env ?? ""],
++    queryFn: () => api.model.testEndpoint(source?.query ?? { base_url: "" }),
++    enabled: open && source !== null,
++    staleTime: 60_000,
++    retry: false,
++  });
++  const listedModels = source !== null && listed.data?.ok ? listed.data.models : [];
++  // the shown provider's models: the one in use, the endpoint's list, the entry's saved ones
++  const known = [
++    ...new Set([
++      ...(shownProvider && shownProvider === current.provider && current.model
++        ? [current.model]
++        : []),
++      ...listedModels,
++      ...(source?.saved ?? []),
++    ]),
++  ];
++  const models = known.filter((m) => fuzzyHits(m, filter) !== null);
++  const listHint =
++    source === null
++      ? "Type the model id as the provider names it; this install cannot list them."
++      : listed.isFetching && !listed.data
++        ? "Asking the endpoint for its models…"
++        : listed.error
++          ? `${errorText(listed.error)} Type the model id instead.`
++          : listed.data && !listed.data.ok
++            ? `${listed.data.message} Type the model id instead.`
++            : "Pick a model, or type another id.";
+   const chosen = model ?? (shownProvider === current.provider ? current.model : null);
+   const changed =
+     !!chosen && !!shownProvider && (chosen !== current.model || shownProvider !== current.provider);
+@@ -207,11 +268,13 @@ export function ModelPickerDialog({
+                     </span>
+                     <span className="truncate text-ink-muted">
+                       {p.name}
+-                      {inUse && current.model
+-                        ? " · 1 models"
+-                        : p.configured
+-                          ? " · configured"
+-                          : " · no key"}
++                      {picked && known.length > 0
++                        ? ` · ${known.length} ${known.length === 1 ? "model" : "models"}`
++                        : inUse && current.model
++                          ? " · 1 model"
++                          : p.configured
++                            ? " · configured"
++                            : " · no key"}
+                     </span>
+                   </button>
+                 </li>
+@@ -266,8 +329,11 @@ export function ModelPickerDialog({
+                   }}
+                 />
+               </form>
+-              <p className="type-serif m-0 px-3 text-[0.75rem] text-ink-soft">
+-                Type the model id as the provider names it; this install cannot list them.
++              <p
++                className="type-serif m-0 px-3 text-[0.75rem] text-ink-soft"
++                data-testid="model-list-hint"
++              >
++                {listHint}
+               </p>
+             </>
+           ) : null}
+@@ -283,8 +349,15 @@ export function ModelPickerDialog({
+         <div className="flex items-center gap-2">
+           <Button
+             size="lg"
+-            icon={<RefreshCw className={options.isFetching ? "animate-spin" : ""} />}
+-            onClick={() => void options.refetch()}
++            icon={
++              <RefreshCw
++                className={options.isFetching || listed.isFetching ? "animate-spin" : ""}
++              />
++            }
++            onClick={() => {
++              void options.refetch();
++              if (source !== null) void listed.refetch();
++            }}
+           >
+             Refresh Models
+           </Button>
+diff --git a/docs/notes/ui-parity/w57-h1-compare2-bugs.md b/docs/notes/ui-parity/w57-h1-compare2-bugs.md
+new file mode 100644
+index 0000000..9a4a889
+--- /dev/null
++++ b/docs/notes/ui-parity/w57-h1-compare2-bugs.md
+@@ -0,0 +1,96 @@
++# Task: Second-compare bugs: docs theme, pane widths, messaging labels, error card, web model list (W57-H1) Phase: ui-parity Owner: builder w57h1
++
++Status: Done (2026-10-25) for items 1, 3, 4 and 5; item 2 was not a width bug (measured, pinned by a
++test, no layout change). Uncommitted in the w57h1 worktree for the lead.
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): no reference source opened; the
++second compare's gap list and screenshots were the input.
++Evidence: reference and Indus screenshots of the second compare (never in the repo): web `docs`,
++`docs-direct-url`, `model-picker`; desktop `right-sidebar`, `files-pane`, `review-pane`, `messaging`,
++`error-state`, each `--light` and `--dark`.
++
++What it does (own words):
++- Web Documentation page: the panel was a fixed white sheet with navy text (`bg-white`,
++  `[color-scheme:light]`, hex colours), so every dark theme showed a bright block. It now uses the
++  theme's surface, line and ink tokens like other cards (`/docs` and the Docs nav item are one
++  page, so both slugs are fixed).
++- Desktop pane widths: the gap list said the Files column and the Ctrl+J right sidebar draw about
++  110 px wide. Measured in the running app at 1440x900 they draw 228 px (chat 913 px, Review 367
++  px): the split sizes are relative weights, 236 of 1180, over a 1143 px chat area, so D-16.1272's
++  width is applied. The 110 figure is the half-scale side-by-side sheet. The terminal prompt wraps
++  because the kit's working folder path is about 110 characters long and the xterm screen gets 164
++  px of the 228 (the shell rail and padding take the rest). Nothing changed in the layout; a test
++  pins the four column shares.
++- Desktop Messaging: field labels come from the env key's ending; keys with no known ending showed
++  the raw env name in mono (`INDUS_TELEGRAM_ALLOW_BOTS`). Every key the gateway catalogue sends now
++  has a label (and help where useful), including the bot-sender policy ("Other bots": none,
++  mentions, all) and group allowlists; a key added later reads as words made from its name, with
++  `INDUS_` and the platform prefix dropped, never the env name.
++- Desktop chat error card: Retry was offered only when the backend marked the failure transient,
++  so a provider refusal (HTTP 400) had no Retry, and Open logs only showed for the connection,
++  disk and runtime layers. Retry is now offered on every layer but the connection one whenever the
++  host can send the failed turn again (the window's chat slot re-sends the turn's message as a new
++  input, the existing path); a view with no such slot (the HUD) shows no Retry. Open logs (the
++  bridge's log folder, the existing action) is on every layer.
++- Web model picker: our REST API lists providers but no vendor's models. It can ask an
++  OpenAI-compatible endpoint for its `/models` (`POST /api/model/test-endpoint`). The picker now
++  does that for a custom or local endpoint: a saved `providers.<name>` entry with a base URL (and
++  its `key_env`), or the main model's own `model.base_url` when its provider is shown. The list
++  joins the model in use and the entry's saved models; the typed model id stays as the fallback,
++  and a hint line says whether the list came, is coming, or why it did not.
++
++Inputs → outputs: theme tokens → panel colours; layout presets → column shares; gateway catalogue
++env keys → field labels; failure layer + host retry slot → card actions; config + test-endpoint →
++the picker's model column.
++
++Files: apps/web/src/pages/DocsPage.tsx (+test); apps/desktop/src/panes/layoutStore.test.ts, apps/desktop/src/chat/Transcript.test.tsx;
++apps/desktop/src/app/messaging/fieldCopy.ts (+new test), MessagingPage.tsx,
++apps/desktop/src/app/manage/strings.en.ts; apps/desktop/src/chat/failure.ts, ErrorCard.tsx,
++Transcript.tsx, ChatView.tsx, errorActions.test.tsx (new), transcriptLook.test.tsx,
++messageStream.test.ts; apps/web/src/ui/ModelPickerDialog.tsx, apps/web/src/lib/api.ts,
++apps/web/src/lib/restTypes.ts, apps/web/src/testing/mockApi.ts, apps/web/src/pages/ModelsPage.test.tsx.
++
++Edge cases / failure modes:
++- Picker: endpoint down or refusing the key → the backend's sentence plus "Type the model id
++  instead."; saved models still listed; vendor providers make no request at all.
++- Picker: the main endpoint is asked without a key (the API takes only a named `key_env`, and the
++  main model names none); an endpoint that needs one answers "needs a key" and the field remains.
++- Error card: a turn with no prompt found in the transcript makes Retry do nothing (the slot's
++  existing rule); Open logs outside the desktop app has no bridge and does nothing (the card only
++  renders in the desktop app).
++- Messaging: `_PHONE_NUMBER_ID` before `_PHONE_NUMBER`, `_CLIENT_SECRET` before `_SECRET`,
++  `_GROUP_ALLOWED_USERS` before `_ALLOWED_USERS` (first match wins).
++
++Our design differences / decisions:
++- W57-H1-1: the Docs panel follows the theme (it imitated an embedded white docs site we do not
++  have).
++- W57-H1-2: no change to side widths; the 110 px report is a measuring slip (half-scale sheet).
++  Making the xterm wider would mean hiding the shell rail (new/close terminal), left as is.
++- W57-H1-3: unknown messaging keys get a derived label, not the env name; the env name stays in
++  the label's tooltip and the input's accessible name (E2E and tests select by it).
++- W57-H1-4: Retry follows the host's ability to resend, not the backend's transient flag; Open
++  logs on every layer. No Send diagnostics button (the card has Copy error details; diagnostics
++  live in Settings › logs) and no footnote.
++- W57-H1-5: the web picker lists models only where our backend can: custom/local endpoints via
++  `test-endpoint`. No backend change.
++
++Tests we will write: docs panel class tokens; side column shares; every catalogue key labelled;
++failure actions per layer; card pills with/without a retry host; ChatView Retry → slot and Open
++logs → bridge; picker lists endpoint models, failure hint, vendor provider makes no request.
++
++## Decisions for the lead
++- W57-H1-2: the gap line "about 110 px" should read "228 px (the reference about 237 px)"; the prompt wrap
++  is the long working folder path. If a wider terminal is wanted, the shell rail could collapse
++  into the tab strip.
++- W57-H1-5: a real per-provider model list for vendor providers would need a backend route (for
++  example a REST twin of the daemon's `model.options`); not added (never invent backend features).
++
++Compare checklist (filled after the rewrite):
++- [x] docs / docs-direct-url dark: no white block (test: `DocsPage.test.tsx::draws the panel with theme tokens…`)
++- [x] right-sidebar / files-pane width measured 228 px, review 367 px (test: `layoutStore.test.ts::Ctrl+J's Files over Terminal column…`)
++- [x] messaging: "Other bots" label with help (test: `fieldCopy.test.ts::labels every key the gateway catalogue sends`)
++- [x] error-state: Retry · Choose a model · Open settings · Open logs · Copy error details (tests: `errorActions.test.tsx`, `transcriptLook.test.tsx`)
++- [x] web model-picker: fake-model + fake-model-1 listed for the custom endpoint (test: `ModelsPage.test.tsx::lists a custom endpoint's own models…`)
++- Deliberate differences: no Send diagnostics or footnote on the error card; vendor providers keep
++  the typed field.
++- Not taken: brand icons, Telegram QR and setup-guide block on Messaging (not in this slice).
