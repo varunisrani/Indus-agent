@@ -55,7 +55,7 @@ import {
   useLayout,
 } from "../panes/PaneShell.tsx";
 import { CHAT_PANE, isHidden, zones } from "../panes/paneTree.ts";
-import { surfaceShown } from "../panes/presets.ts";
+import { paneAllowed, surfaceShown } from "../panes/presets.ts";
 import type { PreviewTarget } from "../panes/preview/target.ts";
 import { type PaneAction, usePaneShortcuts } from "../panes/shortcuts.ts";
 import { ProfileRail, type ProfilesApi, useProfileNames } from "../profiles/ProfileRail.tsx";
@@ -194,6 +194,13 @@ function LeftSidebar(props: {
     if (ready) void sessions.refresh();
   }, [ready, sessions]);
   const mod = props.platform === "mac" ? "\u2318" : "Ctrl";
+  // "Open in terminal" (W58-J1-5): only where the terminal pane can run a local shell
+  const interfaceMode = useLayout(props.chrome.layout).mode;
+  const connectionMode = useConnectionMode(props.connection);
+  const terminalOk =
+    paneAllowed(interfaceMode, "terminal") &&
+    connectionMode !== "remote" &&
+    desktopBridge()?.terminal !== undefined;
   const onBots = location.pathname === BOTS_PATH;
   const botsOn = contributed.has(BOTS_PATH);
   const [panel, setPanel] = useState<"sessions" | "bots">("sessions");
@@ -350,6 +357,16 @@ function LeftSidebar(props: {
                     );
                   },
                 })}
+            {...(terminalOk
+              ? {
+                  onOpenInTerminal: (id: string) => {
+                    // the chat's folder becomes the window's workspace, where the pane's shells start
+                    navigate(sessionPath(id));
+                    if (props.chrome.layout.open("terminal"))
+                      props.chrome.layout.activate("terminal");
+                  },
+                }
+              : {})}
             onNewChat={() => navigate(NEW_CHAT_PATH)}
             events={props.connection}
             homeDir={launchFacts().homeDir || null}

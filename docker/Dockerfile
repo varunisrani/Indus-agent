@@ -47,6 +47,9 @@ WORKDIR /src
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY apps/ apps/
 COPY packages/ packages/
+# The in-app Docs page bundles the user guides and their navigation (W58-J2-1).
+COPY mkdocs.yml ./
+COPY docs/user/ docs/user/
 RUN corepack enable \
     && pnpm install --frozen-lockfile --filter "@indus/web..." \
     && pnpm --filter @indus/web build \

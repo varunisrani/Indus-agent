@@ -7,6 +7,14 @@ fail-closed. A file that cannot be read right now is a 500 and nothing is writte
 is a 403. ``/defaults`` and ``/schema`` are public and take no profile. ``/effective`` lists every
 setting with its source (default, file, env, overlay).
 
+Raw YAML (W58-J2-2): ``GET /api/config/raw`` is the user's file alone as a tree (no defaults,
+unexpanded, credentials hidden; the page writes it as YAML). ``PUT {yaml}`` parses the text with the
+loader's own safe reader (a mapping at the top), puts hidden values back, keeps the file's
+``_``-prefixed internals, expands ``${NAME}`` references the way the loader does and checks the
+result against the schema; any parse or schema error is a 422 listing every problem and nothing is
+written. A valid text goes through the same writer as ``PUT /api/config``, as the complete desired
+state (a key removed from the text is removed from the file); comments already in the file stay.
+
 Keys: ``GET /api/env`` lists the known key names and every name already stored, each with set/unset
 and a redacted preview only. ``PUT {key, value}`` refuses the env writer's denylist first, then
 stores a credential in the profile's ``SecretStore`` (keychain by default; ``.env`` when
@@ -23,8 +31,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from indus.foundation import config as config_module
-from indus.foundation import redact
+from indus.foundation import redact, yamlio
 from indus.foundation.config import keys as config_keys
+from indus.foundation.config import loader as config_loader
 from indus.foundation.config import schema as config_schema
 from indus.foundation.config.loader import ConfigView
 from indus.foundation.envfile import (
@@ -42,13 +51,16 @@ from indus.foundation.scope import Scope
 from indus.foundation.secrets import SecretStore, open_secret_store
 from indus.web.routes.config_view import (
     KeyMeta,
+    config_errors,
     defaults_form,
     effective_entries,
+    file_tree,
     form_tree,
     is_credential_name,
     key_catalog,
     restore_placeholders,
     schema_form,
+    unbacked_placeholders,
 )
 from indus.web.scope import read_scope, write_scope
 
@@ -62,6 +74,8 @@ ROUTE_LIST: Final[tuple[tuple[str, str, bool], ...]] = (
     ("GET", "/api/config/defaults", False),
     ("GET", "/api/config/schema", False),
     ("GET", "/api/config/effective", True),
+    ("GET", "/api/config/raw", True),
+    ("PUT", "/api/config/raw", True),
     ("GET", "/api/env", True),
     ("PUT", "/api/env", True),
     ("DELETE", "/api/env", True),
@@ -141,6 +155,72 @@ def get_schema() -> dict[str, Any]:
 @router.get("/api/config/effective")
 def get_effective(scope: ReadScope) -> dict[str, Any]:
     return {"entries": effective_entries(_readable(scope))}
+
+
+# -- raw YAML -------------------------------------------------------------------------------------
+
+RAW_LIMIT: Final = 512 * 1024
+"""The largest raw YAML text a save takes, in characters."""
+
+
+class RawConfigUpdate(BaseModel):
+    yaml: str = Field(max_length=RAW_LIMIT)
+
+
+def _invalid(problems: list[str], message: str) -> NoReturn:
+    raise HTTPException(
+        status_code=422,
+        detail={"code": "config_invalid", "message": message, "problems": problems},
+    )
+
+
+def _parsed(text: str) -> dict[str, Any]:
+    try:
+        return config_loader.read_user_tree(text.encode("utf-8"))
+    except yamlio.YamlError as exc:
+        where = f"line {exc.line}: " if exc.line is not None else ""
+        _invalid([f"{where}{exc.reason}"], "The YAML cannot be read. Nothing was changed.")
+
+
+@router.get("/api/config/raw")
+def get_raw_config(scope: ReadScope) -> dict[str, Any]:
+    return {"config": file_tree(_readable(scope))}
+
+
+@router.put("/api/config/raw")
+def put_raw_config(body: RawConfigUpdate, scope: WriteScope) -> dict[str, Any]:
+    _refuse_managed(scope)
+    view = _readable(scope)
+    stored = view.user_raw()
+    incoming = _parsed(body.yaml)
+    hidden = sorted(str(k) for k in incoming if str(k).startswith("_"))
+    if hidden:
+        _invalid(
+            [f"{k}: internal setting, kept by Indus Agent" for k in hidden],
+            "Settings starting with _ are internal and cannot be set here. Nothing was changed.",
+        )
+    incoming = config_loader.canonicalise(incoming)
+    masked = unbacked_placeholders(incoming, stored)
+    if masked:
+        _invalid(
+            [f"{path}: a hidden value with nothing stored to keep" for path in masked],
+            "A hidden value was moved or added; type the real value or remove it. Nothing was "
+            "changed.",
+        )
+    wanted = restore_placeholders(incoming, stored)
+    wanted = {**{k: v for k, v in stored.items() if str(k).startswith("_")}, **wanted}
+    expanded = config_loader.expand(wanted, scope.env, {}, set())
+    problems = config_errors(expanded)
+    if problems:
+        _invalid(problems, "The settings do not match the schema. Nothing was changed.")
+    try:
+        config_module.save(scope, wanted, replace=True)
+    except ConfigManaged:
+        _fail(403, "config_managed", "This installation is managed; nothing was changed.")
+    except ConfigError as exc:
+        _fail(500, "config_unreadable", f"{exc.message}. Nothing was changed.")
+    saved = config_module.load(scope)
+    return {"ok": True, "warnings": config_schema.validate(saved.as_dict())}
 
 
 # -- keys -----------------------------------------------------------------------------------------

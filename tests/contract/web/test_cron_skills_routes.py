@@ -341,6 +341,61 @@ def test_skill_toggle_round_trips_through_config(rest: RestApp, scope: Scope) ->
     assert missing.status_code == 404 and _code(missing) == "skill_not_found"
 
 
+SKILL_TEXT = (
+    "---\nname: release-notes\ndescription: Draft release notes.\n---\n\n# Notes\n\nStep.\n"
+)
+
+
+def test_skill_create_saves_through_the_skill_tool(rest: RestApp, scope: Scope) -> None:
+    made = rest.client.post(
+        "/api/skills/create",
+        json={"name": "release-notes", "content": SKILL_TEXT, "category": "writing"},
+    )
+    assert made.status_code == 200, made.text
+    assert made.json()["ok"] is True and made.json()["staged"] is False
+    path = scope.home / "skills" / "writing" / "release-notes" / "SKILL.md"
+    assert path.read_text(encoding="utf-8") == SKILL_TEXT
+    rows = {r["name"]: r for r in rest.client.get("/api/skills").json()["skills"]}
+    assert rows["release-notes"]["category"] == "writing"
+    again = rest.client.post(
+        "/api/skills/create", json={"name": "release-notes", "content": SKILL_TEXT}
+    )
+    assert again.status_code == 400 and _code(again) == "skill_refused"
+    assert "already exists" in again.json()["detail"]["message"]
+
+
+def test_skill_create_refuses_bad_names_and_text_and_writes_nothing(
+    rest: RestApp, scope: Scope
+) -> None:
+    bad_name = rest.client.post("/api/skills/create", json={"name": "../up", "content": SKILL_TEXT})
+    assert bad_name.status_code == 400 and _code(bad_name) == "skill_refused"
+    no_front = rest.client.post("/api/skills/create", json={"name": "plain", "content": "# hi\n"})
+    assert no_front.status_code == 400 and _code(no_front) == "skill_refused"
+    assert rest.client.post("/api/skills/create", json={"name": "x"}).status_code == 422
+    assert not (scope.home / "skills" / "plain").exists()
+    assert not (scope.home / "up").exists()
+
+
+def test_skill_create_is_held_when_write_approval_is_on(rest: RestApp, scope: Scope) -> None:
+    (scope.home / "config.yaml").write_text("skills:\n  write_approval: true\n", encoding="utf-8")
+    held = rest.client.post(
+        "/api/skills/create", json={"name": "release-notes", "content": SKILL_TEXT}
+    )
+    assert held.status_code == 200 and held.json()["staged"] is True
+    assert not (scope.home / "skills" / "release-notes").exists()
+
+
+def test_skill_create_needs_the_dashboard_session(rest: RestApp, scope: Scope) -> None:
+    anonymous = rest.anonymous()
+    refused = anonymous.post(
+        "/api/skills/create",
+        params=WRITE,
+        json={"name": "release-notes", "content": SKILL_TEXT},
+    )
+    assert refused.status_code == 401
+    assert not (scope.home / "skills" / "release-notes").exists()
+
+
 def test_toolsets_list_plain_toolsets_with_tools(rest: RestApp) -> None:
     rows = rest.client.get("/api/tools/toolsets").json()["toolsets"]
     assert rows and all(

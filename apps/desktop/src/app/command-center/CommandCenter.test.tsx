@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { fakeRest } from "../../settings/fakeRest.ts";
 import { EMPTY_DELEGATION, reduceDelegation, totals } from "../agents/delegation.ts";
@@ -158,6 +158,45 @@ describe("CommandCenter", () => {
     expect(screen.getByText("2026-10-23")).toBeTruthy();
     fireEvent.click(screen.getByRole("radio", { name: "7d" }));
     expect(await screen.findByText("Nothing was used in this period.")).toBeTruthy();
+  });
+
+  it("usage shows the counted API calls and the top models (W58-J1-1)", async () => {
+    const api = fakeRest();
+    const model = (name: string, tokens: number, calls: number) => ({
+      model: name,
+      input_tokens: tokens,
+      output_tokens: 0,
+      api_calls: calls,
+      cost: 0,
+    });
+    api.route("GET", "/api/analytics/usage?days=30", {
+      daily: [{ day: "2026-10-24", input_tokens: 4900, output_tokens: 576, cost: 0, sessions: 5 }],
+      totals: { input_tokens: 4900, output_tokens: 576, cost: 0, sessions: 5, api_calls: 6 },
+      by_model: [
+        model("big-model", 5400, 4),
+        model("m2", 50, 1),
+        model("m3", 40, 1),
+        model("m4", 30, 1),
+        model("m5", 20, 1),
+        model("m6", 10, 1),
+      ],
+    });
+    api.route("GET", "/api/analytics/usage?days=7", {
+      daily: [],
+      totals: { input_tokens: 0, output_tokens: 0, cost: 0, sessions: 0, api_calls: 0 },
+      by_model: [],
+    });
+    render(<CommandCenter api={api} profile="work" bridge={null} initial="usage" />);
+    expect(await screen.findByText("4.9K / 576")).toBeTruthy();
+    expect(screen.getByText("6")).toBeTruthy();
+    expect(screen.queryByText("not counted yet")).toBeNull();
+    const top = screen.getByRole("list", { name: "Top models" });
+    expect(within(top).getAllByRole("listitem")).toHaveLength(5);
+    expect(within(top).getByText("big-model")).toBeTruthy();
+    expect(within(top).getByText("5.4K")).toBeTruthy();
+    expect(within(top).queryByText("m6")).toBeNull();
+    fireEvent.click(screen.getByRole("radio", { name: "7d" }));
+    expect(await screen.findByText("No model was used in this period.")).toBeTruthy();
   });
 
   it("maintenance answers 409 with who holds the gate", async () => {

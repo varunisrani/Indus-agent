@@ -184,6 +184,13 @@ def test_dockerignore_keeps_out(pattern: str) -> None:
     assert pattern in dockerignore()
 
 
+def test_the_web_stage_gets_the_user_guides_it_bundles() -> None:
+    # The dashboard's Docs page imports docs/user and mkdocs.yml at build time (W58-J2-1).
+    assert "!docs/user" in dockerignore()
+    copies = [rest for word, rest in stages(PRODUCT)["web"] if word == "COPY"]
+    assert "docs/user/ docs/user/" in copies and "mkdocs.yml ./" in copies
+
+
 def test_dockerignore_keeps_what_the_build_copies() -> None:
     ignored = set(dockerignore())
     for needed in (

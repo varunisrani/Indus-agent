@@ -90,6 +90,30 @@ describe("skills page", () => {
     expect((await dialog.findByRole("alert")).textContent).toContain("Name the skill");
   });
 
+  it("saves a new skill through the skill writer and shows a refusal", async () => {
+    renderPage(<SkillsPage />, "/skills");
+    fireEvent.click(await screen.findByRole("button", { name: "New skill" }));
+    let dialog = within(await screen.findByRole("dialog", { name: "New skill" }));
+    fireEvent.change(dialog.getByLabelText("Name"), { target: { value: "summarise" } });
+    fireEvent.click(dialog.getByRole("button", { name: "Create skill" }));
+    expect((await dialog.findByRole("alert")).textContent).toContain("already exists");
+    fireEvent.change(dialog.getByLabelText("Name"), { target: { value: "release-notes" } });
+    fireEvent.change(dialog.getByLabelText("Category (optional)"), {
+      target: { value: "writing" },
+    });
+    fireEvent.click(dialog.getByRole("button", { name: "Create skill" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "New skill" })).toBeNull());
+    const sent = mock.callsTo("POST", "/api/skills/create");
+    expect(sent.at(-1)?.body).toMatchObject({ name: "release-notes", category: "writing" });
+    // The untouched template follows the name, so its front matter names the new skill.
+    expect(String((sent.at(-1)?.body as { content?: unknown })?.content)).toContain(
+      "name: release-notes",
+    );
+    expect(await screen.findByText("release-notes")).toBeTruthy();
+    dialog = within(document.body);
+    expect(dialog.getByText("Skill release-notes saved.")).toBeTruthy();
+  });
+
   it("toggles an installed skill", async () => {
     renderPage(<SkillsPage />, "/skills");
     fireEvent.click(await screen.findByRole("switch", { name: "Enable summarise" }));

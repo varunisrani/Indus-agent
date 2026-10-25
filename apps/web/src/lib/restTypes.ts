@@ -231,6 +231,8 @@ export interface ProviderOption {
   configured: boolean;
   /** A documented device-code sign-in exists. */
   device_login: boolean;
+  /** Any documented sign-in (browser or device) that `indus auth add --type oauth` runs. */
+  sign_in?: boolean;
   supports_model_listing: boolean;
 }
 
@@ -734,6 +736,14 @@ export interface SkillInfo {
   description: string;
   category: string;
   enabled: boolean;
+}
+
+/** `POST /api/skills/create`: saved, or held for approval (`skills.write_approval`). */
+export interface SkillCreated {
+  ok: boolean;
+  name: string;
+  staged: boolean;
+  message: string;
 }
 
 export interface ToolsetInfo {

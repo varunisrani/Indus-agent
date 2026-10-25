@@ -290,6 +290,47 @@ describe("capabilities page", () => {
     });
   });
 
+  it("tools: the terminal toolset leads; a backend card writes terminal.backend (W58-J1-3)", async () => {
+    const api = backend();
+    api.route("GET", "/api/tools/toolsets", {
+      toolsets: [
+        { name: "a2a", label: "A2A", description: "", enabled: false, tools: ["a2a_call"] },
+        {
+          name: "terminal",
+          label: "Terminal",
+          description: "",
+          enabled: true,
+          tools: ["terminal"],
+        },
+      ],
+    });
+    api.route("GET", "/api/config", { terminal: { backend: "local" } });
+    api.route("PUT", "/api/config", { ok: true, warnings: [] });
+    wrap(<CapabilitiesPage api={api} profile="default" initialTab="toolsets" />);
+    await flush();
+    const backends = screen.getByRole("region", { name: "Execution backend" });
+    expect(
+      within(backends)
+        .getByRole("button", { name: /^Local/ })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+    fireEvent.click(within(backends).getByRole("button", { name: /^Docker/ }));
+    await flush();
+    const put = api.calls.find((c) => c.method === "PUT" && c.path === "/api/config");
+    expect(put).toMatchObject({
+      profile: "default",
+      body: { config: { terminal: { backend: "docker" } } },
+    });
+    expect(
+      within(backends)
+        .getByRole("button", { name: /^Docker/ })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+    // another toolset has no backend cards
+    fireEvent.click(screen.getByText("A2A"));
+    expect(screen.queryByRole("region", { name: "Execution backend" })).toBeNull();
+  });
+
   it("a connector card opens its dialog; Test reports the tools", async () => {
     const api = backend();
     api.route("GET", "/api/mcp/servers", {

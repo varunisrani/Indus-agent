@@ -1,10 +1,11 @@
 // The Tools tab (P24-26, W52-k): the plain toolsets as rows with their tool counts, the chosen
-// one's tools as chips, and for the terminal toolset the execution backend cards. A toolset's
+// one's tools as chips, and for the terminal toolset (shown first, W58-J1-3) the execution backend
+// cards. A toolset's
 // switch is read-only here (W52-k-1: there is no toolset write route; the selection lives in
 // Settings); the backend card writes `terminal.backend` through `PUT /api/config`.
 
 import { RefreshCw, Search } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { type MessageKey, type Translate, useT } from "../../i18n/index.tsx";
 import { patchFor, type RestLike, rest, valueAt } from "../../settings/settingsApi.ts";
 import { EmptyState, IconButton } from "../../ui/components.tsx";
@@ -42,6 +43,9 @@ const BACKEND_NAMES: Readonly<Record<(typeof BACKENDS)[number], string>> = {
   vercel_sandbox: "Vercel Sandbox",
 };
 
+/** The toolset shown before one is picked: the one with the execution backend cards. */
+export const DEFAULT_TOOLSET = "terminal";
+
 /** "1 tool" / "N tools". */
 export function toolCount(t: Translate, count: number): string {
   return t(count === 1 ? "toolsets.toolsOne" : "toolsets.tools", { count });
@@ -77,7 +81,22 @@ export function ToolsetsTab(props: {
     () => visibleToolsets(props.list.rows ?? [], props.query, ascending),
     [props.list.rows, props.query, ascending],
   );
-  const selected = rows.find((row) => row.name === chosen) ?? rows[0] ?? null;
+  // W58-J1-3: with nothing picked yet, the terminal toolset leads (its detail carries the
+  // execution backend cards); otherwise the first row
+  const selected =
+    rows.find((row) => row.name === chosen) ??
+    rows.find((row) => row.name === DEFAULT_TOOLSET) ??
+    rows[0] ??
+    null;
+  // the default row may sit below the fold: bring it into view once, before anything is picked
+  const listRef = useRef<HTMLUListElement | null>(null);
+  const defaultName = chosen === null ? (selected?.name ?? null) : null;
+  useEffect(() => {
+    if (defaultName === null) return;
+    listRef.current
+      ?.querySelector<HTMLElement>('[data-selected="true"]')
+      ?.scrollIntoView?.({ block: "nearest" });
+  }, [defaultName]);
 
   if (props.list.rows !== null && rows.length === 0) {
     return (
@@ -104,7 +123,7 @@ export function ToolsetsTab(props: {
         descending={ascending}
         onSort={() => setAscending(!ascending)}
       />
-      <ul>
+      <ul ref={listRef}>
         {rows.map((set) => (
           <CapRow
             key={set.name}

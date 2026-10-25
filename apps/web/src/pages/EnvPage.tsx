@@ -264,12 +264,14 @@ function OAuthRow({ provider }: { provider: ProviderOption }) {
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-[0.875rem] font-medium text-ink">{provider.label}</span>
-            <Badge>{provider.device_login ? "Device code" : "CLI sign-in"}</Badge>
+            <Badge>{provider.device_login ? "Device code" : "Browser sign-in"}</Badge>
           </div>
           <p className="m-0 text-[0.75rem] text-ink-muted">
             {provider.configured
               ? "Connected."
-              : "Not connected. Sign in here when offered, or from a terminal."}
+              : provider.device_login
+                ? "Not connected. Log in here, or from a terminal."
+                : "Not connected. Run the command in a terminal on this machine; it opens the provider's sign-in page."}
           </p>
           <div className="flex flex-wrap items-center gap-1">
             <CodeChip faded>{command}</CodeChip>
@@ -304,8 +306,10 @@ function OAuthRow({ provider }: { provider: ProviderOption }) {
 function OAuthCard() {
   const client = useQueryClient();
   const options = useQuery({ queryKey: OPTIONS_QUERY, queryFn: () => api.model.options() });
+  // Providers with a documented sign-in flow (providers.auth.flows, W58-J2-4), plus any whose
+  // auth type is a sign-in.
   const list = (options.data?.providers ?? []).filter(
-    (p) => p.device_login || p.auth_type.includes("oauth"),
+    (p) => p.device_login || p.sign_in === true || p.auth_type.includes("oauth"),
   );
   const connected = list.filter((p) => p.configured).length;
   return (

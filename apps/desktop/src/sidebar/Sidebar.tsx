@@ -151,6 +151,9 @@ export interface SidebarProps {
   onBranch?(sessionId: string): void;
   /** Export the conversation to a file (main asks where, W56-G1); no menu item without it. */
   onExport?(sessionId: string): void;
+  /** Open the chat with the terminal pane in its folder (W58-J1-5); no menu item without it, and
+   * none on a row that has no folder. */
+  onOpenInTerminal?(sessionId: string): void;
   onNewChat(): void;
   events?: EventSource | null;
   /** The default root of the repo scan. */
@@ -221,6 +224,7 @@ interface RowHost {
   onPopOut?: ((id: string) => void) | undefined;
   onBranch?: ((id: string) => void) | undefined;
   onExport?: ((id: string) => void) | undefined;
+  onOpenInTerminal?: ((id: string) => void) | undefined;
   onDelete(row: SessionRow): void;
 }
 
@@ -390,6 +394,10 @@ function SessionItem(
             copyId: () => void copyText(row.durableId),
             branch: props.onBranch === undefined ? undefined : () => props.onBranch?.(row.id),
             exportFile: props.onExport === undefined ? undefined : () => props.onExport?.(row.id),
+            openInTerminal:
+              props.onOpenInTerminal === undefined || row.cwd === null
+                ? undefined
+                : () => props.onOpenInTerminal?.(row.id),
             toggleArchive: () => void list.setArchived(row, !row.archived),
             remove: () => props.onDelete(row),
           }}
@@ -643,6 +651,7 @@ export function Sidebar(props: SidebarProps) {
     onPopOut: props.onPopOut,
     onBranch: props.onBranch,
     onExport: props.onExport,
+    onOpenInTerminal: props.onOpenInTerminal,
     onDelete: (row: SessionRow) => setDeleting(row),
   };
   const confirmDelete = async () => {

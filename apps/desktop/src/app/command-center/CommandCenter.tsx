@@ -1,11 +1,12 @@
 // The Command center (P24-28; W52-l look): a full-window overlay with a 208px rail —
 // Sessions (every session, newest activity first: open, pin, delete), System (the gateway's state,
 // restart and update as tailed actions, and the recent log lines of the four log files: agent,
-// errors, gateway from the profile; the desktop's own log from main), Usage (tokens and sessions
-// over 7/30/90 days as tiles and a daily bar chart) and Maintenance (doctor, backup, the session
+// errors, gateway from the profile; the desktop's own log from main), Usage (sessions, API calls and
+// tokens over 7/30/90 days as tiles, a daily bar chart and the top models — W58-J1-1, from what
+// the store recorded) and Maintenance (doctor, backup, the session
 // clean-ups — the bulk ones go through the P17-21 maintenance gate, so a running daemon answers 409
 // and the page says who holds it —, memory files, and the way into the session import overlay).
-// Data our backend does not have (API-call counts, per-model and per-skill usage, a security
+// Data our backend does not have (per-skill usage per period, a security
 // audit, debug share, the skill curator, memory reset, session export) shows as a disabled or
 // empty placeholder, never an invented call.
 
@@ -549,9 +550,54 @@ interface UsageDay {
   sessions?: number;
 }
 
+interface ModelUsageRow {
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  api_calls: number;
+  cost: number;
+}
+
 interface UsageAnswer {
   daily?: UsageDay[];
-  totals: { input_tokens: number; output_tokens: number; cost: number; sessions: number };
+  totals: {
+    input_tokens: number;
+    output_tokens: number;
+    cost: number;
+    sessions: number;
+    /** Absent from a backend older than W58-J1-1. */
+    api_calls?: number;
+  };
+  by_model?: ModelUsageRow[];
+}
+
+/** How many models the Top models column lists. */
+export const TOP_MODELS = 5;
+
+function TopModels(props: { rows: readonly ModelUsageRow[] | undefined }) {
+  const t = useT();
+  if (props.rows === undefined)
+    return <p className="cc-empty-line cc-left">{t("cc.usage.noModels")}</p>;
+  if (props.rows.length === 0)
+    return <p className="cc-empty-line cc-left">{t("cc.usage.noModelsInPeriod")}</p>;
+  return (
+    <ul className="cc-top-list" aria-label={t("cc.usage.topModels")}>
+      {props.rows.slice(0, TOP_MODELS).map((row) => (
+        <li
+          key={row.model}
+          title={t("cc.usage.modelTip", {
+            input: compact(row.input_tokens),
+            output: compact(row.output_tokens),
+            calls: compact(row.api_calls),
+            cost: row.cost.toFixed(2),
+          })}
+        >
+          <span className="cc-top-name">{row.model}</span>
+          <span className="cc-top-value">{compact(row.input_tokens + row.output_tokens)}</span>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 export const PERIODS = ["7", "30", "90"] as const;
@@ -616,7 +662,11 @@ function UsageSection(props: { api: RestLike | null; profile: string | null; day
     <div className="cc-usage">
       <div className="cc-tiles">
         <StatTile label={t("cc.usage.sessions")} value={compact(totals.sessions)} />
-        <StatTile label={t("cc.usage.apiCalls")} value="—" hint={t("cc.usage.apiCallsHint")} />
+        {totals.api_calls === undefined ? (
+          <StatTile label={t("cc.usage.apiCalls")} value="—" hint={t("cc.usage.apiCallsHint")} />
+        ) : (
+          <StatTile label={t("cc.usage.apiCalls")} value={compact(totals.api_calls)} />
+        )}
         <StatTile
           label={t("cc.usage.tokens")}
           value={`${compact(totals.input_tokens)} / ${compact(totals.output_tokens)}`}
@@ -641,7 +691,7 @@ function UsageSection(props: { api: RestLike | null; profile: string | null; day
       <div className="cc-usage-cols">
         <section>
           <CapsLabel>{t("cc.usage.topModels")}</CapsLabel>
-          <p className="cc-empty-line cc-left">{t("cc.usage.noModels")}</p>
+          <TopModels rows={usage.data.by_model} />
         </section>
         <section>
           <CapsLabel>{t("cc.usage.topSkills")}</CapsLabel>

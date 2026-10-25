@@ -130,6 +130,35 @@ describe("sessions sidebar", () => {
     expect(onBranch).toHaveBeenCalledWith("s-tip");
   });
 
+  it("W58-J1-5: Open in terminal shows on a row with a folder and asks the host", async () => {
+    const storage = new MemoryStorage();
+    const model = new SidebarModel({ api: fakeApi(), storage, listDir: null });
+    const onOpenInTerminal = vi.fn();
+    render(
+      <Sidebar
+        model={model}
+        profile="work"
+        activeSessionId={null}
+        onOpenSession={vi.fn()}
+        onNewChat={vi.fn()}
+        onOpenInTerminal={onOpenInTerminal}
+      />,
+    );
+    // a row without a folder has no such item
+    fireEvent.contextMenu(await screen.findByRole("button", { name: /^Lunch/ }));
+    expect(screen.queryByRole("menuitem", { name: "Open in terminal" })).toBeNull();
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+    fireEvent.contextMenu(screen.getByRole("button", { name: /^Parser work/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open in terminal" }));
+    expect(onOpenInTerminal).toHaveBeenCalledWith("s-tip");
+  });
+
+  it("W58-J1-5: no Open in terminal without a host that can open the pane", async () => {
+    mount();
+    fireEvent.contextMenu(await screen.findByRole("button", { name: /^Parser work/ }));
+    expect(screen.queryByRole("menuitem", { name: "Open in terminal" })).toBeNull();
+  });
+
   it("W54-D1-2: dots rank waiting > working > new activity > live > quiet", () => {
     expect(sessionDot({ attention: true, running: true, unread: true, live: true })).toBe(
       "attention",

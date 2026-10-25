@@ -39,6 +39,8 @@ apps/web/playwright-report
 tests
 tooling
 docs
+# ...except the user guides: the dashboard bundles them for its in-app Docs page (W58-J2-1)
+!docs/user
 nix
 HANDOFF.md
 AGENTS.md

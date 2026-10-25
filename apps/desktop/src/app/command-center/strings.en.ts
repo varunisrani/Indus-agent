@@ -63,7 +63,9 @@ export const COMMAND_CENTER_STRINGS = {
   "cc.usage.topModels": "Top models",
   "cc.usage.topSkills": "Top skills",
   "cc.usage.noModels": "Per-model usage is not recorded yet.",
-  "cc.usage.noSkills": "Per-skill usage is not recorded yet.",
+  "cc.usage.noModelsInPeriod": "No model was used in this period.",
+  "cc.usage.modelTip": "in {input} · out {output} · {calls} calls · {cost} USD",
+  "cc.usage.noSkills": "Skill use is not counted per period yet.",
 
   "cc.maint.diagnostics": "Diagnostics",
   "cc.maint.doctorBody": "Check the install, keys and folders and report what is wrong.",

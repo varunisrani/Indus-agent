@@ -338,6 +338,39 @@
   gap: 32px;
 }
 
+.cc-top-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cc-top-list li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.cc-top-name {
+  overflow: hidden;
+  color: var(--desk-fg-1);
+  font-family: var(--indus-font-mono, ui-monospace, monospace);
+  font-size: var(--desk-text-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cc-top-value {
+  flex: none;
+  color: var(--desk-fg-3);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
 /* -- maintenance ---------------------------------------------------------------------------- */
 
 .cc-maint {

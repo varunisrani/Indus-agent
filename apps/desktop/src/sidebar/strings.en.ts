@@ -65,6 +65,7 @@ export const SIDEBAR_STRINGS = {
   "sidebar.menu.branch": "Branch",
   "sidebar.branchFailed": "Could not branch this chat",
   "sidebar.menu.export": "Export…",
+  "sidebar.menu.openInTerminal": "Open in terminal",
   "sidebar.exported": "Chat exported to {name}",
   "sidebar.exportFailed": "Could not export this chat",
   "sidebar.menu.archive": "Archive",

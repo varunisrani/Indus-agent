@@ -9,6 +9,9 @@ and the key catalog.
   laid over, *unexpanded* (a ``${NAME}`` reference stays a reference, so no secret reaches the page
   through one), ``_``-prefixed internals dropped, and literal values under credential-shaped keys
   replaced by ``PLACEHOLDER``. ``restore_placeholders`` puts the stored values back on the way in.
+- ``file_tree(view)`` is the user's own file alone (no defaults), redacted the same way: what the
+  Config page's raw YAML editor shows. ``config_errors`` keeps the schema's errors and drops its
+  unknown-setting notes, so a raw save can refuse an invalid file and keep an unknown key.
 - ``effective_entries(view)`` lists every leaf with where its value comes from.
 - ``key_catalog()`` is the keys page's list of known names (bundled provider keys and their
   base-URL overrides); ``is_credential_name`` decides which names go to the secret store.
@@ -35,13 +38,16 @@ __all__ = [
     "PLACEHOLDER",
     "KeyMeta",
     "ValueSource",
+    "config_errors",
     "effective_entries",
+    "file_tree",
     "form_tree",
     "is_credential_name",
     "is_secret_setting",
     "key_catalog",
     "restore_placeholders",
     "schema_form",
+    "unbacked_placeholders",
 ]
 
 PLACEHOLDER: Final = "••••••••"
@@ -166,6 +172,21 @@ def form_tree(view: ConfigView) -> dict[str, Any]:
     return cast(dict[str, Any], _redacted(_public(merged), ""))
 
 
+def file_tree(view: ConfigView) -> dict[str, Any]:
+    """The user's file alone (canonicalised, unexpanded), internals dropped, credentials hidden."""
+    return cast(dict[str, Any], _redacted(_public(view.user_raw()), ""))
+
+
+_UNKNOWN_NOTE: Final = ": unknown setting (kept)"
+"""The tail of ``schema.validate``'s note for a key no model knows (a note, not an error)."""
+
+
+def config_errors(data: Mapping[str, Any]) -> list[str]:
+    """``schema.validate``'s errors for ``data`` (expanded settings), its unknown-key notes left
+    out: an empty list means the settings are valid."""
+    return [w for w in schema.validate(data) if not w.endswith(_UNKNOWN_NOTE)]
+
+
 def defaults_form() -> dict[str, Any]:
     return _public(schema.defaults_tree())
 
@@ -182,9 +203,50 @@ def restore_placeholders(incoming: Mapping[str, Any], stored: Mapping[str, Any])
         elif value == PLACEHOLDER:
             if here is not None:
                 out[key] = copy.deepcopy(here)
+        elif isinstance(value, list) and isinstance(here, list):
+            out[key] = _restore_items(cast(list[Any], value), cast(list[Any], here))
         else:
             out[key] = copy.deepcopy(value)
     return out
+
+
+def _restore_items(incoming: list[Any], stored: list[Any]) -> list[Any]:
+    """A list item by item against the stored list at the same index (a hidden item is put back
+    only where the stored list has an item at that index)."""
+    out: list[Any] = []
+    for index, value in enumerate(incoming):
+        here: object = stored[index] if index < len(stored) else None
+        if value == PLACEHOLDER and here is not None:
+            out.append(copy.deepcopy(here))
+        elif isinstance(value, dict):
+            inner = cast(Mapping[str, Any], here) if isinstance(here, dict) else {}
+            out.append(restore_placeholders(cast(Mapping[str, Any], value), inner))
+        elif isinstance(value, list):
+            inner_list = cast(list[Any], here) if isinstance(here, list) else []
+            out.append(_restore_items(cast(list[Any], value), inner_list))
+        else:
+            out.append(copy.deepcopy(value))
+    return out
+
+
+def unbacked_placeholders(incoming: object, stored: object, path: str = "") -> list[str]:
+    """Dotted paths where ``incoming`` holds ``PLACEHOLDER`` but ``stored`` has nothing at that
+    place: a hidden value moved or typed in, which ``restore_placeholders`` would drop."""
+    if isinstance(incoming, dict):
+        here = cast(dict[str, Any], stored) if isinstance(stored, dict) else {}
+        found: list[str] = []
+        for key, value in cast(dict[str, Any], incoming).items():
+            where = f"{path}.{key}" if path else str(key)
+            found += unbacked_placeholders(value, here.get(key), where)
+        return found
+    if isinstance(incoming, list):
+        items = cast(list[Any], stored) if isinstance(stored, list) else []
+        found = []
+        for index, value in enumerate(cast(list[Any], incoming)):
+            inner = items[index] if index < len(items) else None
+            found += unbacked_placeholders(value, inner, f"{path}[{index}]")
+        return found
+    return [path] if incoming == PLACEHOLDER and stored is None else []
 
 
 # -- the effective view ---------------------------------------------------------------------------

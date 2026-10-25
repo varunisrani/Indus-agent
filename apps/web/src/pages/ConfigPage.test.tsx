@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockApi, type MockApi } from "../testing/mockApi.ts";
 import { renderPage } from "../testing/render.tsx";
-import { APPLY_NOTE, ConfigPage, YAML_SAVE_NOTE } from "./ConfigPage.tsx";
+import { APPLY_NOTE, ConfigPage } from "./ConfigPage.tsx";
 
 let mock: MockApi;
 let restore: () => void;
@@ -154,13 +154,8 @@ describe("config form", () => {
     expect(mock.callsTo("PUT", "/api/config")).toHaveLength(0);
   });
 
-  it("shows the file's own settings as read-only YAML", async () => {
-    mock.state.effective = [
-      { key: "model.provider", value: "fake", source: "file" },
-      { key: "model.name", value: "fake-large", source: "file" },
-      { key: "display.bell", value: true, source: "env" },
-      { key: "agent.max_turns", value: 90, source: "default" },
-    ];
+  it("shows the file's own settings as YAML and saves the edited text", async () => {
+    mock.state.configFile = { model: { provider: "fake", name: "fake-large" } };
     renderPage(<ConfigPage />, "/config");
     await screen.findByLabelText("model.provider");
     fireEvent.click(screen.getByRole("button", { name: "YAML" }));
@@ -168,13 +163,33 @@ describe("config form", () => {
       name: "Raw YAML configuration",
     })) as HTMLTextAreaElement;
     await waitFor(() => expect(yaml.value).toBe("model:\n  provider: fake\n  name: fake-large\n"));
-    expect(yaml.readOnly).toBe(true);
+    expect(yaml.readOnly).toBe(false);
     const save = screen.getByRole("button", { name: "Save" }) as HTMLButtonElement;
     expect(save.disabled).toBe(true);
-    expect(save.title).toBe(YAML_SAVE_NOTE);
     expect(screen.queryByRole("button", { name: "Reset section to defaults" })).toBeNull();
+    fireEvent.change(yaml, { target: { value: "model:\n  provider: other\n" } });
+    expect(save.disabled).toBe(false);
+    fireEvent.click(save);
+    await waitFor(() => expect(mock.state.rawSaves).toEqual(["model:\n  provider: other\n"]));
+    expect(await screen.findByText(/Saved config.yaml/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Form" }));
     expect(await screen.findByLabelText("model.provider")).toBeTruthy();
+  });
+
+  it("lists the problems of a refused YAML save and keeps the text", async () => {
+    mock.state.rawProblems = ["agent.max_turns: Input should be a valid integer"];
+    renderPage(<ConfigPage />, "/config");
+    await screen.findByLabelText("model.provider");
+    fireEvent.click(screen.getByRole("button", { name: "YAML" }));
+    const yaml = (await screen.findByRole("textbox", {
+      name: "Raw YAML configuration",
+    })) as HTMLTextAreaElement;
+    fireEvent.change(yaml, { target: { value: "agent:\n  max_turns: lots\n" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    const alert = await screen.findByText("agent.max_turns: Input should be a valid integer");
+    expect(alert.closest("[role=alert]")?.textContent).toContain("Not saved");
+    expect(yaml.value).toBe("agent:\n  max_turns: lots\n");
+    expect(mock.state.rawSaves).toEqual([]);
   });
 
   it("says so when the file sets nothing", async () => {

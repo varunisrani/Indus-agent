@@ -34,6 +34,9 @@
           ../tsconfig.base.json
           ../apps
           ../packages
+          # The web dashboard's Docs page bundles the user guides and their nav (W58-J2-1).
+          ../mkdocs.yml
+          ../docs/user
         ];
       };
 

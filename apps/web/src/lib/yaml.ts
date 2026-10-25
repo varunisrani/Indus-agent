@@ -1,5 +1,6 @@
-// A small YAML writer for the Config page's read-only YAML view (W52-pc-10). It covers what a
-// config tree holds: maps, lists, strings, numbers, booleans and null, two spaces per level.
+// A small YAML writer for the Config page's YAML view (W52-pc-10; saved back since W58-J2-2, so
+// what it writes must read back as the same values under the server's YAML 1.1 reader). It covers
+// what a config tree holds: maps, lists, strings, numbers, booleans and null, two spaces per level.
 // Strings are double-quoted (JSON escapes are valid YAML) whenever plain style could be misread.
 
 import { setPath } from "./nested.ts";
@@ -16,12 +17,15 @@ const SPECIAL_WORDS = /^(true|false|yes|no|on|off|y|n|null|~)$/i;
 const NUMBER_LIKE =
   /^[-+]?(\d[\d_]*(\.\d*)?|\.\d+)([eE][-+]?\d+)?$|^0x[0-9a-f]+$|^0o[0-7]+$|^[-+]?\.(inf|nan)$/i;
 const RISKY_START = /^[-?:,[\]{}#&*!|>'"%@`\s]/;
+/** YAML 1.1 dates and timestamps (`2026-10-25`) and base-60 numbers (`1:30`), the merge key. */
+const YAML11_SCALAR =
+  /^\d{4}-\d\d?-\d\d?([Tt\s].*)?$|^[-+]?\d[\d_]*(:[0-5]?\d)+(\.[\d_]*)?$|^(<<|=)$/;
 
 /** True when `text` must be quoted to read back as the same string. */
 export function needsQuotes(text: string): boolean {
   if (text === "") return true;
   if (text !== text.trim()) return true;
-  if (SPECIAL_WORDS.test(text) || NUMBER_LIKE.test(text)) return true;
+  if (SPECIAL_WORDS.test(text) || NUMBER_LIKE.test(text) || YAML11_SCALAR.test(text)) return true;
   if (RISKY_START.test(text)) return true;
   if (text.includes(": ") || text.includes(" #") || text.endsWith(":")) return true;
   // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters force quoting

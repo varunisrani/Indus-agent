@@ -1,7 +1,7 @@
 // Config (P18-20, re-laid out in W52-e): a section list beside one card of fields built from the
 // config schema, a search in the header, a toolbar (export / import JSON, reset a section to the
-// defaults, the YAML and Effective views, Save), a read-only YAML view of what the file sets, and
-// the effective view naming where each value comes from.
+// defaults, the YAML and Effective views, Save), an editable YAML view of what the file sets (Save
+// sends it whole, W58-J2-2), and the effective view naming where each value comes from.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -42,11 +42,9 @@ import {
 } from "./config/categories.ts";
 import { EffectiveView } from "./config/EffectiveView.tsx";
 import { FilterColumn } from "./config/FilterColumn.tsx";
-import { YamlView } from "./config/YamlView.tsx";
+import { useYamlDraft, YamlView } from "./config/YamlView.tsx";
 
 export const APPLY_NOTE = "Changes apply to the next session, or to the daemon after it restarts.";
-export const YAML_SAVE_NOTE =
-  "Raw YAML editing is not available yet; edit the settings in the form.";
 
 type View = "form" | "yaml" | "effective";
 
@@ -141,6 +139,11 @@ export function ConfigPage() {
   useEffect(() => {
     if (config.data && form === null) setForm(config.data);
   }, [config.data, form]);
+  // A saved YAML text replaced the file: the form reloads from it instead of keeping stale values.
+  const draft = useYamlDraft(view === "yaml", () => {
+    setForm(null);
+    setDirty(false);
+  });
 
   const save = useMutation({
     mutationFn: (next: ConfigObject) => api.config.put(next),
@@ -331,16 +334,15 @@ export function ConfigPage() {
           size="sm"
           tone="primary"
           className={saveClass}
-          disabled={yaml || !dirty || !form || save.isPending}
-          title={yaml ? YAML_SAVE_NOTE : undefined}
-          onClick={() => form && save.mutate(form)}
+          disabled={yaml ? !draft.dirty || draft.saving : !dirty || !form || save.isPending}
+          onClick={() => (yaml ? draft.save() : form && save.mutate(form))}
         >
           Save
         </Button>
       </div>
 
       {view === "effective" ? <EffectiveView /> : null}
-      {yaml ? <YamlView /> : null}
+      {yaml ? <YamlView draft={draft} /> : null}
       {view === "form" ? (
         config.isPending || schema.isPending || (form === null && !config.error) ? (
           <div className="flex justify-center py-24">

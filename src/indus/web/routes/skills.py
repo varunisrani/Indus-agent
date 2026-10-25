@@ -4,6 +4,10 @@
   category, source (``local``, ``bundled``, ``hub``, ``external``…) and whether it is enabled.
 - ``POST /api/skills/toggle {name, enabled}``: writes ``skills.disabled`` through the config
   writer (P01); an unknown name is 404.
+- ``POST /api/skills/create {name, content, category?}`` (W58-J2-3): one ``create`` through the
+  ``skill_manage`` tool's own handler, so its name, format, path and lock checks, its
+  ``skills.write_approval`` gate (a held write answers ``staged: true``) and its ledger all apply.
+  A refusal is 400 ``skill_refused`` with the tool's reason; nothing is written then.
 - ``GET /api/tools/toolsets``: the plain toolsets (no bundles, postures or ``core``) with their
   tools, and whether the CLI's tool selection (``platform_toolsets.cli``, else its bundle) offers
   every one of them.
@@ -21,8 +25,9 @@ tests (``DashboardState.extras``): ``skills.hub_sources`` (``Scope -> SourceSet`
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Callable, Coroutine, Mapping
-from typing import Annotated, Any, Final, NoReturn
+from typing import Annotated, Any, Final, NoReturn, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
@@ -35,6 +40,7 @@ from indus.learning.skills import bundled_sync
 from indus.learning.skills.hub import install as hub
 from indus.learning.skills.hub.lock import HubLock
 from indus.learning.skills.hub.sources import HubError, SourceSet
+from indus.learning.skills.manage_tool import skill_manage
 from indus.learning.skills.resolver import TIER_LOCAL, SkillRecord, load_catalog
 from indus.learning.skills.usage import hub_names
 from indus.tools import toolsets
@@ -48,6 +54,7 @@ router = APIRouter()
 ROUTE_LIST: Final[tuple[tuple[str, str, bool], ...]] = (
     ("GET", "/api/skills", True),
     ("POST", "/api/skills/toggle", True),
+    ("POST", "/api/skills/create", True),
     ("GET", "/api/tools/toolsets", True),
     ("GET", "/api/skills/hub/search", True),
     ("GET", "/api/skills/hub/inspect", True),
@@ -139,6 +146,34 @@ def toggle_skill(body: SkillToggle, scope: WriteScope) -> dict[str, Any]:
         except ConfigError as exc:
             _fail(500, "config_unwritable", f"{exc.message}. Nothing was changed.")
     return {"ok": True, "name": body.name, "enabled": body.enabled}
+
+
+class SkillCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=64)
+    content: str = Field(min_length=1, max_length=256 * 1024)
+    category: str | None = Field(default=None, max_length=64)
+
+
+@router.post("/api/skills/create")
+def create_skill(body: SkillCreate, scope: WriteScope) -> dict[str, Any]:
+    live = _configured(scope)
+    args: dict[str, Any] = {"action": "create", "name": body.name, "content": body.content}
+    category = (body.category or "").strip()
+    if category:
+        args["category"] = category
+    raw: object = json.loads(skill_manage(args, scope=live))
+    answer = cast(dict[str, Any], raw) if isinstance(raw, dict) else {"error": None}
+    if "error" in answer:
+        reason = answer.get("error") or "The skill was not saved."
+        _fail(400, "skill_refused", redact_text(str(reason)))
+    staged = answer.get("staged") is True
+    return {
+        "ok": True,
+        "name": body.name.strip(),
+        "staged": staged,
+        "message": redact_text(str(answer.get("message") or "")),
+    }
 
 
 # -- toolsets --------------------------------------------------------------------------------------

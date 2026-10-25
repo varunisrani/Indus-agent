@@ -1,5 +1,5 @@
 // Admin pages against a real `indus dashboard` and daemon (P18-30): Sessions search and delete,
-// Config save.
+// Config save (form and raw YAML), Skills create, the in-app Docs.
 
 import { expect, test } from "./fixtures.ts";
 
@@ -73,6 +73,45 @@ test("Config: a saved value lands in config.yaml and survives a reload", async (
   await expect(page.getByRole("spinbutton", { name: "agent.max_turns" })).toHaveValue("37");
 });
 
+test("Config: raw YAML saves through the writer; an invalid text is refused whole", async ({
+  launch,
+  page,
+}) => {
+  const stack = await launch({ turns: [[{ text: "Hello." }]] });
+  await page.goto(`${stack.url}/config`);
+  await page.getByRole("button", { name: "YAML", exact: true }).click();
+  const editor = page.getByRole("textbox", { name: "Raw YAML configuration" });
+  await expect(editor).toHaveValue(/base_url: /);
+  const before = String((await stack.ask("read", { path: "config.yaml" })).text);
+  await editor.fill(`${await editor.inputValue()}agent:\n  max_turns: lots\n`);
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "agent.max_turns" })).toBeVisible();
+  expect(String((await stack.ask("read", { path: "config.yaml" })).text)).toBe(before);
+  await editor.fill((await editor.inputValue()).replace("max_turns: lots", "max_turns: 41"));
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect
+    .poll(async () => String((await stack.ask("read", { path: "config.yaml" })).text))
+    .toMatch(/max_turns: 41/);
+  const saved = String((await stack.ask("read", { path: "config.yaml" })).text);
+  expect(saved).toMatch(/base_url: http:\/\/127\.0\.0\.1:\d+\/v1/);
+});
+
+test("Skills: New skill saves SKILL.md into the profile's skills folder", async ({
+  launch,
+  page,
+}) => {
+  const stack = await launch({ turns: [[{ text: "Hello." }]] });
+  await page.goto(`${stack.url}/skills`);
+  await page.getByRole("button", { name: "New skill" }).click();
+  const dialog = page.getByRole("dialog", { name: "New skill" });
+  await dialog.getByLabel("Name").fill("release-notes");
+  await dialog.getByRole("button", { name: "Create skill" }).click();
+  await expect(dialog).toHaveCount(0);
+  const written = await stack.ask("read", { path: "skills/release-notes/SKILL.md" });
+  expect(String(written.text)).toContain("name: release-notes");
+  await expect(page.getByText("release-notes", { exact: true }).first()).toBeVisible();
+});
+
 test("Logs: the gateway log's tail as the daemon wrote it", async ({ launch, page }) => {
   const stack = await launch({ turns: [[{ text: "Hello." }]] });
   await page.goto(`${stack.url}/logs`);
@@ -93,6 +132,13 @@ test("Docs: a direct load and a reload of /docs render the in-app page", async (
   await page.goto(`${stack.url}/docs`);
   await expect(page.getByRole("heading", { level: 1, name: "Documentation" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Open docs" })).toBeVisible();
+  // Our guides render in the page; a guide link opens the guide here, and a reload keeps it.
+  const panel = page.getByRole("region", { name: "Documentation" });
+  await expect(panel.getByRole("heading", { level: 1, name: "Indus Agent" })).toBeVisible();
+  await panel.getByRole("link", { name: "Quickstart" }).first().click();
+  await expect(page).toHaveURL(/\/docs\?page=getting-started%2Fquickstart/);
+  const title = await panel.getByRole("heading", { level: 1 }).first().textContent();
   await page.reload();
   await expect(page.getByRole("heading", { level: 1, name: "Documentation" })).toBeVisible();
+  await expect(panel.getByRole("heading", { level: 1, name: title ?? "" })).toBeVisible();
 });

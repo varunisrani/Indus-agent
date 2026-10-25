@@ -63,6 +63,12 @@ export interface MockState {
   /** What `/api/config/defaults` answers (W52-e). */
   configDefaults: ConfigObject;
   effective: EffectiveEntry[];
+  /** What `GET /api/config/raw` answers: the config file's own settings (W58-J2-2). */
+  configFile: ConfigObject;
+  /** The YAML texts `PUT /api/config/raw` accepted, oldest first. */
+  rawSaves: string[];
+  /** When set, `PUT /api/config/raw` refuses with these problems (a 422 `config_invalid`). */
+  rawProblems: string[] | null;
   env: EnvKeys;
   /** What the secret store holds; never sent back by any route. */
   envValues: Record<string, string>;
@@ -257,6 +263,9 @@ export function defaultMockState(): MockState {
     },
     configDefaults: { model: { provider: "" }, display: { interface: "cli", bell: false } },
     effective: [],
+    configFile: {},
+    rawSaves: [],
+    rawProblems: null,
     env: {},
     envValues: {},
     logs: { agent: [], errors: [], gateway: [] },
@@ -579,6 +588,29 @@ function routes(state: MockState): Array<[string, RegExp, Handler]> {
     ["GET", /^\/api\/config\/schema$/, () => ok(state.schema)],
     ["GET", /^\/api\/config\/defaults$/, () => ok(state.configDefaults)],
     ["GET", /^\/api\/config\/effective$/, () => ok({ entries: state.effective })],
+    ["GET", /^\/api\/config\/raw$/, () => ok({ config: state.configFile })],
+    [
+      "PUT",
+      /^\/api\/config\/raw$/,
+      (call) => {
+        const yaml = asRecord(call.body).yaml;
+        if (typeof yaml !== "string") return fail(422, "invalid", "no yaml");
+        if (state.rawProblems) {
+          return {
+            status: 422,
+            body: {
+              detail: {
+                code: "config_invalid",
+                message: "The settings do not match the schema. Nothing was changed.",
+                problems: state.rawProblems,
+              },
+            },
+          };
+        }
+        state.rawSaves.push(yaml);
+        return ok({ ok: true, warnings: [] });
+      },
+    ],
 
     ["GET", /^\/api\/env$/, () => ok(state.env)],
     [
@@ -800,6 +832,24 @@ function routes(state: MockState): Array<[string, RegExp, Handler]> {
         if (!skill) return fail(404, "not_found", "no such skill");
         skill.enabled = body.enabled === true;
         return ok();
+      },
+    ],
+    [
+      "POST",
+      /^\/api\/skills\/create$/,
+      (call) => {
+        const body = asRecord(call.body);
+        const name = text(body.name);
+        if (state.skills.some((s) => s.name === name)) {
+          return fail(400, "skill_refused", `a skill named '${name}' already exists`);
+        }
+        state.skills.push({
+          name,
+          description: "",
+          category: text(body.category),
+          enabled: true,
+        });
+        return ok({ ok: true, name, staged: false, message: `1 change saved (${name}).` });
       },
     ],
     ["GET", /^\/api\/tools\/toolsets$/, () => ok({ toolsets: state.toolsets })],

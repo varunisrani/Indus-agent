@@ -125,6 +125,115 @@ def test_unreadable_config_is_500_and_nothing_is_written(rest: RestApp, scope: S
     assert (path.read_bytes(), path.stat().st_mtime_ns) == before
 
 
+# -- raw YAML --------------------------------------------------------------------------------------
+
+
+def _stamp(path: Path) -> tuple[bytes, int]:
+    return path.read_bytes(), path.stat().st_mtime_ns
+
+
+def test_raw_get_is_the_file_alone_with_credentials_hidden(rest: RestApp, scope: Scope) -> None:
+    _config_path(scope).write_text(
+        COMMENTED + f"providers:\n  other:\n    api_key: {OTHER_SECRET}\n", encoding="utf-8"
+    )
+    got = rest.client.get("/api/config/raw")
+    assert got.status_code == 200 and OTHER_SECRET not in got.text
+    tree = got.json()["config"]
+    assert tree["agent"] == {"max_turns": 40}
+    assert tree["providers"]["other"]["api_key"] == PLACEHOLDER
+    assert "_config_version" not in tree and "display" not in tree  # no defaults, no internals
+
+
+def test_raw_put_replaces_the_settings_and_keeps_comments_and_secrets(
+    rest: RestApp, scope: Scope
+) -> None:
+    path = _config_path(scope)
+    path.write_text(
+        "_config_version: 3\n"
+        + COMMENTED
+        + f"display:\n  bell: true\nproviders:\n  other:\n    api_key: {OTHER_SECRET}\n",
+        encoding="utf-8",
+    )
+    text = (
+        "agent:\n  max_turns: 55\nmodel:\n  default: fake-model\n"
+        f"providers:\n  other:\n    api_key: {PLACEHOLDER}\n"
+    )
+    saved = rest.client.put("/api/config/raw", params=WRITE, json={"yaml": text})
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["ok"] is True
+    after = path.read_text(encoding="utf-8")
+    assert "max_turns: 55" in after and "# my own settings" in after
+    assert f"api_key: {OTHER_SECRET}" in after and PLACEHOLDER not in after
+    assert "bell" not in after  # removed from the text: removed from the file
+    assert "_config_version: 3" in after
+
+
+def test_raw_put_refuses_bad_yaml_and_schema_errors_and_writes_nothing(
+    rest: RestApp, scope: Scope
+) -> None:
+    path = _config_path(scope)
+    path.write_text(COMMENTED, encoding="utf-8")
+    before = _stamp(path)
+    broken = rest.client.put("/api/config/raw", params=WRITE, json={"yaml": "agent: [unclosed\n"})
+    assert broken.status_code == 422 and _code(broken) == "config_invalid"
+    assert broken.json()["detail"]["problems"][0].startswith("line ")
+    listed = rest.client.put("/api/config/raw", params=WRITE, json={"yaml": "- one\n- two\n"})
+    assert listed.status_code == 422 and _code(listed) == "config_invalid"
+    wrong = rest.client.put(
+        "/api/config/raw",
+        params=WRITE,
+        json={"yaml": "agent:\n  max_turns: lots\ndisplay:\n  bell: true\n"},
+    )
+    assert wrong.status_code == 422 and _code(wrong) == "config_invalid"
+    problems = wrong.json()["detail"]["problems"]
+    assert any(p.startswith("agent.max_turns") for p in problems)
+    internal = rest.client.put(
+        "/api/config/raw", params=WRITE, json={"yaml": "_config_version: 1\n"}
+    )
+    assert internal.status_code == 422
+    masked = rest.client.put(
+        "/api/config/raw",
+        params=WRITE,
+        json={"yaml": f"providers:\n  fresh:\n    api_key: {PLACEHOLDER}\n"},
+    )
+    assert masked.status_code == 422
+    assert masked.json()["detail"]["problems"] == [
+        "providers.fresh.api_key: a hidden value with nothing stored to keep"
+    ]
+    assert _stamp(path) == before
+
+
+def test_raw_put_keeps_references_and_unknown_keys(rest: RestApp, scope: Scope) -> None:
+    path = _config_path(scope)
+    path.write_text(COMMENTED, encoding="utf-8")
+    text = (
+        "agent:\n  max_turns: 40\nmodel:\n  default: fake-model\n"
+        "providers:\n  mine:\n    api_key: ${MY_ENDPOINT_KEY}\n"
+        "agent_notes:\n  mood: calm\n"
+    )
+    saved = rest.client.put("/api/config/raw", params=WRITE, json={"yaml": text})
+    assert saved.status_code == 200, saved.text
+    after = path.read_text(encoding="utf-8")
+    assert "${MY_ENDPOINT_KEY}" in after and SECRET not in after and "mood: calm" in after
+
+
+def test_raw_routes_refuse_an_unreadable_file_and_a_missing_session(scope: Scope) -> None:
+    path = _config_path(scope)
+    path.write_text("agent: [unclosed\n", encoding="utf-8")
+    config_loader.reset()
+    built = build_rest_app(scope)
+    try:
+        assert built.client.get("/api/config/raw").status_code == 500
+        put = built.client.put("/api/config/raw", params=WRITE, json={"yaml": "agent: {}\n"})
+        assert put.status_code == 500 and _code(put) == "config_unreadable"
+        assert path.read_text(encoding="utf-8") == "agent: [unclosed\n"
+        anonymous = built.anonymous().put("/api/config/raw", params=WRITE, json={"yaml": ""})
+        assert anonymous.status_code == 401
+    finally:
+        built.close()
+        config_loader.reset()
+
+
 def test_put_needs_an_object(rest: RestApp) -> None:
     assert rest.client.put("/api/config", params=WRITE, json={"config": [1]}).status_code == 422
     assert rest.client.put("/api/config", params=WRITE, json={}).status_code == 422
@@ -136,6 +245,8 @@ def test_managed_install_refuses_writes(scope: Scope) -> None:
     try:
         answer = rest.client.put("/api/config", params=WRITE, json={"config": {"agent": {}}})
         assert answer.status_code == 403 and _code(answer) == "config_managed"
+        raw = rest.client.put("/api/config/raw", params=WRITE, json={"yaml": "agent: {}\n"})
+        assert raw.status_code == 403 and _code(raw) == "config_managed"
         key = rest.client.put("/api/env", params=WRITE, json={"key": "X_TOKEN", "value": SECRET})
         assert key.status_code == 403
     finally:

@@ -1,7 +1,8 @@
 // The sidebar row's menu (W52-h): right-click a session row, or Shift+F10 / the context-menu key on
 // a focused one. Only actions Indus really has: open in a floating window, rename, pin, unread,
 // copy the id, branch (`session.branch`, W54-D1-8), export (main writes the file, W56-G1),
-// archive, delete (W52-h-4 lists what the reference has that we leave out).
+// open the terminal pane in the chat's folder (W58-J1-5), archive, delete (W52-h-4 lists what the
+// reference has that we leave out; "Move to project" waits for a session → project route).
 
 import {
   Archive,
@@ -15,6 +16,7 @@ import {
   Pencil,
   Pin,
   PinOff,
+  SquareTerminal,
   Trash2,
 } from "lucide-react";
 import { useT } from "../i18n/index.tsx";
@@ -30,6 +32,8 @@ export interface RowMenuActions {
   branch?: (() => void) | undefined;
   /** Save the conversation to a file the person picks (absent: no desktop bridge). */
   exportFile?: (() => void) | undefined;
+  /** Open the chat and the terminal pane in its folder (absent: no folder, or no local terminal). */
+  openInTerminal?: (() => void) | undefined;
   toggleArchive: () => void;
   remove: () => void;
 }
@@ -87,7 +91,16 @@ export function SessionRowMenu(props: {
         label={t("sidebar.menu.copyId")}
         onSelect={run(a.copyId)}
       />
-      {(a.branch !== undefined || a.exportFile !== undefined) && <MenuSeparator />}
+      {(a.branch !== undefined || a.exportFile !== undefined || a.openInTerminal !== undefined) && (
+        <MenuSeparator />
+      )}
+      {a.openInTerminal !== undefined && (
+        <MenuRow
+          icon={<SquareTerminal aria-hidden="true" />}
+          label={t("sidebar.menu.openInTerminal")}
+          onSelect={run(a.openInTerminal)}
+        />
+      )}
       {a.branch !== undefined && (
         <MenuRow
           icon={<GitBranch aria-hidden="true" />}

@@ -69,6 +69,7 @@ import type {
   SessionStats,
   ShellHookCreate,
   ShellHooksResponse,
+  SkillCreated,
   SkillInfo,
   StatusResponse,
   ToolsetInfo,
@@ -745,6 +746,11 @@ export const api = {
     /** The built-in defaults as a config tree (public, never per profile). */
     defaults: () => request<ConfigObject>("/api/config/defaults"),
     effective: () => request<EffectiveConfig>("/api/config/effective"),
+    /** The config file's own settings (no defaults, unexpanded, credentials hidden). */
+    raw: () => request<{ config: ConfigObject }>("/api/config/raw"),
+    /** Save raw YAML as the whole file's settings; a parse or schema error is a 422 with problems. */
+    putRaw: (yaml: string) =>
+      request<OkResponse>("/api/config/raw", { method: "PUT", json: { yaml } }),
   },
 
   env: {
@@ -819,6 +825,9 @@ export const api = {
       request<OkResponse>(forProfile("/api/skills/toggle", profile), {
         json: { name, enabled },
       }),
+    /** A new skill through the agent's own skill writer (held when write approval is on). */
+    create: (skill: { name: string; content: string; category?: string }, profile?: string) =>
+      request<SkillCreated>(forProfile("/api/skills/create", profile), { json: skill }),
     toolsets: () => request<{ toolsets: ToolsetInfo[] }>("/api/tools/toolsets"),
     hubSearch: (q: string) =>
       request<HubSearchResponse>(withQuery("/api/skills/hub/search", { q })),

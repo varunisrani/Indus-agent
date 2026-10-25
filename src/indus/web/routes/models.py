@@ -5,7 +5,9 @@
   and numbers only: no URL, key or account.
 - ``GET /api/model/options``: the provider catalogue (built-in, local, config and plugin
   providers) with ``configured`` (a key in the pool, the secret store or the environment, or a
-  sign-in) and the current main choice.
+  sign-in), ``device_login`` (a device flow this page can run) and ``sign_in`` (any documented
+  sign-in flow in ``providers.auth.flows``, browser or device, that ``indus auth add <name> --type
+  oauth`` runs), and the current main choice.
 - ``POST /api/model/set {scope: main|auxiliary, task?, provider, model, base_url?}``: through the
   config writer; a side task must be one the schema knows.
 - ``GET /api/model/auxiliary``: each side task's provider, model and base URL, and the main model.
@@ -144,6 +146,7 @@ def model_options(scope: ReadScope) -> dict[str, Any]:
                 "auth_type": profile.auth_type,
                 "configured": _configured(scope, store, profile.name, profile.env_vars),
                 "device_login": flows.device is not None,
+                "sign_in": flows.any,
                 "supports_model_listing": profile.supports_model_listing,
             }
         )

@@ -32,10 +32,13 @@ describe("yaml writer", () => {
       "#x",
       "- y",
       "k:",
+      "2026-10-25",
+      "1:30",
+      "<<",
     ]) {
       expect(needsQuotes(text)).toBe(true);
     }
-    for (const text of ["fake-model", "http://127.0.0.1:9119/v1", "a b", "$HOME/x"]) {
+    for (const text of ["fake-model", "http://127.0.0.1:9119/v1", "a b", "$HOME/x", "v2-1:3"]) {
       expect(needsQuotes(text)).toBe(false);
     }
     expect(toYaml({ v: "yes", none: null, s: "two\nlines", n: 1 })).toBe(

@@ -1,9 +1,13 @@
-// The New skill editor and the Learn a skill dialog (W52-c). Our backend has no route that writes a
-// skill or starts a chat with a prompt yet, so the editor composes SKILL.md and copies it for the
-// person to save, and the learn dialog explains where to ask instead (decisions W52-c-7).
+// The New skill editor and the Learn a skill dialog (W52-c). The editor saves SKILL.md through
+// `POST /api/skills/create`, the agent's own skill writer (W58-J2-3): its name, format and path
+// checks apply, and with `skills.write_approval` on the new skill is held for approval. Our
+// backend has no route that starts a chat with a prompt yet, so the learn dialog explains where to
+// ask instead (decision W52-c-7).
 
+import { useQueryClient } from "@tanstack/react-query";
 import { useId, useState } from "react";
-import { useToast } from "../../shell/Toasts.tsx";
+import { api } from "../../lib/api.ts";
+import { errorText, useToast } from "../../shell/Toasts.tsx";
 import { Button, Field, Input, Notice, Textarea } from "../../ui/controls.tsx";
 import { DialogActions, Modal } from "../../ui/Dialog.tsx";
 
@@ -33,11 +37,13 @@ const NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 
 export function SkillEditorDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const toast = useToast();
+  const client = useQueryClient();
   const ids = useId();
   const [name, setName] = useState("");
   const [category, setCategory] = useState("");
   const [body, setBody] = useState(() => skillTemplate(""));
   const [problem, setProblem] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const create = async () => {
     if (!NAME.test(name.trim()))
@@ -46,12 +52,25 @@ export function SkillEditorDialog({ open, onClose }: { open: boolean; onClose: (
       );
     if (!body.trim()) return setProblem("Write the skill's SKILL.md.");
     setProblem("");
+    setSaving(true);
     try {
-      await navigator.clipboard.writeText(body);
-      toast.show(`Copied. Save it as ${skillPath(name, category)}.`, "success");
+      const made = await api.skills.create({
+        name: name.trim(),
+        content: body,
+        ...(category.trim() ? { category: category.trim() } : {}),
+      });
+      await client.invalidateQueries({ queryKey: ["skills"] });
+      toast.show(
+        made.staged
+          ? `${made.name} is held for approval: run indus skills pending in a terminal.`
+          : `Skill ${made.name} saved.`,
+        "success",
+      );
       onClose();
-    } catch {
-      setProblem("The browser refused the clipboard; copy the text by hand.");
+    } catch (error) {
+      setProblem(errorText(error));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -71,7 +90,12 @@ export function SkillEditorDialog({ open, onClose }: { open: boolean; onClose: (
               autoFocus
               placeholder="my-skill"
               value={name}
-              onChange={(e) => setName(e.currentTarget.value)}
+              onChange={(e) => {
+                const next = e.currentTarget.value;
+                // The front matter must name the skill: an untouched template follows the name.
+                if (body === skillTemplate(name)) setBody(skillTemplate(next));
+                setName(next);
+              }}
             />
           </Field>
           <Field label="Category (optional)" htmlFor={`${ids}-category`}>
@@ -93,15 +117,21 @@ export function SkillEditorDialog({ open, onClose }: { open: boolean; onClose: (
           />
         </Field>
         <p className="type-serif m-0 text-[0.75rem] text-ink-soft">
-          Saving from the dashboard is not available yet: Create skill copies the file so you can
-          save it as <code className="type-data text-[0.75rem]">{skillPath(name, category)}</code>.
+          Saved as <code className="type-data text-[0.75rem]">{skillPath(name, category)}</code>{" "}
+          unless your settings name another skills folder.
         </p>
         {problem ? <Notice tone="danger">{problem}</Notice> : null}
         <DialogActions>
           <Button tone="ghost" size="sm" onClick={onClose}>
             Cancel
           </Button>
-          <Button tone="primary" size="sm" className="uppercase" onClick={() => void create()}>
+          <Button
+            tone="primary"
+            size="sm"
+            className="uppercase"
+            disabled={saving}
+            onClick={() => void create()}
+          >
             Create skill
           </Button>
         </DialogActions>

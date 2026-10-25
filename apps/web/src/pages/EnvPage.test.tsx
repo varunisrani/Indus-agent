@@ -145,6 +145,26 @@ describe("keys", () => {
     expect(await screen.findByRole("region", { name: "Provider sign-ins" })).toBeTruthy();
   });
 
+  it("lists providers with a documented sign-in and their CLI command", async () => {
+    mock.state.modelOptions.providers.push({
+      name: "openrouter",
+      label: "OpenRouter",
+      description: "",
+      family: "openai",
+      auth_type: "api_key",
+      configured: false,
+      device_login: false,
+      sign_in: true,
+      supports_model_listing: true,
+    });
+    renderPage(<EnvPage />, "/env");
+    const row = within(await screen.findByTestId("oauth-openrouter"));
+    expect(row.getByText("Browser sign-in")).toBeTruthy();
+    expect(row.getByText("indus auth add openrouter --type oauth")).toBeTruthy();
+    expect(row.queryByRole("button", { name: "Login" })).toBeNull();
+    expect(screen.queryByTestId("oauth-fake")).toBeNull();
+  });
+
   it("adds a custom key by name and refuses a name that is not an env name", async () => {
     renderPage(<EnvPage />, "/env");
     const card = within(await screen.findByRole("region", { name: "Custom keys" }));

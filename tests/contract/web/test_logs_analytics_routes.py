@@ -170,18 +170,24 @@ def test_usage_sums_match_the_store(rest: RestApp, scope: Scope, fake_clock: Fak
         "day": today.isoformat(),
         "input_tokens": 110,
         "output_tokens": 55,
+        "api_calls": 0,
         "cost": 0.29,  # the billed 0.04 replaces the 0.05 estimate
         "sessions": 2,
     }
     yesterday = days[(today - timedelta(days=1)).isoformat()]
     assert yesterday["input_tokens"] == 1020 and yesterday["output_tokens"] == 402
     assert yesterday["cost"] == pytest.approx(1.01) and yesterday["sessions"] == 1
+    assert yesterday["api_calls"] == 1  # the title call
     assert week["totals"] == {
         "input_tokens": 110 + 1020 + 7,
         "output_tokens": 55 + 402 + 3,
+        "api_calls": 1,
         "cost": pytest.approx(1.30),
         "sessions": 4,
     }
+    assert week["by_model"] == [
+        {"model": "m", "input_tokens": 20, "output_tokens": 2, "api_calls": 1, "cost": 0.01}
+    ]
     assert week["days"] == 7
     month = rest.client.get("/api/analytics/usage").json()
     assert month["days"] == 30 and month["totals"]["sessions"] == 5
@@ -194,9 +200,45 @@ def test_usage_without_a_store_is_empty_and_creates_nothing(rest: RestApp, scope
     assert body == {
         "days": 90,
         "daily": [],
-        "totals": {"input_tokens": 0, "output_tokens": 0, "cost": 0, "sessions": 0},
+        "totals": {"input_tokens": 0, "output_tokens": 0, "api_calls": 0, "cost": 0, "sessions": 0},
+        "by_model": [],
     }
     assert sorted(p.name for p in scope.home.iterdir()) == before
+
+
+def test_usage_counts_calls_and_splits_by_model(
+    rest: RestApp, scope: Scope, fake_clock: FakeClock
+) -> None:
+    """W58-J1-1: API calls and the per-model split come from what the store recorded."""
+    fake_clock.advance(12 * 3600)
+    now = fake_clock.now().timestamp()
+    store = registry.open_unshared(scope)
+    try:
+        sessions.create(store, "a", "cli", started_at=now - 60)
+        sessions.create(store, "b", "cli", started_at=now - 30)
+        sessions.create(store, "old", "cli", started_at=now - 40 * DAY)
+        big = UsageDelta(input_tokens=500, output_tokens=40, model="big", billing_provider="p")
+        small = UsageDelta(input_tokens=30, output_tokens=5, model="small", billing_provider="p")
+        for delta in (big, big, small):
+            assert usage.record(store, "a", delta)
+        assert usage.record(store, "b", small)
+        assert usage.record(store, "b", small, task="title")
+        assert usage.record(store, "old", big)
+    finally:
+        store.close()
+    body = rest.client.get("/api/analytics/usage", params={"days": 30}).json()
+    assert body["totals"]["api_calls"] == 5
+    assert body["totals"]["input_tokens"] == 500 + 500 + 30 + 30 + 30
+    assert [row["model"] for row in body["by_model"]] == ["big", "small"]
+    assert body["by_model"][0] == {
+        "model": "big",
+        "input_tokens": 1000,
+        "output_tokens": 80,
+        "api_calls": 2,
+        "cost": 0,
+    }
+    assert body["by_model"][1]["api_calls"] == 3  # main loop and the side call alike
+    assert sum(row["api_calls"] for row in body["by_model"]) == body["totals"]["api_calls"]
 
 
 @pytest.mark.parametrize("days", [0, -1, 366, "many"])

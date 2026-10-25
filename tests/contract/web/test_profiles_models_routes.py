@@ -246,6 +246,10 @@ def test_model_set_info_and_options(rest: RestApp) -> None:
     options = rest.client.get("/api/model/options", params=WRITE).json()
     names = {p["name"] for p in options["providers"]}
     assert {"openai", "openrouter"} <= names
+    rows = {p["name"]: p for p in options["providers"]}
+    # sign_in follows providers.auth.flows: OpenRouter documents a browser sign-in, OpenAI none.
+    assert rows["openrouter"]["sign_in"] is True and rows["openrouter"]["device_login"] is False
+    assert rows["openai"]["sign_in"] is False
     assert options["current"] == {"provider": "openai", "model": "gpt-test-model"}
     unknown = rest.client.post(
         "/api/model/set", params=WRITE, json={"scope": "main", "provider": "nope", "model": "m"}
