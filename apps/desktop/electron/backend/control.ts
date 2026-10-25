@@ -5,7 +5,10 @@
 // the daemon binds in a private directory and leaves `<home>/gateway.sock.path`, which is followed
 // only when the pointer is our own regular file with no group/other bits and its target's
 // directory is ours with mode 0700. A home other users can write to is refused before connecting
-// (they could swap the socket). Windows has no control socket (D-16.55).
+// (they could swap the socket). On Windows the daemon serves the same wire on a named pipe
+// (`\\.\pipe\indus-gw-<32 hex>`) whose name the pointer file holds; a pointer holding anything
+// else is ignored, and the home only has to be a directory: Windows has no uids or mode bits (the
+// user profile's ACL protects it). See docs/notes/P25/windows-gateway.md.
 
 import fs from "node:fs";
 import net from "node:net";
@@ -18,6 +21,7 @@ export const CONTROL_TIMEOUT_MS = 2_000;
 export const TICKET_TIMEOUT_MS = 5_000;
 export const WS_INTERACTIVE = "ws-interactive";
 const MAX_ANSWER_BYTES = 512 * 1024;
+const PIPE_NAME = /^\\\\\.\\pipe\\indus-gw-[0-9a-f]{32}$/;
 
 export interface ControlReply {
   ok: boolean;
@@ -49,14 +53,15 @@ function ownedPrivate(info: fs.Stats, kind: "file" | "dir"): boolean {
   return right && (me === null || info.uid === me) && (info.mode & 0o077) === 0;
 }
 
-/** We own `home` and nobody else may write to it. */
-export function homeIsSafe(home: string): boolean {
+/** We own `home` and nobody else may write to it (Windows: it is a directory). */
+export function homeIsSafe(home: string, platform: string = process.platform): boolean {
   let info: fs.Stats;
   try {
     info = fs.statSync(home);
   } catch {
     return false;
   }
+  if (platform === "win32") return info.isDirectory();
   const me = uid();
   if (!info.isDirectory() || (me !== null && info.uid !== me)) return false;
   return (info.mode & 0o022) === 0;
@@ -77,6 +82,24 @@ export function socketPathFor(home: string): string | null {
     if (!path.isAbsolute(target)) return null;
     if (!ownedPrivate(fs.lstatSync(path.dirname(target)), "dir")) return null;
     return fs.lstatSync(target).isSocket() ? target : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A well-formed control pipe name (`\\.\pipe\indus-gw-` and 32 lowercase hex digits). */
+export function isPipeName(text: string): boolean {
+  return PIPE_NAME.test(text);
+}
+
+/** Windows: the pipe the pointer in `home` names, or null. Whether it is served is the dial's
+ * question. */
+export function pipeNameFor(home: string): string | null {
+  const pointer = path.join(home, POINTER_FILE);
+  try {
+    if (!fs.lstatSync(pointer).isFile()) return null;
+    const name = fs.readFileSync(pointer, "utf8").trim();
+    return isPipeName(name) ? name : null;
   } catch {
     return null;
   }
@@ -104,15 +127,9 @@ export function controlQuery(
   params?: Record<string, unknown>,
   timeoutMs = CONTROL_TIMEOUT_MS,
 ): Promise<ControlReply> {
-  if (process.platform === "win32") {
-    return Promise.resolve({
-      ok: false,
-      error: "unsupported",
-      detail: "no control socket on Windows",
-    });
-  }
+  const windows = process.platform === "win32";
   if (!homeIsSafe(home)) return Promise.resolve({ ok: false, error: "unsafe_home" });
-  const file = socketPathFor(home);
+  const file = windows ? pipeNameFor(home) : socketPathFor(home);
   if (file === null) return Promise.resolve({ ok: false, error: "no_socket" });
   return new Promise((resolve) => {
     let data = "";
@@ -127,7 +144,7 @@ export function controlQuery(
     };
     const timer = setTimeout(() => finish({ ok: false, error: "timeout" }), timeoutMs);
     try {
-      socket = connect(file);
+      socket = windows ? net.connect(file) : connect(file);
     } catch {
       finish({ ok: false, error: "unreachable" });
       return;
@@ -148,7 +165,13 @@ export function controlQuery(
       const newline = data.indexOf("\n");
       if (newline >= 0) finish(decode(data.slice(0, newline)));
     });
-    socket.on("error", () => finish({ ok: false, error: "unreachable" }));
+    socket.on("error", (error: NodeJS.ErrnoException) =>
+      // a pipe that no longer exists: the daemon is gone (the pointer outlived a crash)
+      finish({
+        ok: false,
+        error: windows && error.code === "ENOENT" ? "no_socket" : "unreachable",
+      }),
+    );
     socket.on("close", () =>
       finish(data.trim() === "" ? { ok: false, error: "unreachable" } : decode(data)),
     );

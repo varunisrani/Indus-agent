@@ -678,12 +678,18 @@ def holder_is_dead(record: object) -> bool:
         return False
     if fields.get("host") != socket.gethostname() or fields.get("pidns") != _pid_namespace():
         return False
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return True
-    except OSError:
-        return False
+    if sys.platform == "win32":  # os.kill(pid, 0) would terminate the process there
+        from indus.platform import winproc
+
+        if not winproc.pid_alive(pid):
+            return True
+    else:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        except OSError:
+            return False
     recorded = fields.get("start")
     current = _start_ticks(pid)
     return isinstance(recorded, int) and current is not None and current != recorded

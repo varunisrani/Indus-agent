@@ -1251,6 +1251,10 @@ def running(home: Path) -> ProxyRecord | None:
 
 def _pid_alive(pid: int) -> bool:
     """Signal 0 probes the pid; a pid owned by someone else still counts as alive."""
+    if sys.platform == "win32":  # os.kill(pid, 0) would terminate the process there
+        from indus.platform import winproc
+
+        return winproc.pid_alive(pid)
     with contextlib.suppress(PermissionError):
         try:
             os.kill(pid, 0)

@@ -867,6 +867,10 @@ def _pid_alive(pid: int) -> bool:
         return False
     if Path("/proc").is_dir():
         return Path("/proc", str(pid)).exists()
+    if sys.platform == "win32":  # os.kill(pid, 0) would terminate the process there
+        from indus.platform import winproc
+
+        return winproc.pid_alive(pid)
     try:
         os.kill(pid, 0)  # signal 0 only asks whether it exists
     except PermissionError:

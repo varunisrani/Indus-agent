@@ -18,6 +18,10 @@ health answer. A backend running another ``code_version`` than the caller is sto
 bounded wait) and replaced, once per call. The session token is the caller's: it travels to the
 child only through the environment (``INDUS_DASHBOARD_SESSION_TOKEN``) and is never printed —
 ``Served.to_json`` is ``{url, port, pid, profile_id, code_version}``.
+
+Windows (docs/notes/P25/windows-gateway.md): no double fork; the server starts as a detached
+process (``platform.winproc.spawn_detached``), and the SIGTERM that replaces an old one ends it at
+once (``os.kill`` terminates there; a headless backend holds no turns).
 """
 
 from __future__ import annotations
@@ -280,6 +284,11 @@ def spawn_detached(home: Path, env: Mapping[str, str], argv: Sequence[str]) -> i
     child_env["INDUS_HOME"] = str(home)
     logs = home / "logs"
     logs.mkdir(parents=True, exist_ok=True)
+    if sys.platform == "win32":
+        from indus.platform import winproc
+
+        with open(logs / STDIO_LOG, "ab") as out:
+            return winproc.spawn_detached(argv, cwd=str(home), env=child_env, out=out)
     with open(logs / STDIO_LOG, "ab") as out:
         launcher = subprocess.Popen(
             [sys.executable, "-I", "-c", _LAUNCHER, *argv],
@@ -301,6 +310,16 @@ def spawn_detached(home: Path, env: Mapping[str, str], argv: Sequence[str]) -> i
     if launcher.returncode != 0 or not text.isdigit():
         raise OSError(f"the launcher failed (exit {launcher.returncode})")
     return int(text)
+
+
+def _ours_on_windows(home: Path, spawned_at: float) -> bool:
+    """Windows: a venv's ``python.exe`` is a redirector that runs the real interpreter as its
+    child, so the server records another pid than the one we started. A record written after our
+    spawn is ours (``serve.lock`` keeps other callers from starting one meanwhile)."""
+    if sys.platform != "win32":
+        return False
+    record = read_record(serve_record_path(home))
+    return record is not None and record.started_at >= spawned_at - 1.0
 
 
 def _terminate(pid: int) -> None:
@@ -362,13 +381,14 @@ def _ensure(
                 return EnsureFailed("restart_timeout", f"pid {found.pid} did not stop in time")
             pause(_POLL_S)
         restarted = True
+    spawned_at = time.time()
     try:
         pid = spawn(home, env, list(argv) if argv is not None else serve_argv())
     except (OSError, ValueError, subprocess.SubprocessError) as exc:
         return EnsureFailed("spawn_failed", f"could not start the backend: {exc}")
     while True:
         found = discover(home, probe=probe, alive=alive)
-        if found is not None and found.pid == pid:
+        if found is not None and (found.pid == pid or _ours_on_windows(home, spawned_at)):
             return Served(
                 url=found.url,
                 port=found.port,

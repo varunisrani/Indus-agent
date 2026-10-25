@@ -12,15 +12,20 @@ record is removed at a clean exit. The descriptor is not inherited by child proc
   (exit 0 at a shell, 75 under a supervisor); with ``replace`` the holder named by the pid record
   gets SIGTERM, then, after ``wait`` seconds and only while its start time still matches (never a
   recycled pid), SIGKILL; the lock is retried while it goes away.
+
+Windows (docs/notes/P25/windows-gateway.md): the lock is a one-byte ``msvcrt.locking`` range at
+offset 0, which the OS also drops with the process. There is no SIGTERM to catch there (``os.kill``
+terminates), so a replace first asks the holder to stop through the control channel's ``stop``
+verb and only terminates it when it is still there after ``wait`` seconds.
 """
 
 from __future__ import annotations
 
 import contextlib
-import fcntl
 import logging
 import os
 import signal
+import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -44,6 +49,30 @@ __all__ = ["InstanceClaim", "InstanceLock", "claim_instance", "release_instance"
 
 log = logging.getLogger(__name__)
 
+if sys.platform == "win32":
+    import msvcrt
+
+    def _os_try_lock(fd: int) -> None:
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+
+    def _os_unlock(fd: int) -> None:
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+
+else:
+    import fcntl
+
+    def _os_try_lock(fd: int) -> None:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def _os_unlock(fd: int) -> None:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+
+
+_HARD_KILL = getattr(signal, "SIGKILL", signal.SIGTERM)
+"""SIGKILL; Windows has none, and its SIGTERM already terminates."""
+
 
 class InstanceLock:
     """The profile's single-instance ``flock`` (see the module notes)."""
@@ -63,7 +92,7 @@ class InstanceLock:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         fd = os.open(self.path, os.O_RDWR | os.O_CREAT, 0o600)  # not inheritable (PEP 446)
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            _os_try_lock(fd)
         except OSError:
             os.close(fd)
             return False
@@ -75,7 +104,7 @@ class InstanceLock:
         if fd is None:
             return
         with contextlib.suppress(OSError):
-            fcntl.flock(fd, fcntl.LOCK_UN)
+            _os_unlock(fd)
         with contextlib.suppress(OSError):
             os.close(fd)
 
@@ -125,6 +154,15 @@ def _signal(
     return True
 
 
+def _ask_to_stop(home: Path) -> bool:
+    """Windows' SIGTERM: the holder's own ``stop`` verb. True when it answered (it is stopping);
+    False sends the caller straight to the wait and then the hard kill."""
+    from indus.service import gateway_control
+
+    reply = gateway_control.query(home, "stop", {"reason": "replace"}, timeout=5.0)
+    return reply.ok
+
+
 def claim_instance(
     home: Path,
     record: PidRecord,
@@ -157,11 +195,15 @@ def claim_instance(
         return InstanceClaim("running", holder=holder)
     if holder is not None and holder.process.is_alive(**(probes or {})):
         log.info("replacing the running gateway (pid %d)", holder.pid)
-        if _signal(holder, signal.SIGTERM, kill=kill, start_time=start_time) and not _poll_lock(
+        if sys.platform == "win32":
+            if not (_ask_to_stop(home) and _poll_lock(lock, wait, sleep=sleep)):
+                log.warning("gateway pid %d did not stop when asked; terminating it", holder.pid)
+                _signal(holder, _HARD_KILL, kill=kill, start_time=start_time)
+        elif _signal(holder, signal.SIGTERM, kill=kill, start_time=start_time) and not _poll_lock(
             lock, wait, sleep=sleep
         ):
             log.warning("gateway pid %d did not stop within %.0f s; killing it", holder.pid, wait)
-            _signal(holder, signal.SIGKILL, kill=kill, start_time=start_time)
+            _signal(holder, _HARD_KILL, kill=kill, start_time=start_time)
     if _poll_lock(lock, kill_wait if holder is not None else wait, sleep=sleep):
         write_pid_record(home, record)
         return InstanceClaim("acquired", lock, replaced=holder is not None)

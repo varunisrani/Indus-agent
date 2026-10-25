@@ -127,6 +127,7 @@ if TYPE_CHECKING:
     from indus.gateway.multiplex.serving import MultiplexServing
     from indus.gateway.ws.server import WsEndpoint
     from indus.plugins.hooks import HookBus
+    from indus.providers.route import RuntimeRoute
     from indus.service.automation import SessionAutomation
     from indus.service.daemon_host import DaemonSessionHost
     from indus.service.mcp_host import McpUpkeep
@@ -1363,6 +1364,55 @@ def _install_bot_transport(daemon: GatewayDaemon) -> None:
     daemon.closers.append(uninstall)
 
 
+class MainRoute:
+    """The daemon's default model route, for its session service and side tasks.
+
+    Resolved at start, as before. A profile with no usable model provider yet (a first run) no
+    longer stops the daemon: the desktop's onboarding sets a provider up through ``indus serve``,
+    which writes the config and the secret store. Until then the route is pending: every agent
+    start calls ``refresh`` again, reading the config from disk as it is now, and the first route
+    that resolves is kept for the daemon's life (a later change of provider still needs a restart,
+    as before). Reading a pending route raises ``NoUsableProvider``, which a client receives as
+    ``PROVIDER_UNAVAILABLE`` (the desktop then opens its provider setup again)."""
+
+    def __init__(self, scope: Scope, fields: dict[str, Any]) -> None:
+        self._scope = scope
+        self._fields = fields  # the default session fields: new sessions record the model
+        self._route: RuntimeRoute | None = None
+        self._missing: Exception | None = None
+
+    @property
+    def known(self) -> RuntimeRoute | None:
+        return self._route
+
+    def refresh(self) -> RuntimeRoute:
+        """The route, resolving it while it is pending (blocking: files and the secret store)."""
+        if self._route is not None:
+            return self._route
+        from indus.foundation.errors import NoUsableProvider
+        from indus.providers.route import resolve
+
+        # The first try uses the scope as it was started; later ones read the config afresh.
+        scope = self._scope if self._missing is None else self._scope.with_config(None)
+        try:
+            route = resolve(scope)
+        except NoUsableProvider as exc:
+            self._missing = exc
+            raise
+        self._route, self._missing = route, None
+        self._fields["model"] = route.model
+        return route
+
+    def __call__(self) -> RuntimeRoute:
+        if self._route is not None:
+            return self._route
+        from indus.foundation.errors import NoUsableProvider
+
+        if isinstance(self._missing, NoUsableProvider):
+            raise self._missing
+        raise NoUsableProvider("no model provider is set up yet")
+
+
 async def _session_service(
     daemon: GatewayDaemon,
     *,
@@ -1379,8 +1429,8 @@ async def _session_service(
     from indus.core.agent import Agent, AgentOptions
     from indus.core.persist import StateStore
     from indus.core.turn_state import LoopOptions
+    from indus.foundation.errors import NoUsableProvider
     from indus.providers.auxiliary import AuxClient
-    from indus.providers.route import resolve
     from indus.service import terminal_host
     from indus.service.bot_turns import BotChats
     from indus.service.code_host import KernelUpkeep
@@ -1392,17 +1442,22 @@ async def _session_service(
 
     scope = daemon.scope
     handle = daemon.store
-    route = await run_blocking(resolve, scope, label="model route")
+    cwd = Path.cwd()
+    fields: dict[str, Any] = {"cwd": str(cwd)}
+    route = MainRoute(scope, fields)
+    try:
+        await run_blocking(route.refresh, label="model route")
+    except NoUsableProvider as exc:
+        log.warning("no model provider is set up yet; chats wait for one (%s)", exc)
     store = StateStore(handle)
     tools = gateway_tool_registry(scope)
     aux = AuxClient(scope, route)
-    cwd = Path.cwd()
     options = AgentOptions(
         platform=platform,
         source=platform,
         cwd=cwd,
         loop=LoopOptions.from_scope(scope, platform=platform),
-        session_fields={"cwd": str(cwd), "model": route.model},
+        session_fields=fields,
         store=store,
         registry=tools,
         delivery_origin=(lambda session_id: _chat_origin(daemon, session_id)) if chat else None,
@@ -1411,10 +1466,11 @@ async def _session_service(
     async def factory(
         session_id: str, sink: Any, broker: Any, opts: AgentOptions, selection: Any
     ) -> Agent:
-        chosen = route
+        default = route.known or await run_blocking(route.refresh, label="model route")
+        chosen = default
         model = opts.session_fields.get("model")
-        if isinstance(model, str) and model and model != route.model:
-            chosen = replace(route, model=model)
+        if isinstance(model, str) and model and model != default.model:
+            chosen = replace(default, model=model)
         full = replace(opts, session_id=session_id, store=store, broker=broker)
         agent = await Agent.start(scope, chosen, selection, full, sink)
         agent.runtime.environments = terminal.runtime().environments

@@ -30,9 +30,9 @@ the daemon reads).
 from __future__ import annotations
 
 import contextlib
-import fcntl
 import logging
 import os
+import sys
 from collections.abc import Callable, Generator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -72,6 +72,27 @@ _MAX_REPORTED: Final = 20
 
 type Where = Literal["daemon", "local"]
 type RefusalReason = Literal["daemon_cannot", "daemon_refused", "needs_stopped", "busy"]
+
+# The daemon's instance lock takes the same lock the same way (gateway.daemon.liveness).
+if sys.platform == "win32":
+    import msvcrt
+
+    def _os_try_lock(fd: int) -> None:
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+
+    def _os_unlock(fd: int) -> None:
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+
+else:
+    import fcntl
+
+    def _os_try_lock(fd: int) -> None:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def _os_unlock(fd: int) -> None:
+        fcntl.flock(fd, fcntl.LOCK_UN)
 
 
 class MaintenanceRefused(Exception):
@@ -118,7 +139,7 @@ class OwnershipLock:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         fd = os.open(self.path, os.O_RDWR | os.O_CREAT, 0o600)  # never inherited (PEP 446)
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            _os_try_lock(fd)
         except OSError:
             os.close(fd)
             return False
@@ -130,7 +151,7 @@ class OwnershipLock:
         if fd is None:
             return
         with contextlib.suppress(OSError):
-            fcntl.flock(fd, fcntl.LOCK_UN)
+            _os_unlock(fd)
         with contextlib.suppress(OSError):
             os.close(fd)
 

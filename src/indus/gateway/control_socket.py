@@ -29,6 +29,11 @@ answered only when the OS confirmed the peer is this user; where it cannot say, 
 ``start`` fails (``ControlSocketError``) when the socket cannot be bound — the daemon treats that
 as a failed startup (P15-24). A leftover socket from a crash is replaced only when it is ours and
 nobody answers on it.
+
+Windows (docs/notes/P25/windows-gateway.md): the same server listens on a named pipe with a fresh
+random name (``indus.service.control_pipe``) through the Proactor loop and writes that name into
+the pointer file. The peer is the client process's token user (its SID), read from the pipe; a
+leftover pointer is replaced only when nothing serves the pipe it names.
 """
 
 from __future__ import annotations
@@ -56,6 +61,7 @@ from indus.foundation.errors import IndusError
 from indus.foundation.fsio import atomic_write_text
 from indus.foundation.profiles import profile_id_of
 from indus.foundation.scope import EnvView
+from indus.service import control_pipe
 from indus.service import gateway_control as wire
 from indus.service.remote.profile_guard import socket_peer_uid
 from indus.state.gateway_runtime import process_start_time
@@ -190,6 +196,25 @@ def peer_uid(sock: socket.socket) -> int | None:
     return socket_peer_uid(sock)
 
 
+def _pipe_peer_sid(writer: asyncio.StreamWriter) -> bytes | None:
+    """Windows: the SID of the process at the client end of this pipe connection."""
+    from indus.platform import winproc
+
+    pipe = writer.get_extra_info("pipe")
+    handle = getattr(pipe, "handle", None)
+    pid = winproc.pipe_client_pid(handle) if isinstance(handle, int) else None
+    return winproc.process_user_sid(pid) if pid is not None else None
+
+
+def _own_identity() -> int | bytes | None:
+    """What a peer is compared with: our uid, or our user SID on Windows."""
+    if sys.platform == "win32":
+        from indus.platform import winproc
+
+        return winproc.own_user_sid()
+    return os.getuid()
+
+
 # -- the server -----------------------------------------------------------------------------------
 
 
@@ -239,6 +264,7 @@ class ControlServer:
             "status": _Verb(self._status_answer, handler_timeout, inline=True),
         }
         self._server: asyncio.AbstractServer | None = None
+        self._pipe_servers: list[Any] = []
         self._path: Path | None = None
         self._pointer: Path | None = None
         self._temp_dir: Path | None = None
@@ -246,7 +272,8 @@ class ControlServer:
 
     @property
     def path(self) -> Path | None:
-        """Where the socket is bound (None before ``start`` / after ``stop``)."""
+        """Where the socket is bound (None before ``start`` / after ``stop``; the pointer file on
+        Windows, whose content is the pipe name)."""
         return self._path
 
     @property
@@ -277,10 +304,8 @@ class ControlServer:
     # -- lifecycle ------------------------------------------------------------------------------
 
     async def start(self) -> Path:
-        if sys.platform == "win32":
-            raise ControlSocketError("the control socket needs a POSIX system (D-16.55)")
         try:
-            return await self._bind()
+            return await (self._bind_pipe() if sys.platform == "win32" else self._bind())
         except ControlSocketError:
             await self.stop()
             raise
@@ -316,6 +341,28 @@ class ControlServer:
         log.info("control socket listening at %s", bind)
         return bind
 
+    async def _bind_pipe(self) -> Path:
+        """Windows: serve a fresh pipe and publish its name in the pointer file."""
+        pointer = wire.pointer_path(self.home)
+        leftover = wire.pipe_name_for(self.home)
+        if leftover is not None and control_pipe.pipe_exists(leftover):
+            raise ControlSocketError(f"another gateway already answers on {leftover}")
+        loop = asyncio.get_running_loop()
+        serve_pipe = getattr(loop, "start_serving_pipe", None)
+        if serve_pipe is None:
+            raise ControlSocketError("the control pipe needs the Proactor event loop")
+        name = control_pipe.new_pipe_name()
+
+        def protocol() -> asyncio.StreamReaderProtocol:
+            return asyncio.StreamReaderProtocol(asyncio.StreamReader(), self._serve)
+
+        self._pipe_servers = list(await serve_pipe(protocol, name))
+        atomic_write_text(pointer, name, mode=0o600)
+        self._path = self._pointer = pointer
+        self._remember(pointer)
+        log.info("control pipe listening at %s", name)
+        return pointer
+
     def _remember(self, path: Path) -> None:
         info = path.lstat()
         self._ids[path] = (info.st_dev, info.st_ino)
@@ -347,6 +394,10 @@ class ControlServer:
             server.close()
             with contextlib.suppress(Exception):
                 await server.wait_closed()
+        pipes, self._pipe_servers = self._pipe_servers, []
+        for pipe in pipes:
+            with contextlib.suppress(Exception):
+                pipe.close()
         for path, ident in list(self._ids.items()):
             with contextlib.suppress(OSError):
                 info = path.lstat()
@@ -396,19 +447,25 @@ class ControlServer:
 
     async def _serve(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
-            sock = cast(socket.socket | None, writer.get_extra_info("socket"))
-            uid = self._peer(sock) if sock is not None else None
+            uid: int | bytes | None
+            if sys.platform == "win32":
+                uid = _pipe_peer_sid(writer)
+            else:
+                sock = cast(socket.socket | None, writer.get_extra_info("socket"))
+                uid = self._peer(sock) if sock is not None else None
+            me = _own_identity()
             # The request is read (bounded) even from a refused peer: closing with unread input
             # would reset the connection before the peer sees why.
             got = await self._read_request(reader)
-            if uid is not None and uid != os.getuid():
+            if uid is not None and me is not None and uid != me:
                 answer = _encode({"ok": False, "protocol": wire.PROTOCOL, "error": "forbidden"})
             elif got == "":
                 return
             elif isinstance(got, str):
                 answer = _encode({"ok": False, "protocol": wire.PROTOCOL, "error": got})
             else:
-                answer = await self.handle_line(got, peer_verified=uid == os.getuid())
+                verified = uid is not None and uid == me
+                answer = await self.handle_line(got, peer_verified=verified)
             writer.write(answer)
             async with asyncio.timeout(self.read_timeout):
                 await writer.drain()

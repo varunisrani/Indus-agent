@@ -7,6 +7,7 @@ import json
 import os
 import socket
 import stat
+import sys
 import threading
 from collections.abc import Awaitable, Callable, Iterator
 from pathlib import Path
@@ -423,13 +424,19 @@ def test_supervisor_kind(env: dict[str, str], kind: str) -> None:
     assert supervisor_kind(env) == kind
 
 
-def test_windows_is_refused(short_home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows serves the pipe for real")
+def test_the_windows_pipe_needs_the_proactor_loop(
+    short_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Windows serves a named pipe (tests/unit/service/test_control_pipe.py); a loop that cannot
+    # serve pipes is refused with a clear error, not an AttributeError.
     import indus.gateway.control_socket as module
 
     monkeypatch.setattr(module.sys, "platform", "win32")
 
     async def main() -> None:
-        with pytest.raises(ControlSocketError, match="POSIX"):
+        with pytest.raises(ControlSocketError, match="Proactor"):
             await ControlServer(short_home, env={}).start()
 
     asyncio.run(main())
+    assert not wire.pointer_path(short_home).exists()

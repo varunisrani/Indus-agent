@@ -32,6 +32,11 @@ appended to ``<home>/logs/gateway-stdio.log``, launch-option variables removed (
 session, P17-09) and ``AUTOSTART_ENV`` set so the daemon knows ``ensure`` started it (P17-23's
 idle exit). This module lives in ``service`` because the CLI and the attach channel both call it
 and neither may import the gateway package.
+
+Windows (docs/notes/P25/windows-gateway.md): no fork and no SIGUSR1. A start runs ``indus gateway
+run`` directly as a detached process (its own process group, no console window, out of the
+caller's job object when allowed: ``platform.winproc.spawn_detached``), and a version-skew restart
+is the control channel's ``stop`` verb with ``restart: true``.
 """
 
 from __future__ import annotations
@@ -259,8 +264,6 @@ def ensure(
 ) -> Ensured:
     """Find or start the daemon serving ``home`` (see the module notes). Never raises for an
     expected condition: every outcome is a verdict."""
-    if os.name != "posix":
-        return Ensured("refused", "unsupported", "the gateway control socket needs POSIX")
     if not gateway_control.home_is_safe(home):
         return Ensured("refused", "unsafe_home", "the profile home is writable by other users")
     if version is None:
@@ -339,12 +342,17 @@ def _restart(run: _Run, found: dict[str, Any], service: Starter | None) -> dict[
         run.version,
     )
     gateway_runtime.record_planned_stop(run.home, pid, "restart", start_time=start, by="ensure")
-    try:
-        os.kill(pid, signal.SIGUSR1)
-    except ProcessLookupError:
-        pass
-    except PermissionError:
-        return Ensured("failed", "restart_refused", f"not allowed to signal pid {pid}")
+    if sys.platform == "win32":
+        asked = gateway_control.query(run.home, "stop", {"restart": True, "reason": "ensure"})
+        if not asked.ok and asked.answered:
+            return Ensured("failed", "restart_refused", f"the gateway refused: {asked.error}")
+    else:
+        try:
+            os.kill(pid, signal.SIGUSR1)
+        except ProcessLookupError:
+            pass
+        except PermissionError:
+            return Ensured("failed", "restart_refused", f"not allowed to signal pid {pid}")
     if supervised:
         answer = _await_answer(run, started=False, not_pid=pid)
         if answer.state != "ready" or answer.pid is None:
@@ -469,6 +477,11 @@ def _spawn(run: _Run) -> int:
     """Double-fork ``run.argv`` (see the module notes); the daemon's pid."""
     log_path = gateway_runtime.stdio_log_path(run.home)
     log_path.parent.mkdir(parents=True, exist_ok=True)
+    if sys.platform == "win32":
+        from indus.platform import winproc
+
+        with open(log_path, "ab") as out:
+            return winproc.spawn_detached(run.argv, cwd=str(run.home), env=_child_env(run), out=out)
     with open(log_path, "ab") as out:
         launcher = subprocess.Popen(
             [sys.executable, "-I", "-c", _LAUNCHER, *run.argv],

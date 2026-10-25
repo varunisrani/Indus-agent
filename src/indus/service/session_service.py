@@ -278,7 +278,7 @@ class SessionService:
     def __init__(
         self,
         scope: Scope,
-        route: RuntimeRoute,
+        route: RuntimeRoute | Callable[[], RuntimeRoute],
         *,
         toolsets: Sequence[str] | None = None,
         options: AgentOptions | None = None,
@@ -298,7 +298,7 @@ class SessionService:
         bot_chats: AgentShaper | None = None,
     ) -> None:
         self.scope = scope
-        self.route = route
+        self._route = route
         self.toolsets = list(toolsets) if toolsets is not None else None
         self.options = options or AgentOptions()
         if aux is not None and self.options.aux is None:
@@ -330,6 +330,13 @@ class SessionService:
         self.bot_chats = bot_chats
         self.replay_epoch = new_replay_epoch()
         """The in-process replay epoch (``events_since``); the daemon's event log has its own."""
+
+    @property
+    def route(self) -> RuntimeRoute:
+        """The profile's default route. A callable given at construction is asked each time: the
+        daemon's (``gateway.daemon.process.MainRoute``) raises ``NoUsableProvider`` while no model
+        provider is set up yet."""
+        return self._route() if callable(self._route) else self._route
 
     def _default_lock_dir(self) -> Path:
         if isinstance(self.store, StateStore):

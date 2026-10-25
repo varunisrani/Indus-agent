@@ -44,7 +44,7 @@ import {
   type ProviderOption,
   reduce,
 } from "./flow.ts";
-import { onOnboardingRequest } from "./requests.ts";
+import { announceProviderSaved, onOnboardingRequest } from "./requests.ts";
 import "./onboarding.css";
 
 /** Titles of the "Other providers" sign-in rows, by provider slug (W61-M2). */
@@ -310,6 +310,7 @@ export function Onboarding(props: OnboardingProps) {
             send(
               failure === null ? { type: "key-saved" } : { type: "key-failed", message: failure },
             );
+            if (failure === null) announceProviderSaved();
             return failure === null;
           }}
         />
@@ -390,6 +391,7 @@ export function Onboarding(props: OnboardingProps) {
                 ? { type: "model-saved" }
                 : { type: "model-failed", message: answer.message },
             );
+            if (answer.ok) announceProviderSaved();
           }}
         />
       );

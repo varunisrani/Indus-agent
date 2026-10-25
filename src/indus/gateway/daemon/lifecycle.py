@@ -8,6 +8,10 @@
   ``restart_after_turn_timeout``), then stop and exit 75 for the supervisor to start a new process.
 - SIGUSR2 → the daemon's stack dump (keeps running).
 
+Windows has no SIGUSR1/SIGUSR2 and its loop cannot add signal handlers: SIGINT, SIGTERM and
+SIGBREAK go through ``signal.signal`` onto the loop instead, and a restart arrives as the control
+channel's ``stop`` verb with ``restart: true`` (docs/notes/P25/windows-gateway.md).
+
 While draining (a stop, a restart wait, or an external drain marker) the intake's pause probe
 (``notice``) answers new turns with a short notice; commands and messages for a conversation that
 is already replying still pass (``AdmissionPipeline``'s pause gate).
@@ -26,7 +30,7 @@ import contextlib
 import logging
 import signal
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from indus.foundation.blocking import run_blocking
 from indus.gateway.core.events import Source
@@ -82,6 +86,7 @@ class Lifecycle:
         self._requested: asyncio.Event | None = None
         self._hurry: asyncio.Event | None = None
         self._installed: list[int] = []
+        self._previous: dict[int, Any] = {}
 
     def _events(self) -> tuple[asyncio.Event, asyncio.Event]:
         if self._requested is None or self._hurry is None:
@@ -164,21 +169,44 @@ class Lifecycle:
     def install_signals(
         self, loop: asyncio.AbstractEventLoop, *, on_dump: Callable[[], None]
     ) -> None:
-        handlers: dict[int, Callable[[], None]] = {
-            signal.SIGTERM: lambda: self.request_stop("signal:SIGTERM"),
-            signal.SIGINT: lambda: self.request_stop("signal:SIGINT"),
-            signal.SIGUSR1: lambda: self.request_restart("signal:SIGUSR1"),
-            signal.SIGUSR2: on_dump,
+        wanted: dict[str, Callable[[], None]] = {
+            "SIGTERM": lambda: self.request_stop("signal:SIGTERM"),
+            "SIGINT": lambda: self.request_stop("signal:SIGINT"),
+            "SIGBREAK": lambda: self.request_stop("signal:SIGBREAK"),  # Windows' Ctrl+Break
+            "SIGUSR1": lambda: self.request_restart("signal:SIGUSR1"),
+            "SIGUSR2": on_dump,
         }
-        for signum, handler in handlers.items():
+        for name, handler in wanted.items():
+            signum = getattr(signal, name, None)
+            if signum is None:
+                continue  # not on this OS
             try:
                 loop.add_signal_handler(signum, handler)
-            except (NotImplementedError, RuntimeError, ValueError):
+            except NotImplementedError:
+                if not self._install_plain(loop, signum, handler):
+                    continue
+            except (RuntimeError, ValueError):
                 continue
             self._installed.append(signum)
 
+    def _install_plain(
+        self, loop: asyncio.AbstractEventLoop, signum: int, handler: Callable[[], None]
+    ) -> bool:
+        """A loop without signal support (Windows): a plain handler that hands over to the loop.
+        Only the main thread may do this; elsewhere the signal keeps its default."""
+        try:
+            previous = signal.signal(signum, lambda _n, _f: loop.call_soon_threadsafe(handler))
+        except (OSError, RuntimeError, ValueError):
+            return False
+        self._previous[signum] = previous
+        return True
+
     def remove_signals(self, loop: asyncio.AbstractEventLoop) -> None:
         for signum in self._installed:
+            if signum in self._previous:
+                with contextlib.suppress(Exception):
+                    signal.signal(signum, self._previous.pop(signum))
+                continue
             with contextlib.suppress(Exception):
                 loop.remove_signal_handler(signum)
         self._installed.clear()

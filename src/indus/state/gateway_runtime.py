@@ -188,6 +188,10 @@ def pid_alive(pid: int) -> bool:
     """True when a running process with ``pid`` exists (owned by anyone); a zombie is gone."""
     if pid < 1:
         return False
+    if sys.platform == "win32":  # os.kill(pid, 0) would terminate the process there
+        from indus.platform import winproc
+
+        return winproc.pid_alive(pid)
     try:
         os.kill(pid, 0)  # signal 0 delivers nothing; it only asks whether the pid exists
     except OverflowError:
@@ -221,8 +225,9 @@ def _ps_start_time(pid: int) -> int | None:
 def process_start_time(pid: int) -> int | None:
     """A per-process start fingerprint (None when unknown).
 
-    Linux: field 22 of ``/proc/<pid>/stat`` (clock ticks since boot). Elsewhere: ``ps``'s start
-    time in epoch seconds. Only ever compared with a value read the same way on the same host.
+    Linux: field 22 of ``/proc/<pid>/stat`` (clock ticks since boot). Windows: the creation time
+    (100 ns ticks since 1601). Elsewhere: ``ps``'s start time in epoch seconds. Only ever compared
+    with a value read the same way on the same host.
     """
     if pid <= 0:
         return None
@@ -237,7 +242,9 @@ def process_start_time(pid: int) -> int | None:
         except (IndexError, ValueError):
             return None
     if sys.platform == "win32":
-        return None
+        from indus.platform import winproc
+
+        return winproc.start_time(pid)
     return _ps_start_time(pid)
 
 

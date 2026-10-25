@@ -43,11 +43,11 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import errno
-import fcntl
 import json
 import logging
 import os
 import stat
+import sys
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -144,6 +144,8 @@ def ensure_state_dir(directory: Path) -> Path:
     info = directory.lstat()
     if not stat.S_ISDIR(info.st_mode):
         raise HostStateError(f"{directory} is not a directory")
+    if sys.platform == "win32":
+        return directory  # no uid or mode bits: the user profile's ACL protects it
     if info.st_uid != os.getuid():
         raise HostStateError(f"{directory} belongs to another user")
     if stat.S_IMODE(info.st_mode) & 0o077:
@@ -152,6 +154,30 @@ def ensure_state_dir(directory: Path) -> Path:
 
 
 # -- the lock -------------------------------------------------------------------------------------
+
+if sys.platform == "win32":
+    import msvcrt
+
+    def _os_try_lock(fd: int) -> None:
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+
+    def _os_unlock(fd: int) -> None:
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+
+    _HELD_ERRNOS = (errno.EACCES, errno.EDEADLOCK)
+
+else:
+    import fcntl
+
+    def _os_try_lock(fd: int) -> None:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def _os_unlock(fd: int) -> None:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+
+    _HELD_ERRNOS = (errno.EWOULDBLOCK, errno.EAGAIN, errno.EACCES)
 
 
 class HostLock:
@@ -173,7 +199,7 @@ class HostLock:
         ensure_state_dir(self.directory)
         fd = os.open(self.path, os.O_RDWR | os.O_CREAT, 0o600)
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            _os_try_lock(fd)
         except OSError:
             os.close(fd)
             return False
@@ -185,7 +211,7 @@ class HostLock:
         if fd is None:
             return
         with contextlib.suppress(OSError):
-            fcntl.flock(fd, fcntl.LOCK_UN)
+            _os_unlock(fd)
         with contextlib.suppress(OSError):
             os.close(fd)
 
@@ -201,12 +227,12 @@ class HostLock:
         except OSError:
             return None
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            _os_try_lock(fd)
         except OSError as exc:
-            return False if exc.errno in (errno.EWOULDBLOCK, errno.EAGAIN, errno.EACCES) else None
+            return False if exc.errno in _HELD_ERRNOS else None
         else:
             with contextlib.suppress(OSError):
-                fcntl.flock(fd, fcntl.LOCK_UN)
+                _os_unlock(fd)
             return True
         finally:
             with contextlib.suppress(OSError):
@@ -289,6 +315,8 @@ def _ours(path: Path) -> bool:
         parent = path.parent.lstat()
     except OSError:
         return False
+    if sys.platform == "win32":
+        return stat.S_ISREG(info.st_mode)  # no uids; the user profile's ACL protects it
     uid = os.getuid()
     if not stat.S_ISREG(info.st_mode) or info.st_uid != uid or parent.st_uid != uid:
         if stat.S_ISREG(info.st_mode):

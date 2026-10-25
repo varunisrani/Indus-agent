@@ -8,6 +8,7 @@ command line, terminal UI and messaging gateway run inside WSL2 (a real Linux ne
 | Desktop app | supported | — |
 | PowerShell installer | supported | — |
 | Classic CLI and terminal UI | works, best effort | supported |
+| Gateway daemon (the desktop app's backend) | works, best effort | supported |
 | Messaging gateway | — | supported |
 | Docker image | through Docker Desktop | through Docker Desktop or Docker in WSL2 |
 
@@ -31,6 +32,25 @@ system can differ. When something does not work natively, use WSL2.
 
 When the installer reaches the messaging gateway step on Windows it points you to WSL2: the gateway
 is a long-running service and is supported there.
+
+### The gateway daemon (best effort)
+
+The desktop app talks to the agent through its gateway daemon, and that daemon also runs natively.
+`indus gateway ensure`, `start`, `stop` and `status` work as on Linux; the desktop app starts the
+daemon by itself when it opens. What differs:
+
+- **Control channel.** Instead of a Unix socket the daemon listens on a named pipe with a fresh
+  random name (`\\.\pipe\indus-gw-…`), written into `gateway.sock.path` in your Indus home.
+  Only processes running as your Windows user may use its owner-only requests.
+- **Stopping.** Windows has no signals to catch, so `indus gateway stop` asks the daemon through
+  that pipe and waits; `--force` ends it at once.
+- **No service.** There is no Windows service; a daemon the desktop app started stops itself after
+  ten idle minutes (`gateway.idle_exit_seconds`).
+- **First run.** With no model provider set up yet the daemon still starts, and the desktop app
+  opens its provider setup; what you choose there is used from your next message on, without a
+  restart. `indus setup model` does the same from a terminal.
+
+Messaging platforms (Telegram, WhatsApp and the others) remain supported in WSL2 only.
 
 ### Shell commands through Git Bash (best effort)
 

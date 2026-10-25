@@ -26,6 +26,12 @@ Attach verbs (P17-11): ``session_ticket`` asks for a single-use WebSocket ticket
 answer (ticket shape, a credential-free loopback ``ws_url``, the profile and instance the caller
 expects); ``describe`` returns the daemon's attach descriptor. A ``TicketReply`` never shows its
 ticket in ``repr``.
+
+Windows (docs/notes/P25/windows-gateway.md): there is no Unix socket; the daemon serves the same
+wire on a named pipe whose name the pointer file holds (``indus.service.control_pipe``). Windows
+has no uids or mode bits: the pointer only has to be a regular file naming a well-formed pipe, a
+home only has to be a directory (the user profile's ACL protects it), and the listener check
+compares the pipe server's user SID with ours.
 """
 
 from __future__ import annotations
@@ -35,6 +41,7 @@ import json
 import os
 import socket
 import stat
+import sys
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -42,6 +49,7 @@ from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlsplit
 
+from indus.service import control_pipe
 from indus.service.remote.profile_guard import FOREIGN_LISTENER, listener_is_ours
 from indus.service.ws_auth import is_loopback_host, looks_like_ticket
 
@@ -60,6 +68,7 @@ __all__ = [
     "fits",
     "home_is_safe",
     "identify",
+    "pipe_name_for",
     "pointer_path",
     "query",
     "session_ticket",
@@ -139,6 +148,26 @@ def socket_path_for(home: Path) -> Path | None:
     return target
 
 
+def pipe_name_for(home: Path) -> str | None:
+    """Windows: the pipe the pointer in ``home`` names, or None (no pointer, not a regular file,
+    or not a well-formed pipe name). Whether anything serves it is the exchange's question."""
+    pointer = pointer_path(home)
+    try:
+        if not stat.S_ISREG(pointer.lstat().st_mode):
+            return None
+        name = pointer.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeDecodeError):
+        return None
+    return name if control_pipe.is_pipe_name(name) else None
+
+
+def _target_for(home: Path) -> Path | str | None:
+    """Where a request for ``home`` goes: the socket path, or the pipe name on Windows."""
+    if sys.platform == "win32":
+        return pipe_name_for(home)
+    return socket_path_for(home)
+
+
 def _private_group(gid: int) -> bool:
     """The group is the user's own: their primary group, named like them, with nobody else."""
     import grp  # POSIX only, like the rest of this module's callers
@@ -159,6 +188,8 @@ def home_is_safe(home: Path) -> bool:
         info = home.stat()
     except OSError:
         return False
+    if sys.platform == "win32":
+        return stat.S_ISDIR(info.st_mode)
     if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
         return False
     if info.st_mode & stat.S_IWOTH:
@@ -230,7 +261,30 @@ def _exchange(path: Path, request: bytes, timeout: float) -> ControlReply:
             return ControlReply(False, error="timeout")
         except OSError as exc:
             return ControlReply(False, error="unreachable", detail=type(exc).__name__)
-    line = b"".join(chunks).partition(b"\n")[0]
+    return _answer(b"".join(chunks))
+
+
+def _pipe_exchange(name: str, request: bytes, timeout: float) -> ControlReply:
+    """``_exchange`` over the Windows named pipe (same codes)."""
+    try:
+        raw = control_pipe.exchange(name, request, timeout, limit=MAX_RESPONSE_BYTES)
+    except control_pipe.PipeMissing:
+        return ControlReply(False, error="no_socket")
+    except control_pipe.ForeignServer:
+        return ControlReply(
+            False, error=FOREIGN_LISTENER, detail="another user serves the control pipe"
+        )
+    except control_pipe.ResponseTooLong:
+        return ControlReply(False, error="bad_response", detail="the answer is too long")
+    except TimeoutError:
+        return ControlReply(False, error="timeout")
+    except OSError as exc:
+        return ControlReply(False, error="unreachable", detail=type(exc).__name__)
+    return _answer(raw)
+
+
+def _answer(raw: bytes) -> ControlReply:
+    line = raw.partition(b"\n")[0]
     if not line:
         return ControlReply(
             False, error="bad_response", detail="the gateway closed without answering"
@@ -252,8 +306,8 @@ def query(
     error code the caller falls back on (status file, unit state)."""
     if not home_is_safe(home):
         return ControlReply(False, error="unsafe_home")
-    path = socket_path_for(home)
-    if path is None:
+    target = _target_for(home)
+    if target is None:
         return ControlReply(False, error="no_socket")
     message: dict[str, Any] = {"protocol": PROTOCOL, "verb": verb, "id": request_id}
     if params is not None:
@@ -264,7 +318,9 @@ def query(
         return ControlReply(False, error="bad_request", detail="params are not JSON")
     if len(request) > MAX_REQUEST_BYTES:
         return ControlReply(False, error="request_too_large")
-    return _exchange(path, request, timeout)
+    if isinstance(target, str):
+        return _pipe_exchange(target, request, timeout)
+    return _exchange(target, request, timeout)
 
 
 def identify(home: Path, *, timeout: float = DEFAULT_TIMEOUT_S) -> dict[str, Any] | None:

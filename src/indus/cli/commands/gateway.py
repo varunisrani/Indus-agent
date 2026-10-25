@@ -6,7 +6,8 @@
   socket to answer.
 - ``stop``: records the planned stop (pid + start time) *before* signalling, then stops the
   service or sends SIGTERM, and waits. It never kills on its own; ``--force`` sends SIGKILL only
-  after the wait ran out.
+  after the wait ran out. Windows has no SIGTERM to catch: the daemon is asked through its
+  control channel's ``stop`` verb, and ``--force`` terminates it.
 - ``restart``: the service's restart, or stop then start.
 - ``status``: the control socket first, then the runtime status file (stale after 120 s or when
   its process is gone), then the service's state. Exit 0 when running, 1 otherwise.
@@ -41,6 +42,7 @@ import click
 from indus.cli.commands._support import err, fresh_view, state_of
 from indus.cli.lazy import LazyGroup
 from indus.foundation.scope import Scope
+from indus.platform import winproc
 from indus.service import gateway_control
 from indus.service.gateway_manager import ServiceError, ServiceManager, manager_for
 from indus.service.gateway_units import UnitSpec, default_program, systemd_unit
@@ -141,6 +143,8 @@ def _spawn(scope: Scope) -> subprocess.Popen[bytes]:
     env = scope.env.to_dict()
     env["INDUS_HOME"] = str(scope.home)
     env.pop("INDUS_GATEWAY_SUPERVISED", None)
+    # Windows: its own process group with no console window, so Ctrl+C here does not reach it.
+    flags = winproc.DETACHED_FLAGS if PLATFORM == "win32" else 0
     with open(log_path, "ab") as out:
         return subprocess.Popen(
             run_argv(scope),
@@ -151,6 +155,7 @@ def _spawn(scope: Scope) -> subprocess.Popen[bytes]:
             env=env,
             start_new_session=True,
             close_fds=True,
+            creationflags=flags,
         )
 
 
@@ -314,6 +319,11 @@ def _stop(
         except ServiceError as exc:
             err(f"Could not stop the service: {exc}")
             return 1
+    elif live is not None and PLATFORM == "win32":
+        asked = gateway_control.query(home, "stop", {"reason": reason})
+        if not asked.ok and asked.answered:
+            err(f"The gateway refused to stop: {asked.error}.")
+            return 1
     elif live is not None:
         try:
             os.kill(live.pid, signal.SIGTERM)
@@ -330,7 +340,7 @@ def _stop(
             )
             return 1
         with contextlib.suppress(ProcessLookupError):
-            os.kill(live.pid, signal.SIGKILL)
+            os.kill(live.pid, getattr(signal, "SIGKILL", signal.SIGTERM))
         err(f"Killed the gateway (pid {live.pid}) after {budget:g} s.")
         return 0
     if not quiet:
@@ -468,7 +478,7 @@ def _print_status(report: dict[str, Any]) -> None:
         click.echo(line)
     service = report.get("service")
     if service is None:
-        click.echo("Service: none on this system (Windows: run it inside WSL2)")
+        click.echo("Service: none on this system (the desktop app and `gateway start` run it)")
     elif "error" in service:
         click.echo(f"Service: {service['error']}")
     elif not service["installed"]:

@@ -307,6 +307,20 @@ def _tighten(directory: Path) -> None:
                 os.chmod(entry, 0o600)
 
 
+def _lock_byte(fd: int, *, acquire: bool) -> None:
+    """Take (non-blocking) or drop the store lock: ``flock``, or one ``msvcrt.locking`` byte at
+    offset 0 on Windows. Raises OSError when another process holds it."""
+    if sys.platform == "win32":
+        import msvcrt
+
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_NBLCK if acquire else msvcrt.LK_UNLCK, 1)
+        return
+    import fcntl
+
+    fcntl.flock(fd, (fcntl.LOCK_EX | fcntl.LOCK_NB) if acquire else fcntl.LOCK_UN)
+
+
 class StoreLock:
     """One process at a time per device store (an exclusive ``flock``; released on close)."""
 
@@ -315,11 +329,9 @@ class StoreLock:
         self._fd: int | None = None
 
     def acquire(self) -> bool:
-        import fcntl
-
         fd = os.open(self.path, os.O_CREAT | os.O_RDWR, 0o600)
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            _lock_byte(fd, acquire=True)
         except OSError:
             os.close(fd)
             return False
@@ -330,10 +342,8 @@ class StoreLock:
         fd, self._fd = self._fd, None
         if fd is None:
             return
-        import fcntl
-
         with contextlib.suppress(OSError):
-            fcntl.flock(fd, fcntl.LOCK_UN)
+            _lock_byte(fd, acquire=False)
         os.close(fd)
 
     @property

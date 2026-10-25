@@ -1,12 +1,12 @@
-// Whether a model provider is set up (W52-g): asks `GET /api/model/options` once per mount and
-// again whenever onboarding is asked for (it may have changed the answer), using the same rule as
-// the onboarding overlay. `null` while unknown (no bridge, backend not answering): callers then
+// Whether a model provider is set up (W52-g): asks `GET /api/model/options` once per mount, again
+// whenever onboarding is asked for (it may have changed the answer) and at once when the overlay
+// saved a key or a model (a first run that finished), using the same rule as the overlay. `null` while unknown (no bridge, backend not answering): callers then
 // show nothing rather than a false "needs setup".
 
 import { useEffect, useState } from "react";
 import { bridgeRest, type RestLike, rest } from "../settings/settingsApi.ts";
 import { anyConfigured, endpointChosen, type ProviderOption } from "./flow.ts";
-import { onOnboardingRequest } from "./requests.ts";
+import { onOnboardingRequest, onProviderSaved } from "./requests.ts";
 
 interface Options {
   providers?: ProviderOption[];
@@ -44,6 +44,7 @@ export function useProviderReady(api?: RestLike | null): boolean | null {
       }),
     [],
   );
+  useEffect(() => onProviderSaved(() => setTick((n) => n + 1)), []);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: tick asks again
   useEffect(() => {

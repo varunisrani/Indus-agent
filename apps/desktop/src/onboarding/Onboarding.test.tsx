@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { fakeRest } from "../settings/fakeRest.ts";
 import { isProviderFailure, Onboarding, type Timers } from "./Onboarding.tsx";
-import { requestOnboarding } from "./requests.ts";
+import { onProviderSaved, requestOnboarding } from "./requests.ts";
 
 const OPTIONS = (configured: boolean) => ({
   providers: [
@@ -256,6 +256,8 @@ describe("onboarding overlay", () => {
       message: "1 model",
     });
     api.route("POST", "/api/model/set", { ok: true });
+    const saved = vi.fn();
+    const stop = onProviderSaved(saved);
     render(<Onboarding ready api={api} saveKey={null} />);
     await settle();
     await act(async () => {
@@ -269,6 +271,7 @@ describe("onboarding overlay", () => {
       base_url: "http://127.0.0.1:11434/v1",
     });
     expect((screen.getByLabelText("Model") as HTMLInputElement).value).toBe("llama-3");
+    expect(saved).not.toHaveBeenCalled();
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Start chatting" }));
     });
@@ -279,6 +282,38 @@ describe("onboarding overlay", () => {
       model: "llama-3",
       base_url: "http://127.0.0.1:11434/v1",
     });
+    // the status bar's "needs setup" asks again at once
+    expect(saved).toHaveBeenCalledTimes(1);
+    stop();
+  });
+
+  it("a model the backend refuses to save is not announced", async () => {
+    const api = fakeRest();
+    api.route("GET", "/api/model/options", OPTIONS(false));
+    api.route("POST", "/api/model/test-endpoint", {
+      ok: true,
+      status: 200,
+      models: ["llama-3"],
+      message: "1 model",
+    });
+    api.route("POST", "/api/model/set", () => ({ status: 500, body: { detail: "unwritable" } }));
+    const saved = vi.fn();
+    const stop = onProviderSaved(saved);
+    render(<Onboarding ready api={api} saveKey={null} />);
+    await settle();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /model running on this computer/ }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Test and continue" }));
+    });
+    await settle();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Start chatting" }));
+    });
+    await settle();
+    expect(saved).not.toHaveBeenCalled();
+    stop();
   });
 
   it("the parity flow's data-ui hooks walk the custom endpoint path (W46, RM21)", async () => {

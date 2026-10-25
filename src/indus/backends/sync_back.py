@@ -35,6 +35,7 @@ import secrets
 import shutil
 import signal
 import stat
+import sys
 import tarfile
 import threading
 import time
@@ -123,6 +124,10 @@ def _pid_alive(pid: int) -> bool:
     """Dead only when the kernel says there is no such process (no permission = alive)."""
     if pid < 1:
         return False
+    if sys.platform == "win32":  # os.kill(pid, 0) would terminate the process there
+        from indus.platform import winproc
+
+        return winproc.pid_alive(pid)
     outcome: OSError | None = None
     try:
         os.kill(pid, 0)

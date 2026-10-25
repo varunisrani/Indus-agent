@@ -257,6 +257,10 @@ class ProcessSpawner:
             return False
         if fingerprint is not None and sys.platform.startswith("linux"):
             return _fingerprint(pid) == fingerprint
+        if sys.platform == "win32":  # os.kill(pid, 0) would terminate the process there
+            from indus.platform import winproc
+
+            return winproc.pid_alive(pid)
         try:
             os.kill(pid, 0)
         except ProcessLookupError:

@@ -47,6 +47,7 @@ from indus.foundation.clock import Clock
 from indus.foundation.config import loader as config_loader
 from indus.foundation.config import writer as config_writer
 from indus.foundation.digits import is_digits
+from indus.foundation.errors import NoUsableProvider
 from indus.foundation.scope import Scope
 from indus.gateway.core.events import InboundEvent, Source
 from indus.gateway.core.slash_access import SlashPolicy, policy_for, scope_of, tier_label
@@ -288,7 +289,10 @@ def _model_label(pipeline: AdmissionPipeline, session_id: str | None) -> str:
             return f"{state.model} ({state.provider})"
         except Exception:
             pass
-    route = pipeline.service.route
+    try:
+        route = pipeline.service.route
+    except NoUsableProvider:  # a first run: the daemon waits for a provider to be set up
+        return "no model set up yet"
     return f"{route.model} ({route.provider})"
 
 
