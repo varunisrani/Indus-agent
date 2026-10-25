@@ -99,9 +99,13 @@ on the owner's request. Third compare done at b0bc54d (scratchpad `compare3/`, P
 improved (7 fixed, 10 partial). Remaining gaps are mostly backend features (hosted catalogues, usage/credits, OAuth
 providers, voice modes, tool-gateway routing) or owner calls; the "~110 px pane" line is a misreading of the half-scale
 sheet (228 px measured in the app, W57-H1-2).
-IN FLIGHT: wave 60 L1 (web model list, Models MoA + per-model usage) + L2 (desktop tool keys, toolsets, palette, pets); wave 61
-M1 = OpenAI ChatGPT sign-in backend + CLI + dashboard REST (owner decision D-16.1282, reverses P2 for OpenAI only); a UI
-builder follows on M1's REST contract (web Keys card + desktop onboarding/providers).
+WAVE 60 LANDED `8422550` (D-16.1283/1284; full pytest 18801 / 0 failed after landing). WAVE 61 PUSHED `8b66501`: OpenAI
+ChatGPT sign-in (D-16.1282) — backend/CLI/REST (M1, builder full pytest 18867 / 0, perf 18/0) + UI (M2). The owner asked to
+push without the final combined gate: full pytest, perf, full vitest, Electron lane and web Playwright have NOT been run
+on main + M1 + M2 (only fast checks: biome, tsc, check-ipc, bridge types, ruff, route list, targeted tests, tooling.checks).
+FIRST THING NEXT: run the full gate on main and fix anything red.
+Saved, not landed: `.agents/wip/w59/w59k2-UNFINISHED.patch` (web host facts + our TUI ASCII banner; goldens need regenerating).
+Owner handling the rest from here (2026-10-25 ~14:30 UTC).
 Owner calls: Clear Blue preset below AA (D-16.1276); MCP/connector hosted catalogue (none exists, D-16.1275).
 Older text below (wave 52 era) is history.
 

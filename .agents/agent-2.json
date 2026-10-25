@@ -1,11 +1,11 @@
 {
   "agent": "AGENT_2",
   "account": "Account 2",
-  "state": "ACTIVE",
+  "state": "PAUSED",
   "usage_pct": 1,
   "remaining_pct": 99,
   "resets_at": "2026-10-25T07:30:00+00:00",
-  "last_check": "2026-10-25T02:40:00+00:00",
-  "current_step": "Wave 55: F1+F3 landed; F2 gate + Indus re-capture running",
-  "last_commit": "be4bf77"
+  "last_check": "2026-10-25T14:30:00+00:00",
+  "current_step": "Owner took over; wave 61 pushed (8b66501), full gate on main still to run",
+  "last_commit": "8b66501"
 }
