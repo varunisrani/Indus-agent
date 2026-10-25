@@ -1,0 +1,1463 @@
+diff --git a/apps/desktop/src/app/capabilities/CapabilitiesPage.test.tsx b/apps/desktop/src/app/capabilities/CapabilitiesPage.test.tsx
+index 7314fa9..10f0b00 100644
+--- a/apps/desktop/src/app/capabilities/CapabilitiesPage.test.tsx
++++ b/apps/desktop/src/app/capabilities/CapabilitiesPage.test.tsx
+@@ -250,6 +250,46 @@ describe("capabilities page", () => {
+     );
+   });
+ 
++  it("the catalog lists the presets not added yet; Add posts the preset's entry", async () => {
++    const api = backend();
++    api.route("GET", "/api/mcp/catalog", {
++      entries: [
++        {
++          name: "git",
++          description: "Work in a git repository.",
++          transport: "stdio",
++          command: "uvx",
++          args: ["mcp-server-git"],
++          url: null,
++          installed: false,
++        },
++        {
++          name: "memory",
++          description: "A knowledge graph.",
++          transport: "stdio",
++          command: "npx",
++          args: ["-y", "@modelcontextprotocol/server-memory"],
++          url: null,
++          installed: true,
++        },
++      ],
++    });
++    api.route("POST", "/api/mcp/servers", { name: "git" });
++    wrap(<CapabilitiesPage api={api} profile="default" initialTab="connectors" />);
++    await flush();
++    expect(screen.queryByText("No connectors yet")).toBeNull();
++    const list = screen.getByRole("list", { name: "Catalog" });
++    expect(within(list).getByText("git")).toBeTruthy();
++    expect(within(list).queryByText("memory")).toBeNull(); // already added
++    fireEvent.click(within(list).getByRole("button", { name: "Add git" }));
++    await flush();
++    const posted = api.calls.find((c) => c.method === "POST" && c.path === "/api/mcp/servers");
++    expect(posted).toMatchObject({
++      profile: "default",
++      body: { name: "git", command: "uvx", args: ["mcp-server-git"] },
++    });
++  });
++
+   it("a connector card opens its dialog; Test reports the tools", async () => {
+     const api = backend();
+     api.route("GET", "/api/mcp/servers", {
+diff --git a/apps/desktop/src/app/capabilities/ConnectorsTab.tsx b/apps/desktop/src/app/capabilities/ConnectorsTab.tsx
+index 67a4c55..86dbd58 100644
+--- a/apps/desktop/src/app/capabilities/ConnectorsTab.tsx
++++ b/apps/desktop/src/app/capabilities/ConnectorsTab.tsx
+@@ -1,6 +1,9 @@
+ // The Connectors tab (P24-26, W52-k): the profile's MCP servers as a two-column card grid with a
+ // search and an "Add your own" dialog; a card opens the server's dialog (test, sign in, remove).
+-// We have no hosted catalog, so the grid lists the configured servers only (letter tiles).
++// We have no hosted catalog; under the configured servers a Catalog group lists the server presets
++// our backend knows (`GET /api/mcp/catalog`, W55-F2-3) that this profile has not added yet, each
++// with an Add button that goes through the normal add route. A catalog that fails to load is left
++// out quietly (the servers stay usable).
+ 
+ import { AlertCircle, Plug } from "lucide-react";
+ import { type FormEvent, useMemo, useState } from "react";
+@@ -10,7 +13,7 @@ import { Button, EmptyState, SmallDialog } from "../../ui/components.tsx";
+ import { MetaGrid, QuietSearch } from "../kit.tsx";
+ import { RowSwitch } from "../masterDetail.tsx";
+ import { notify } from "../Toasts.tsx";
+-import { field, type McpServerRow, useList } from "./shared.ts";
++import { field, type McpCatalogRow, type McpServerRow, useList } from "./shared.ts";
+ 
+ function isRemote(server: McpServerRow): boolean {
+   return typeof server.url === "string" && server.url !== "";
+@@ -25,10 +28,15 @@ export function ConnectorsTab(props: {
+   const t = useT();
+   const { api, profile } = props;
+   const list = useList<McpServerRow>(api, "/api/mcp/servers", profile, field("servers"));
++  const catalog = useList<McpCatalogRow>(api, "/api/mcp/catalog", profile, field("entries"));
+   const [query, setQuery] = useState("");
+   const [adding, setAdding] = useState(false);
+   const [open, setOpen] = useState<string | null>(null);
+   const rows = list.rows ?? [];
++  const offered = useMemo(
++    () => (catalog.rows ?? []).filter((entry) => !entry.installed),
++    [catalog.rows],
++  );
+   const shown = useMemo(() => {
+     const needle = query.trim().toLowerCase();
+     return (list.rows ?? []).filter(
+@@ -37,6 +45,14 @@ export function ConnectorsTab(props: {
+         `${row.name} ${row.command ?? ""} ${row.url ?? ""}`.toLowerCase().includes(needle),
+     );
+   }, [list.rows, query]);
++  const shownOffers = useMemo(() => {
++    const needle = query.trim().toLowerCase();
++    return offered.filter(
++      (entry) =>
++        needle === "" || `${entry.name} ${entry.description}`.toLowerCase().includes(needle),
++    );
++  }, [offered, query]);
++  const total = rows.length + offered.length;
+ 
+   const call = async (
+     method: "POST" | "PUT" | "DELETE",
+@@ -50,9 +66,19 @@ export function ConnectorsTab(props: {
+     });
+     if (!answer.ok) notify({ tone: "error", title: answer.message });
+     list.reload();
++    catalog.reload();
+     return answer;
+   };
+ 
++  const install = (entry: McpCatalogRow) =>
++    call(
++      "POST",
++      "/api/mcp/servers",
++      entry.url
++        ? { name: entry.name, url: entry.url }
++        : { name: entry.name, command: entry.command ?? "", args: entry.args },
++    );
++
+   const toggle = async (server: McpServerRow, on: boolean) => {
+     list.setRows((all) =>
+       all.map((row) => (row.name === server.name ? { ...row, enabled: on } : row)),
+@@ -89,7 +115,7 @@ export function ConnectorsTab(props: {
+             </Button>
+           }
+         />
+-      ) : list.rows !== null && rows.length === 0 ? (
++      ) : list.rows !== null && total === 0 ? (
+         <EmptyState
+           look="panel"
+           fill
+@@ -102,16 +128,18 @@ export function ConnectorsTab(props: {
+           <div className="cap-connectors-search">
+             <QuietSearch
+               fill
+-              label={t("connectors.searchApps", { count: rows.length })}
+-              placeholder={t("connectors.searchApps", { count: rows.length })}
++              label={t("connectors.searchApps", { count: total })}
++              placeholder={t("connectors.searchApps", { count: total })}
+               value={query}
+               onChange={setQuery}
+             />
+           </div>
+-          <h3 className="cap-group">
+-            {t("connectors.configured")}
+-            <span className="cap-group-count">{shown.length}</span>
+-          </h3>
++          {rows.length > 0 && (
++            <h3 className="cap-group">
++              {t("connectors.configured")}
++              <span className="cap-group-count">{shown.length}</span>
++            </h3>
++          )}
+           <ul className="cap-card-grid">
+             {shown.map((server) => {
+               const on = server.enabled !== false;
+@@ -155,6 +183,19 @@ export function ConnectorsTab(props: {
+               );
+             })}
+           </ul>
++          {offered.length > 0 && (
++            <>
++              <h3 className="cap-group">
++                {t("connectors.catalog")}
++                <span className="cap-group-count">{shownOffers.length}</span>
++              </h3>
++              <ul className="cap-card-grid" aria-label={t("connectors.catalog")}>
++                {shownOffers.map((entry) => (
++                  <CatalogCard key={entry.name} entry={entry} onAdd={() => install(entry)} />
++                ))}
++              </ul>
++            </>
++          )}
+         </>
+       )}
+       {adding && (
+@@ -178,6 +219,48 @@ export function ConnectorsTab(props: {
+   );
+ }
+ 
++function CatalogCard(props: { entry: McpCatalogRow; onAdd: () => Promise<unknown> }) {
++  const t = useT();
++  const { entry } = props;
++  const [busy, setBusy] = useState(false);
++  const remote = entry.transport === "http";
++  return (
++    <li className="cap-card" data-catalog={entry.name}>
++      <span className="cap-tile" aria-hidden="true">
++        {entry.name.charAt(0).toUpperCase()}
++      </span>
++      <span className="cap-card-text">
++        <span className="cap-card-line">
++          <span className="cap-card-name">{entry.name}</span>
++          <span className="cap-card-kind">
++            {t(remote ? "connectors.kind.remote" : "connectors.kind.local")}
++          </span>
++        </span>
++        <span
++          className="cap-card-desc"
++          title={entry.url ?? [entry.command, ...entry.args].join(" ")}
++        >
++          {entry.description}
++        </span>
++      </span>
++      <span className="cap-card-lane">
++        <Button
++          variant="outline"
++          size="sm"
++          disabled={busy}
++          aria-label={t("connectors.addPreset", { name: entry.name })}
++          onClick={() => {
++            setBusy(true);
++            void props.onAdd().finally(() => setBusy(false));
++          }}
++        >
++          {t("connectors.save")}
++        </Button>
++      </span>
++    </li>
++  );
++}
++
+ function AddConnectorDialog(props: {
+   onClose: () => void;
+   onAdd: (body: Record<string, unknown>) => Promise<void>;
+diff --git a/apps/desktop/src/app/capabilities/shared.ts b/apps/desktop/src/app/capabilities/shared.ts
+index 448f281..5a5560b 100644
+--- a/apps/desktop/src/app/capabilities/shared.ts
++++ b/apps/desktop/src/app/capabilities/shared.ts
+@@ -38,6 +38,18 @@ export interface McpServerRow {
+   auth?: string | null;
+ }
+ 
++/** A server preset from `GET /api/mcp/catalog` (what `indus mcp add --preset` writes). */
++export interface McpCatalogRow {
++  name: string;
++  description: string;
++  transport: "stdio" | "http";
++  command: string | null;
++  args: string[];
++  url: string | null;
++  /** This profile has a server of that name already. */
++  installed: boolean;
++}
++
+ export interface AgentPluginRow {
+   name: string;
+   version: string | null;
+diff --git a/apps/desktop/src/app/capabilities/strings.en.ts b/apps/desktop/src/app/capabilities/strings.en.ts
+index 394da7f..d2efbbe 100644
+--- a/apps/desktop/src/app/capabilities/strings.en.ts
++++ b/apps/desktop/src/app/capabilities/strings.en.ts
+@@ -119,6 +119,8 @@ export const CAPABILITY_STRINGS = {
+   "connectors.addOwn": "Add your own",
+   "connectors.searchApps": "Search {count} apps",
+   "connectors.configured": "Configured",
++  "connectors.catalog": "Catalog",
++  "connectors.addPreset": "Add {name}",
+   "connectors.kind.local": "Local",
+   "connectors.kind.remote": "Remote",
+   "connectors.on": "On",
+diff --git a/apps/desktop/src/app/cron/CronDialog.tsx b/apps/desktop/src/app/cron/CronDialog.tsx
+index 3ca198d..895224f 100644
+--- a/apps/desktop/src/app/cron/CronDialog.tsx
++++ b/apps/desktop/src/app/cron/CronDialog.tsx
+@@ -53,8 +53,8 @@ export function CronDialog(props: {
+ }) {
+   const t = useT();
+   const start = props.blueprint;
+-  const [planId, setPlanId] = useState(start?.skill ?? "");
+-  const [name, setName] = useState(props.job?.name ?? start?.skill ?? "");
++  const [planId, setPlanId] = useState(start?.key ?? "");
++  const [name, setName] = useState(props.job?.name ?? start?.title ?? "");
+   const [prompt, setPrompt] = useState(
+     props.job?.prompt ?? (start === undefined ? "" : (start.prompt ?? start.description)),
+   );
+@@ -65,25 +65,25 @@ export function CronDialog(props: {
+   );
+   const [deliver, setDeliver] = useState<string[]>(deliverList(props.job?.deliver));
+   const [skills, setSkills] = useState<string[]>(
+-    props.job?.skills ?? (start === undefined ? [] : [start.skill]),
++    props.job?.skills ?? (start?.skill ? [start.skill] : []),
+   );
+   const [busy, setBusy] = useState(false);
+   const [error, setError] = useState("");
+   const editing = props.job !== undefined;
+-  const plan = props.blueprints.find((b) => b.skill === planId);
++  const plan = props.blueprints.find((b) => b.key === planId);
+   const pickPlan = (id: string) => {
+     setPlanId(id);
+-    const next = props.blueprints.find((b) => b.skill === id);
++    const next = props.blueprints.find((b) => b.key === id);
+     if (next === undefined) {
+       setSkills([]);
+       return;
+     }
+-    setName(next.skill);
++    setName(next.title);
+     setPrompt(next.prompt ?? next.description);
+     const schedule = next.schedule ?? FREQUENCIES[0][1];
+     setFrequency(presetOf(schedule));
+     if (presetOf(schedule) === "custom") setCustom(schedule);
+-    setSkills([next.skill]);
++    setSkills(next.skill ? [next.skill] : []);
+   };
+   const schedule = expressionOf(frequency, custom);
+   const submit = async () => {
+@@ -141,8 +141,8 @@ export function CronDialog(props: {
+           <select id="cron-plan" value={planId} onChange={(e) => pickPlan(e.target.value)}>
+             <option value="">{t("cron.custom")}</option>
+             {props.blueprints.map((b) => (
+-              <option key={b.skill} value={b.skill}>
+-                {b.skill}
++              <option key={b.key} value={b.key}>
++                {b.title}
+               </option>
+             ))}
+           </select>
+diff --git a/apps/desktop/src/app/cron/CronOverlay.test.tsx b/apps/desktop/src/app/cron/CronOverlay.test.tsx
+index dc32987..92ed141 100644
+--- a/apps/desktop/src/app/cron/CronOverlay.test.tsx
++++ b/apps/desktop/src/app/cron/CronOverlay.test.tsx
+@@ -36,6 +36,18 @@ function backend() {
+   api.route("GET", "/api/cron/blueprints", {
+     blueprints: [
+       {
++        key: "evening-wrap",
++        title: "Evening wrap-up",
++        source: "catalogue",
++        skill: null,
++        description: "Ends the day",
++        schedule: "0 18 * * 1-5",
++        prompt: "Wrap up my day.",
++      },
++      {
++        key: "weekly-review:blueprint",
++        title: "weekly-review",
++        source: "skill",
+         skill: "weekly-review",
+         description: "Review the week",
+         schedule: "0 9 * * 1",
+@@ -72,7 +84,7 @@ describe("CronOverlay", () => {
+     await screen.findByText("standup notes");
+     fireEvent.click(screen.getAllByRole("button", { name: "New cron" })[0] as HTMLElement);
+     fireEvent.change(await screen.findByLabelText("Start from"), {
+-      target: { value: "weekly-review" },
++      target: { value: "weekly-review:blueprint" },
+     });
+     // the blueprint's expression is a preset: the summary names it
+     expect(screen.getByText("Every Monday at 9:00 AM")).toBeTruthy();
+@@ -88,6 +100,26 @@ describe("CronOverlay", () => {
+     expect(((created?.body ?? {}) as Record<string, unknown>).model).toBeUndefined();
+   });
+ 
++  it("a starter blueprint prefills its title and prompt and names no skill", async () => {
++    const api = backend();
++    render(<CronOverlay api={api} profile="work" onClose={() => {}} />);
++    fireEvent.click(await screen.findByText("Evening wrap-up"));
++    expect(((await screen.findByLabelText("Start from")) as HTMLSelectElement).value).toBe(
++      "evening-wrap",
++    );
++    fireEvent.click(screen.getByRole("button", { name: "Create cron" }));
++    await waitFor(() =>
++      expect(api.calls.some((c) => c.method === "POST" && c.path === "/api/cron/jobs")).toBe(true),
++    );
++    const created = api.calls.find((c) => c.method === "POST" && c.path === "/api/cron/jobs");
++    expect(created?.body).toMatchObject({
++      name: "Evening wrap-up",
++      prompt: "Wrap up my day.",
++      schedule: "0 18 * * 1-5",
++    });
++    expect(((created?.body ?? {}) as Record<string, unknown>).skills).toBeUndefined();
++  });
++
+   it("a blueprint row opens the dialog pre-set, and delivery targets become checkboxes", async () => {
+     const api = backend();
+     api.route("GET", "/api/cron/delivery-targets", {
+@@ -100,7 +132,7 @@ describe("CronOverlay", () => {
+     render(<CronOverlay api={api} profile="work" onClose={() => {}} />);
+     fireEvent.click(await screen.findByText("weekly-review"));
+     expect(((await screen.findByLabelText("Start from")) as HTMLSelectElement).value).toBe(
+-      "weekly-review",
++      "weekly-review:blueprint",
+     );
+     await waitFor(() => expect(screen.getByLabelText("This computer")).toBeTruthy());
+     expect((screen.getByLabelText(/Slack/) as HTMLInputElement).disabled).toBe(true);
+diff --git a/apps/desktop/src/app/cron/CronOverlay.tsx b/apps/desktop/src/app/cron/CronOverlay.tsx
+index 33c54cf..fbb1b73 100644
+--- a/apps/desktop/src/app/cron/CronOverlay.tsx
++++ b/apps/desktop/src/app/cron/CronOverlay.tsx
+@@ -1,7 +1,8 @@
+ // Scheduled jobs (P24-27): the P14 cron jobs of this profile, or of every profile at once
+ // ("All profiles": one `GET /api/cron/jobs` per profile, each row tagged with its owner). Every
+ // action — pause, resume, run now, edit, delete — goes to the profile that owns the job, never to
+-// the window's own. New jobs start blank or from a blueprint (a skill that suggests a schedule).
++// the window's own. New jobs start blank or from a blueprint (a starter one or a skill's
++// suggestion, W55-F2-1).
+ // The last run's time, status and (redacted) error are the run history the REST view carries.
+ // W52-l look: an overlay panel (list + detail) and a 512px dialog for new / edited jobs; the
+ // "All profiles" switch stays (ours, W52-l-5) as a small checkbox under the search.
+@@ -49,9 +50,15 @@ export interface OwnedJob extends CronJob {
+   profile: string;
+ }
+ 
++/** A suggested job (`GET /api/cron/blueprints`): starters first (no skill), then the skills'. */
+ export interface Blueprint {
+-  skill: string;
++  /** Unique in the list. */
++  key: string;
++  title: string;
++  source: "catalogue" | "skill";
++  skill: string | null;
+   description: string;
++  /** Prefilled from the slot defaults (null when a time has no default). */
+   schedule: string | null;
+   prompt: string | null;
+ }
+@@ -230,7 +237,7 @@ export function CronOverlay(props: {
+               <h3 className="cron-plans-label">{t("cron.blueprints")}</h3>
+               <ul>
+                 {plans.map((plan) => (
+-                  <li key={plan.skill}>
++                  <li key={plan.key}>
+                     <button
+                       type="button"
+                       className="cron-plan"
+@@ -238,7 +245,7 @@ export function CronOverlay(props: {
+                       onClick={() => setDialog({ kind: "new", blueprint: plan })}
+                     >
+                       <Rocket aria-hidden="true" size={12} />
+-                      <span>{plan.skill}</span>
++                      <span>{plan.title}</span>
+                     </button>
+                   </li>
+                 ))}
+diff --git a/apps/desktop/src/app/profiles/ProfilesOverlay.test.tsx b/apps/desktop/src/app/profiles/ProfilesOverlay.test.tsx
+index f39d26f..ccaa694 100644
+--- a/apps/desktop/src/app/profiles/ProfilesOverlay.test.tsx
++++ b/apps/desktop/src/app/profiles/ProfilesOverlay.test.tsx
+@@ -9,7 +9,7 @@ function backend() {
+   api.route("GET", "/api/profiles", {
+     profiles: [
+       { name: "default", is_default: true },
+-      { name: "coder", is_default: false, has_persona: false },
++      { name: "coder", is_default: false, has_persona: false, skill_count: 7 },
+     ],
+   });
+   api.route("GET", "/api/profiles/coder/persona", { content: "", exists: false });
+@@ -53,6 +53,14 @@ function changes(): ProfileChanges & { runs: string[] } {
+ }
+ 
+ describe("ProfilesOverlay", () => {
++  it("the detail shows the profile's turned-on skill count from the list", async () => {
++    render(<ProfilesOverlay api={backend()} onClose={() => {}} changes={changes()} />);
++    await selectCoder();
++    const detail = document.querySelector("[data-detail='coder']") as HTMLElement;
++    const rows = [...detail.querySelectorAll(".kit-meta-row")].map((r) => r.textContent);
++    expect(rows).toContain("Skills7");
++  });
++
+   it("export sends no key material and says the archive has none", async () => {
+     const api = backend();
+     render(<ProfilesOverlay api={api} onClose={() => {}} changes={changes()} />);
+diff --git a/apps/desktop/src/app/profiles/ProfilesOverlay.tsx b/apps/desktop/src/app/profiles/ProfilesOverlay.tsx
+index 76ce7df..61b3375 100644
+--- a/apps/desktop/src/app/profiles/ProfilesOverlay.tsx
++++ b/apps/desktop/src/app/profiles/ProfilesOverlay.tsx
+@@ -35,6 +35,8 @@ interface ProfileRow {
+   model?: string | null;
+   provider?: string | null;
+   has_persona?: boolean;
++  /** Skills the profile has turned on; null when its settings cannot be read (W55-F2-2). */
++  skill_count?: number | null;
+ }
+ 
+ /** What rename/delete need from the switcher (the real one, or a test fake). */
+@@ -390,7 +392,10 @@ export function ProfilesOverlay(props: {
+                           "—"
+                         ),
+                       ],
+-                      [t("prof.skills"), "—"],
++                      [
++                        t("prof.skills"),
++                        typeof row.skill_count === "number" ? String(row.skill_count) : "—",
++                      ],
+                     ]}
+                   />
+                   <PersonaEditor api={api} name={row.name} />
+diff --git a/apps/web/src/lib/api.ts b/apps/web/src/lib/api.ts
+index 7b19bb3..dbec996 100644
+--- a/apps/web/src/lib/api.ts
++++ b/apps/web/src/lib/api.ts
+@@ -33,6 +33,7 @@ import type {
+   LogLevel,
+   LogsResponse,
+   LogTail,
++  McpCatalogResponse,
+   McpServerCreate,
+   McpServersResponse,
+   McpTestResult,
+@@ -837,6 +838,7 @@ export const api = {
+ 
+   mcp: {
+     servers: () => request<McpServersResponse>("/api/mcp/servers"),
++    catalog: () => request<McpCatalogResponse>("/api/mcp/catalog"),
+     add: (body: McpServerCreate, profile?: string) =>
+       request<OkResponse>(forProfile("/api/mcp/servers", profile), { json: body }),
+     test: (name: string) =>
+diff --git a/apps/web/src/lib/restTypes.ts b/apps/web/src/lib/restTypes.ts
+index c940272..eb0b290 100644
+--- a/apps/web/src/lib/restTypes.ts
++++ b/apps/web/src/lib/restTypes.ts
+@@ -13,6 +13,8 @@ export interface ProfileSummary {
+   provider?: string | null;
+   description?: string | null;
+   has_persona?: boolean;
++  /** Skills this profile has turned on (null when its settings or skills cannot be read). */
++  skill_count?: number | null;
+ }
+ 
+ export interface ProfilesResponse {
+@@ -673,12 +675,34 @@ export interface CronJobInput {
+   skills?: string[];
+ }
+ 
+-/** A suggested job carried by a skill's front matter (`GET /api/cron/blueprints`). */
++/** One slot of a blueprint (`fields` of a `CronBlueprint`): the human part of the job. */
++export interface CronBlueprintField {
++  name: string;
++  kind: "time" | "weekdays" | "choice" | "interval" | "text";
++  label: string;
++  default: string | null;
++  optional: boolean;
++  help: string;
++  options?: string[];
++  min?: number;
++  max?: number;
++}
++
++/**
++ * A suggested job (`GET /api/cron/blueprints`): the starter catalogue (`source: "catalogue"`,
++ * no skill) then the skills' blueprints. `schedule` and `prompt` are prefilled from the slot
++ * defaults; a slot with no default stays `{name}` in the prompt for the person to fill.
++ */
+ export interface CronBlueprint {
+-  skill: string;
++  /** Unique in the list. */
++  key: string;
++  title: string;
++  source: "catalogue" | "skill";
++  skill: string | null;
+   description: string;
+   schedule: string | null;
+   prompt: string | null;
++  fields: CronBlueprintField[];
+ }
+ 
+ export interface DeliveryTarget {
+@@ -772,6 +796,22 @@ export interface McpServersResponse {
+   servers: McpServer[];
+ }
+ 
++/** One server preset (`GET /api/mcp/catalog`): the entry `indus mcp add --preset` writes. */
++export interface McpCatalogEntry {
++  name: string;
++  description: string;
++  transport: McpTransport;
++  command: string | null;
++  args: string[];
++  url: string | null;
++  /** This profile has a server of that name already. */
++  installed: boolean;
++}
++
++export interface McpCatalogResponse {
++  entries: McpCatalogEntry[];
++}
++
+ /** Body of an add: a stdio server gives `command` (+ args, env), an HTTP server gives `url`. */
+ export interface McpServerCreate {
+   name: string;
+diff --git a/apps/web/src/pages/CronPage.test.tsx b/apps/web/src/pages/CronPage.test.tsx
+index 4eb16ef..7b1be3d 100644
+--- a/apps/web/src/pages/CronPage.test.tsx
++++ b/apps/web/src/pages/CronPage.test.tsx
+@@ -275,15 +275,32 @@ describe("cron page", () => {
+   it("prefills the job panel from a blueprint", async () => {
+     mock.state.cronBlueprints = [
+       {
++        key: "weekly-review",
++        title: "Weekly review",
++        source: "catalogue",
++        skill: null,
++        description: "Looks back over the week",
++        schedule: "30 16 * * 5",
++        prompt: "Review the week",
++        fields: [],
++      },
++      {
++        key: "inbox-digest:blueprint",
++        title: "inbox-digest",
++        source: "skill",
+         skill: "inbox-digest",
+         description: "Sum up mail",
+         schedule: "daily at 08:00",
+         prompt: "Sum up my mail",
++        fields: [],
+       },
+     ];
+     renderPage(<CronPage />, "/cron");
+     fireEvent.click(await screen.findByRole("button", { name: "Blueprints" }));
+-    const card = within(await screen.findByTestId("blueprint-inbox-digest"));
++    const starter = within(await screen.findByTestId("blueprint-weekly-review"));
++    expect(starter.getByText("Weekly review")).toBeTruthy();
++    expect(starter.getByText("Starter")).toBeTruthy();
++    const card = within(await screen.findByTestId("blueprint-inbox-digest:blueprint"));
+     fireEvent.click(card.getByRole("button", { name: "Set up" }));
+     const dialog = within(await screen.findByRole("dialog"));
+     expect((dialog.getByLabelText("Prompt") as HTMLTextAreaElement).value).toBe("Sum up my mail");
+diff --git a/apps/web/src/pages/CronPage.tsx b/apps/web/src/pages/CronPage.tsx
+index aa7460b..430d20e 100644
+--- a/apps/web/src/pages/CronPage.tsx
++++ b/apps/web/src/pages/CronPage.tsx
+@@ -269,10 +269,10 @@ export function CronPage() {
+         <Blueprints
+           onSetUp={(blueprint) =>
+             create({
+-              name: blueprint.skill,
++              name: blueprint.title,
+               prompt: blueprint.prompt ?? "",
+               ...(blueprint.schedule ? { schedule: blueprint.schedule } : {}),
+-              skills: [blueprint.skill],
++              skills: blueprint.skill ? [blueprint.skill] : [],
+             })
+           }
+         />
+diff --git a/apps/web/src/pages/McpPage.test.tsx b/apps/web/src/pages/McpPage.test.tsx
+index c789526..9f1562a 100644
+--- a/apps/web/src/pages/McpPage.test.tsx
++++ b/apps/web/src/pages/McpPage.test.tsx
+@@ -62,6 +62,30 @@ describe("mcp page", () => {
+     expect(screen.getByText("Catalog (0)")).toBeTruthy();
+   });
+ 
++  it("lists the catalog presets and installs one through the add route", async () => {
++    mock.state.mcpServers = [];
++    mock.state.mcpCatalog = [
++      {
++        name: "git",
++        description: "Work in a git repository.",
++        transport: "stdio",
++        command: "uvx",
++        args: ["mcp-server-git"],
++        url: null,
++      },
++    ];
++    renderPage(<McpPage />, "/mcp");
++    const row = within(await screen.findByTestId("mcp-catalog-git"));
++    expect(screen.getByText("Catalog (1)")).toBeTruthy();
++    expect(row.getByText("uvx mcp-server-git")).toBeTruthy();
++    fireEvent.click(row.getByRole("button", { name: "Install" }));
++    await waitFor(() => expect(row.getByRole("button", { name: "Installed" })).toBeTruthy());
++    expect(mock.state.mcpServers.map((s) => [s.name, s.command, s.args])).toEqual([
++      ["git", "uvx", ["mcp-server-git"]],
++    ]);
++    expect(await screen.findByTestId("mcp-git")).toBeTruthy();
++  });
++
+   it("renders the tool list from a test", async () => {
+     renderPage(<McpPage />, "/mcp");
+     const row = within(await screen.findByTestId("mcp-files"));
+diff --git a/apps/web/src/pages/McpPage.tsx b/apps/web/src/pages/McpPage.tsx
+index 07bd95a..f54ce44 100644
+--- a/apps/web/src/pages/McpPage.tsx
++++ b/apps/web/src/pages/McpPage.tsx
+@@ -1,13 +1,19 @@
+ // MCP (P18-22, look W52-c): configured MCP servers and a catalogue section. Add one (HTTP URL or a
+ // stdio command) from the header, test it (connects, lists its tools, disconnects), switch it on or
+-// off, or remove it. Env values arrive redacted. The catalogue has no backend yet: it shows an empty
+-// section that "Browse catalog" scrolls to.
++// off, or remove it. Env values arrive redacted. The catalogue (W55-F2-3) lists the server presets
++// `indus mcp add --preset` knows (`GET /api/mcp/catalog`); Install adds one through the normal add
++// route. "Browse catalog" scrolls to it.
+ 
+ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+ import { LoaderCircle, Package, Power, Server, Trash2, Zap } from "lucide-react";
+ import { useRef, useState } from "react";
+ import { api } from "../lib/api.ts";
+-import type { McpServer, McpServersResponse, McpTestResult } from "../lib/restTypes.ts";
++import type {
++  McpCatalogEntry,
++  McpServer,
++  McpServersResponse,
++  McpTestResult,
++} from "../lib/restTypes.ts";
+ import { HeaderActions } from "../shell/PageHeader.tsx";
+ import { errorText, useToast } from "../shell/Toasts.tsx";
+ import {
+@@ -129,6 +135,52 @@ function ServerCard({
+   );
+ }
+ 
++function CatalogRow({ entry, onAdded }: { entry: McpCatalogEntry; onAdded: () => void }) {
++  const toast = useToast();
++  const client = useQueryClient();
++  const install = useMutation({
++    mutationFn: () =>
++      api.mcp.add(
++        entry.url
++          ? { name: entry.name, url: entry.url }
++          : { name: entry.name, command: entry.command ?? "", args: entry.args },
++      ),
++    onSuccess: () => {
++      toast.show(`${entry.name} added.`, "success");
++      void client.invalidateQueries({ queryKey: ["mcp"] });
++      onAdded();
++    },
++    onError: (error) => toast.show(errorText(error), "error"),
++  });
++  const target = entry.url ?? [entry.command, ...entry.args].join(" ");
++  return (
++    <li
++      className="flex items-start gap-3 border border-line px-4 py-3.5"
++      data-testid={`mcp-catalog-${entry.name}`}
++    >
++      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
++        <div className="flex flex-wrap items-center gap-2">
++          <span className="text-[0.875rem] font-medium text-ink">{entry.name}</span>
++          <Badge tone={entry.transport === "http" ? "ok" : "warn"}>{entry.transport}</Badge>
++        </div>
++        {entry.description ? (
++          <p className="m-0 text-[0.8125rem] text-ink-muted">{entry.description}</p>
++        ) : null}
++        <code className="type-data min-w-0 truncate text-[0.75rem] text-ink-muted">{target}</code>
++      </div>
++      <Button
++        tone={entry.installed ? "ghost" : "primary"}
++        size="sm"
++        className="shrink-0"
++        disabled={entry.installed || install.isPending}
++        onClick={() => install.mutate()}
++      >
++        {entry.installed ? "Installed" : install.isPending ? "Installing…" : "Install"}
++      </Button>
++    </li>
++  );
++}
++
+ export function McpPage() {
+   const toast = useToast();
+   const client = useQueryClient();
+@@ -137,6 +189,7 @@ export function McpPage() {
+   const [removing, setRemoving] = useState<string | null>(null);
+   const [restartNote, setRestartNote] = useState(false);
+   const servers = useQuery({ queryKey: ["mcp", "servers"], queryFn: () => api.mcp.servers() });
++  const presets = useQuery({ queryKey: ["mcp", "catalog"], queryFn: () => api.mcp.catalog() });
+   const remove = useMutation({
+     mutationFn: (name: string) => api.mcp.remove(name),
+     onSuccess: (_reply, name) => {
+@@ -147,6 +200,7 @@ export function McpPage() {
+     onError: (error) => toast.show(errorText(error), "error"),
+   });
+   const list = servers.data?.servers ?? [];
++  const entries = presets.data?.entries ?? [];
+   const browse = () => catalog.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+ 
+   return (
+@@ -197,14 +251,29 @@ export function McpPage() {
+ 
+       <section ref={catalog} aria-label="Catalog" className="flex scroll-mt-4 flex-col gap-3">
+         <div className="flex flex-col gap-2">
+-          <SectionHeading icon={Package}>Catalog (0)</SectionHeading>
++          <SectionHeading icon={Package}>Catalog ({entries.length})</SectionHeading>
+           <p className="m-0 text-[0.75rem] text-ink-muted">
+-            Reviewed servers you can add in one step will be listed here.
++            Common servers you can add in one step. Each starts on the dashboard's machine with the
++            command shown.
+           </p>
+         </div>
+-        <Card className="py-6 text-center">
+-          <p className="m-0 text-[0.8125rem] text-ink-muted">No catalog entries available.</p>
+-        </Card>
++        {presets.isPending ? (
++          <div className="flex justify-center py-6">
++            <Loading />
++          </div>
++        ) : presets.error ? (
++          <ErrorState message={errorText(presets.error)} onRetry={() => void presets.refetch()} />
++        ) : entries.length === 0 ? (
++          <Card className="py-6 text-center">
++            <p className="m-0 text-[0.8125rem] text-ink-muted">No catalog entries available.</p>
++          </Card>
++        ) : (
++          <ul className="m-0 flex list-none flex-col gap-3 p-0" aria-label="Catalog entries">
++            {entries.map((entry) => (
++              <CatalogRow key={entry.name} entry={entry} onAdded={() => setRestartNote(true)} />
++            ))}
++          </ul>
++        )}
+       </section>
+ 
+       <AddServerModal open={adding} onClose={() => setAdding(false)} />
+diff --git a/apps/web/src/pages/cron/Blueprints.tsx b/apps/web/src/pages/cron/Blueprints.tsx
+index 3ebc8a5..e8e52e1 100644
+--- a/apps/web/src/pages/cron/Blueprints.tsx
++++ b/apps/web/src/pages/cron/Blueprints.tsx
+@@ -1,5 +1,6 @@
+-// The Blueprints tab of Cron (W52-c): jobs that installed skills suggest in their front matter.
+-// "Set up" opens the job panel prefilled with the suggestion; nothing is scheduled until Create.
++// The Blueprints tab of Cron (W52-c): the starter blueprints, then the jobs installed skills
++// suggest in their front matter (W55-F2-1). "Set up" opens the job panel prefilled with the
++// suggestion; nothing is scheduled until Create.
+ 
+ import { useQuery } from "@tanstack/react-query";
+ import { WandSparkles } from "lucide-react";
+@@ -38,14 +39,14 @@ export function Blueprints({ onSetUp }: { onSetUp: (blueprint: CronBlueprint) =>
+     <ul aria-label="Blueprints" className="m-0 grid list-none grid-cols-1 gap-3 p-0 lg:grid-cols-2">
+       {list.map((blueprint) => (
+         <li
+-          key={blueprint.skill}
+-          data-testid={`blueprint-${blueprint.skill}`}
++          key={blueprint.key}
++          data-testid={`blueprint-${blueprint.key}`}
+           className="flex items-start gap-3 border border-line p-4"
+         >
+           <div className="flex min-w-0 flex-1 flex-col">
+             <h3 className="type-serif m-0 flex items-center gap-2 text-[0.9375rem] font-normal text-ink">
+               <WandSparkles aria-hidden="true" className="size-4 shrink-0 text-ink-muted" />
+-              {blueprint.skill}
++              {blueprint.title}
+             </h3>
+             {blueprint.description ? (
+               <p className="type-serif m-0 mt-1.5 text-[0.8125rem] text-ink-muted">
+@@ -53,7 +54,7 @@ export function Blueprints({ onSetUp }: { onSetUp: (blueprint: CronBlueprint) =>
+               </p>
+             ) : null}
+             <div className="mt-2 flex flex-wrap gap-1">
+-              <Badge tone="secondary">{blueprint.skill}</Badge>
++              <Badge tone="secondary">{blueprint.skill ?? "Starter"}</Badge>
+               {blueprint.schedule ? <Badge tone="secondary">{blueprint.schedule}</Badge> : null}
+             </div>
+           </div>
+diff --git a/apps/web/src/test/routes.generated.ts b/apps/web/src/test/routes.generated.ts
+index 847758e..a63b237 100644
+--- a/apps/web/src/test/routes.generated.ts
++++ b/apps/web/src/test/routes.generated.ts
+@@ -54,6 +54,7 @@ export const GENERATED_ROUTES: readonly GeneratedRoute[] = [
+   { method: "GET", path: "/api/learning/graph", scoped: true },
+   { method: "DELETE", path: "/api/learning/nodes/{node_id}", scoped: true },
+   { method: "GET", path: "/api/logs", scoped: true },
++  { method: "GET", path: "/api/mcp/catalog", scoped: true },
+   { method: "GET", path: "/api/mcp/oauth/callback", scoped: false },
+   { method: "DELETE", path: "/api/mcp/oauth/flows/{flow_id}", scoped: true },
+   { method: "GET", path: "/api/mcp/oauth/flows/{flow_id}", scoped: true },
+diff --git a/apps/web/src/testing/mockApi.ts b/apps/web/src/testing/mockApi.ts
+index 05fb968..851c0f0 100644
+--- a/apps/web/src/testing/mockApi.ts
++++ b/apps/web/src/testing/mockApi.ts
+@@ -24,6 +24,7 @@ import type {
+   LogFile,
+   LoginStarted,
+   LoginStatus,
++  McpCatalogEntry,
+   McpServer,
+   McpServerCreate,
+   McpTool,
+@@ -83,6 +84,8 @@ export interface MockState {
+   hub: HubResult[];
+   plugins: PluginInfo[];
+   mcpServers: McpServer[];
++  /** The server presets `GET /api/mcp/catalog` lists (`installed` derived from `mcpServers`). */
++  mcpCatalog: Omit<McpCatalogEntry, "installed">[];
+   /** Server name → tools its test lists, or an error string. */
+   mcpTools: Record<string, McpTool[] | string>;
+   /** Profile name → PERSONA.md text. */
+@@ -268,6 +271,7 @@ export function defaultMockState(): MockState {
+     hub: [],
+     plugins: [],
+     mcpServers: [],
++    mcpCatalog: [],
+     mcpTools: {},
+     personas: {},
+     status: {
+@@ -852,6 +856,17 @@ function routes(state: MockState): Array<[string, RegExp, Handler]> {
+     ],
+ 
+     ["GET", /^\/api\/mcp\/servers$/, () => ok({ servers: state.mcpServers })],
++    [
++      "GET",
++      /^\/api\/mcp\/catalog$/,
++      () =>
++        ok({
++          entries: state.mcpCatalog.map((entry) => ({
++            ...entry,
++            installed: findServer(entry.name) !== undefined,
++          })),
++        }),
++    ],
+     [
+       "POST",
+       /^\/api\/mcp\/servers$/,
+diff --git a/docs/notes/ui-parity/w55-f2-backend-data.md b/docs/notes/ui-parity/w55-f2-backend-data.md
+new file mode 100644
+index 0000000..0401340
+--- /dev/null
++++ b/docs/notes/ui-parity/w55-f2-backend-data.md
+@@ -0,0 +1,55 @@
++# Task: Data the pages showed empty although the backend held it (W55-F2) Phase: ui-parity Owner: builder w55f2
++
++Status: Built (2026-10-25, wave 55 builder F2, base main a06a405). Uncommitted, for the integrator.
++
++Read: the wave 55 and wave 54 briefs, `.agents/wip/w54/README.md` (follow-ups), the wave 54 gap list
++(web cron-blueprints, mcp, mcp-catalog; desktop cron, profiles, mcp) and our own sources:
++`src/indus/cron/blueprints.py`, `src/indus/web/routes/{cron,profiles,mcp}.py`,
++`src/indus/cli/commands/mcp.py`, `src/indus/learning/skills/{resolver.py,hub/}`,
++`src/indus/plugins/packs.py`. Reference source: not opened (the gap list names the missing data).
++Evidence ids: none.
++
++What it does (own words): three pages were empty because a route did not pass on data the backend
++already had. Each one is now served by the route that owns it and shown by both clients.
++
++- Cron blueprints. `GET /api/cron/blueprints` listed only skills whose front matter carries a
++  plain `blueprint` block. It now lists `cron.blueprints.list_blueprints` first (the four starter
++  blueprints, then the skills' slotted blueprints), each prefilled from its slot defaults by the
++  new `blueprints.prefill` (a slot with no default stays `{name}` in the prompt for the person to
++  fill; the schedule is null when a time slot has no default), with the slots as `fields`. The
++  plain front-matter blocks follow as before, except for a skill that already has a slotted
++  blueprint. A skill turned off in settings offers neither kind (the module's own list reads the
++  skill files without the settings, so the route filters it). Every row now carries `key` (unique), `title`, `source` and a nullable `skill`. Web
++  Cron › Blueprints and the desktop cron list key and label rows by `key` / `title`; a starter
++  blueprint sets up a job with its title as the name and no skill.
++- Profile skill count. `GET /api/profiles` rows carry `skill_count`: the skills that profile has
++  turned on, counted the way `/api/skills` lists them (loadable, not disabled, plugin skills
++  aside), through the skills catalogue whose parse is cached per file. Null when the profile's
++  settings cannot be read. Desktop Profiles shows it in place of "—".
++- MCP catalogue. The backend has no hosted MCP or connector catalogue: the skills hub sources
++  (official, GitHub, URL, ClawHub, LobeHub, browse.sh) serve skills only, and plugin packs say a
++  bare name "needs a plugin catalogue" that does not exist. What it does have is the preset list
++  of `indus mcp add --preset` (filesystem, memory, fetch, git). That list moved from the CLI into
++  `indus.mcp.presets` (the web layer may not import the CLI) with a one-line description each,
++  and `GET /api/mcp/catalog` serves it with `installed` per profile. Web MCP › Catalog lists the
++  entries with Install (the normal `POST /api/mcp/servers`); the desktop Connectors tab adds a
++  Catalog group of the presets not added yet, with an Add button, and no longer shows its empty
++  state while the catalogue has entries.
++
++Decisions: W55-F2-1 the blueprint route serves the starter catalogue and the slotted skill
++blueprints first, prefilled from defaults, and keeps the plain front-matter rows (one row per
++skill); W55-F2-2 `skill_count` counts what `/api/skills` lists as enabled, null on an unreadable
++profile; W55-F2-3 the only catalogue our backend has is the MCP preset list, served as
++`/api/mcp/catalog` (moved to `indus.mcp.presets`), no hosted catalogue invented.
++
++Follow-ups: a hosted MCP / connector catalogue needs a source (a registry client in `indus.mcp`
++with its own trust rules, cache and offline answer) before the catalogue can grow past the four
++presets; the web and desktop job forms could render a blueprint's `fields` instead of the
++prefilled text; the web Profiles card still counts skills with one `/api/skills` call per profile
++and could read `skill_count` instead.
++
++Compare checklist:
++- [x] Written from our own sources; no reference code, CSS or assets.
++- [x] Only data our backend already holds is served (no invented feature).
++- [x] Python: ruff, pyright, import layers, targeted and full pytest.
++- [x] Clients: biome, tsc, vitest for the touched projects.
+diff --git a/src/indus/cli/commands/mcp.py b/src/indus/cli/commands/mcp.py
+index 3784903..15843ab 100644
+--- a/src/indus/cli/commands/mcp.py
++++ b/src/indus/cli/commands/mcp.py
+@@ -51,6 +51,8 @@ from indus.mcp.connect import (
+     proxy_for_url,
+ )
+ from indus.mcp.naming import NameFilter
++from indus.mcp.presets import PRESETS
++from indus.mcp.presets import entry as preset_entry
+ from indus.providers.auth import browser
+ 
+ __all__ = [
+@@ -63,16 +65,6 @@ __all__ = [
+     "status_rows",
+ ]
+ 
+-PRESETS: Mapping[str, Mapping[str, Any]] = {
+-    "filesystem": {
+-        "command": "npx",
+-        "args": ["-y", "@modelcontextprotocol/server-filesystem", "${workspaceFolder}"],
+-    },
+-    "memory": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-memory"]},
+-    "fetch": {"command": "uvx", "args": ["mcp-server-fetch"]},
+-    "git": {"command": "uvx", "args": ["mcp-server-git"]},
+-}
+-"""Common server shapes for ``add --preset`` (ours; names only, the owner may extend)."""
+ 
+ BODY_CHARS = 200
+ TRANSPORT_WIDTH = 34
+@@ -347,9 +339,7 @@ def _entry_from_flags(
+         raise click.UsageError("give either --command or --url, not both")
+     entry: dict[str, Any] = {}
+     if preset is not None and not command and not url:
+-        entry.update(
+-            {k: (list(v) if isinstance(v, list) else v) for k, v in PRESETS[preset].items()}
+-        )
++        entry.update(preset_entry(preset))
+     if command:
+         entry["command"] = command
+         if args:
+diff --git a/src/indus/cron/blueprints.py b/src/indus/cron/blueprints.py
+index 443fc81..9e45f8a 100644
+--- a/src/indus/cron/blueprints.py
++++ b/src/indus/cron/blueprints.py
+@@ -77,6 +77,7 @@ __all__ = [
+     "handle_blueprint",
+     "list_blueprints",
+     "match_blueprint",
++    "prefill",
+     "seed",
+     "skill_blueprints",
+ ]
+@@ -356,6 +357,25 @@ def fill(bp: Blueprint, given: Mapping[str, object] | None = None) -> dict[str,
+     }
+ 
+ 
++def prefill(bp: Blueprint) -> dict[str, str | None]:
++    """A job spec from the defaults alone, for a form a person finishes (``fill`` refuses gaps).
++
++    A slot with no default stays ``{name}`` in the prompt; ``schedule`` is ``None`` when a
++    schedule slot has no default. Nothing is checked beyond the slots' own defaults.
++    """
++    values = {
++        s.name: s.check(s.default) for s in bp.slots if s.default not in (None, "") or s.optional
++    }
++    timing = [s for s in bp.slots if s.kind in ("time", "weekdays", "interval")]
++    ready = all(values.get(s.name) for s in timing)
++    return {
++        "name": bp.title,
++        "schedule": _schedule_text(bp, values) if ready else None,
++        "prompt": _prompt_text(bp, values),
++        "deliver": bp.deliver,
++    }
++
++
+ # -- rendering ----------------------------------------------------------------------------------
+ 
+ 
+diff --git a/src/indus/mcp/presets.py b/src/indus/mcp/presets.py
+new file mode 100644
+index 0000000..9fc8be1
+--- /dev/null
++++ b/src/indus/mcp/presets.py
+@@ -0,0 +1,42 @@
++# pyright: strict
++"""Common MCP server shapes (ours): ``indus mcp add --preset`` and the dashboard's catalogue.
++
++Each preset is the ``mcp_servers.<name>`` entry it writes (``command`` and ``args``, stdio) plus a
++one-line ``description`` for a catalogue row; ``entry`` gives a fresh copy of the entry alone.
++Placeholders such as ``${workspaceFolder}`` are left for the connect to fill (``mcp.config``).
++The list is short on purpose: a server is offered here only when it needs no key to start.
++"""
++
++from __future__ import annotations
++
++from collections.abc import Mapping
++from typing import Any, cast
++
++__all__ = ["DESCRIPTIONS", "PRESETS", "entry"]
++
++PRESETS: Mapping[str, Mapping[str, Any]] = {
++    "filesystem": {
++        "command": "npx",
++        "args": ["-y", "@modelcontextprotocol/server-filesystem", "${workspaceFolder}"],
++    },
++    "memory": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-memory"]},
++    "fetch": {"command": "uvx", "args": ["mcp-server-fetch"]},
++    "git": {"command": "uvx", "args": ["mcp-server-git"]},
++}
++"""Preset name → the server entry it writes."""
++
++DESCRIPTIONS: Mapping[str, str] = {
++    "filesystem": "Read and write files in the workspace folder.",
++    "memory": "A small knowledge graph the agent keeps between sessions.",
++    "fetch": "Fetch a web page and hand it over as text.",
++    "git": "Work in a git repository: status, log, diffs, staging and commits.",
++}
++"""Preset name → one line for the catalogue."""
++
++
++def entry(name: str) -> dict[str, Any]:
++    """A fresh copy of the ``mcp_servers`` entry of preset ``name`` (``KeyError`` if none)."""
++    return {
++        k: (list(cast(list[object], v)) if isinstance(v, list) else v)
++        for k, v in PRESETS[name].items()
++    }
+diff --git a/src/indus/web/routes/cron.py b/src/indus/web/routes/cron.py
+index 545085c..1986873 100644
+--- a/src/indus/web/routes/cron.py
++++ b/src/indus/web/routes/cron.py
+@@ -43,6 +43,7 @@ from fastapi.responses import JSONResponse
+ from pydantic import BaseModel, ConfigDict, Field
+ from starlette.concurrency import run_in_threadpool
+ 
++from indus.cron import blueprints as bps
+ from indus.cron import ports, targets
+ from indus.cron import tool as checks
+ from indus.cron.errors import CronStoreBusy
+@@ -95,6 +96,8 @@ FIRE_TTL_S: Final = 300
+ FIRE_TTL_MAX_S: Final = 3600
+ FIRE_BODY_LIMIT: Final = 4096
+ _FIRE_KEY: Final = "cron.fire_key"
++PLAIN_BLUEPRINT: Final = "blueprint"
++"""Key suffix of a skill's plain ``blueprint`` block (``<skill>:blueprint``)."""
+ _FIRE_LABEL: Final = b"indus-cron-fire.v1."
+ 
+ 
+@@ -476,23 +479,62 @@ def delivery_targets(scope: ReadScope) -> dict[str, Any]:
+ 
+ @router.get("/api/cron/blueprints")
+ def blueprints(scope: ReadScope) -> dict[str, Any]:
+-    """Skills whose front matter carries a ``blueprint`` block (a suggested job)."""
++    """The suggested jobs: the starter catalogue, then the skills' (W55-F2-1).
++
++    ``cron.blueprints.list_blueprints`` gives the starter catalogue and the skills' slotted
++    blueprints, prefilled from their defaults; a skill whose front matter carries a plain
++    ``blueprint`` block (a schedule and a prompt, no slots) and has no slotted one follows as is.
++    A disabled skill offers neither. Every row has a ``key`` unique in the list.
++    """
+     catalog = load_catalog(scope.with_config(config_module.load(scope)))
++    off = {
++        name.lower()
++        for record in catalog.loadable()
++        if record.disabled
++        for name in (record.name, record.load_name)
++        if name
++    }
+     rows: list[dict[str, Any]] = []
++    slotted: set[str] = set()
++    for bp in bps.list_blueprints(scope):
++        if bp.skill and bp.skill in off:
++            continue
++        spec = bps.prefill(bp)
++        if bp.skill:
++            slotted.add(bp.skill)
++        rows.append(
++            {
++                "key": bp.key,
++                "title": bp.title,
++                "source": bp.source,
++                "skill": bp.skill,
++                "description": bp.description,
++                "schedule": spec["schedule"],
++                "prompt": spec["prompt"] or None,
++                "fields": bps.form(bp)["fields"],
++            }
++        )
+     for record in catalog.loadable():
+         if record.disabled or record.frontmatter is None:
+             continue
+         blueprint: object = record.frontmatter.indus.blueprint
+         if not isinstance(blueprint, Mapping):
+             continue
++        skill = record.load_name or record.name
++        if skill in slotted:
++            continue
+         plan: Mapping[str, Any] = blueprint  # pyright: ignore[reportUnknownVariableType]
+         schedule = plan.get("schedule")
+         rows.append(
+             {
+-                "skill": record.load_name or record.name,
++                "key": f"{skill}:{PLAIN_BLUEPRINT}",
++                "title": skill,
++                "source": "skill",
++                "skill": skill,
+                 "description": record.description,
+                 "schedule": str(schedule) if schedule else None,
+                 "prompt": str(plan.get("prompt") or "") or None,
++                "fields": [],
+             }
+         )
+     return {"blueprints": rows}
+diff --git a/src/indus/web/routes/mcp.py b/src/indus/web/routes/mcp.py
+index ff400eb..e075667 100644
+--- a/src/indus/web/routes/mcp.py
++++ b/src/indus/web/routes/mcp.py
+@@ -4,6 +4,9 @@
+   URL and sign-in kind. Env values are redacted (a ``${NAME}`` reference is shown as written; any
+   other value is masked), URLs and args pass through the redactor, header values are never
+   shown. A broken entry is listed with its problem.
++- ``GET /api/mcp/catalog``: the server presets ``indus mcp add --preset`` knows (``mcp.presets``),
++  each with the entry it would write and whether this profile has a server of that name
++  (``installed``); the page installs one with the POST below (W55-F2-3).
+ - ``POST /api/mcp/servers {name, command | url, args?, env?, auth?}``: validated as
+   ``indus mcp add`` does (P13's model; a secret-looking literal is refused: store the value on the
+   Keys page and write ``${NAME}``), a duplicate name is 409, saved through the config writer;
+@@ -37,7 +40,7 @@ from indus.foundation.clock import SystemClock
+ from indus.foundation.errors import ConfigError
+ from indus.foundation.redact import mask, redact_text
+ from indus.foundation.scope import Scope
+-from indus.mcp import oauth, osv
++from indus.mcp import oauth, osv, presets
+ from indus.mcp.config import McpServer, parse_server, stdio_launch
+ from indus.mcp.connect import Connection, ConnectOptions, first_cause
+ from indus.service import integration_offers
+@@ -53,6 +56,7 @@ router = APIRouter()
+ 
+ ROUTE_LIST: Final[tuple[tuple[str, str, bool], ...]] = (
+     ("GET", "/api/mcp/servers", True),
++    ("GET", "/api/mcp/catalog", True),
+     ("POST", "/api/mcp/servers", True),
+     ("POST", "/api/mcp/servers/{name}/test", True),
+     ("PUT", "/api/mcp/servers/{name}/enabled", True),
+@@ -162,6 +166,26 @@ def list_servers(scope: ReadScope) -> dict[str, Any]:
+     return {"servers": [server_row(name, raw[name]) for name in sorted(raw)]}
+ 
+ 
++@router.get("/api/mcp/catalog")
++def catalog(scope: ReadScope) -> dict[str, Any]:
++    configured = _servers_raw(scope)
++    rows: list[dict[str, Any]] = []
++    for name in sorted(presets.PRESETS):
++        entry = presets.entry(name)
++        rows.append(
++            {
++                "name": name,
++                "description": presets.DESCRIPTIONS.get(name, ""),
++                "transport": "http" if entry.get("url") else "stdio",
++                "command": entry.get("command"),
++                "args": list(entry.get("args") or []),
++                "url": entry.get("url"),
++                "installed": name in configured,
++            }
++        )
++    return {"entries": rows}
++
++
+ # -- add -------------------------------------------------------------------------------------------
+ 
+ 
+diff --git a/src/indus/web/routes/profiles.py b/src/indus/web/routes/profiles.py
+index 9ad6949..ca8e3e3 100644
+--- a/src/indus/web/routes/profiles.py
++++ b/src/indus/web/routes/profiles.py
+@@ -5,9 +5,11 @@ name is checked against the live profiles under the backend's root first, so a d
+ (tombstoned) or unknown profile is 404 for reads and writes alike, and no route ever creates the
+ folder of a profile that does not exist.
+ 
+-- ``GET /api/profiles``: each live profile with its model, description, whether it has a persona
+-  and its bot's forever-chat (``canonical_session: {session_id} | null``, P24-31: the same lookup
+-  as ``bots.open``, read only), plus the sticky profile (``active``) and the one this backend
++- ``GET /api/profiles``: each live profile with its model, description, whether it has a persona,
++  how many skills it has turned on (``skill_count``: what ``/api/skills`` lists as enabled; null
++  when its settings or skills cannot be read; W55-F2-2) and its bot's forever-chat
++  (``canonical_session: {session_id} | null``, P24-31: the same lookup as ``bots.open``, read
++  only), plus the sticky profile (``active``) and the one this backend
+   serves (``current``).
+ - ``POST /api/profiles {name, clone_from?, clone_all?, description?, no_skills?, alias?}``,
+   ``PATCH /api/profiles/{name} {new_name}`` and ``DELETE /api/profiles/{name}`` run the real
+@@ -59,6 +61,7 @@ from indus.foundation.profiles import (
+ )
+ from indus.foundation.redact import redact_text
+ from indus.foundation.scope import Scope
++from indus.learning.skills.resolver import load_catalog
+ from indus.service import bots_rpc
+ from indus.web.actions import ActionBusy, Say, actions_of, child_env
+ from indus.web.scope import ProfileScopes, ProfileUnknown, scopes_of
+@@ -206,6 +209,19 @@ def _write_meta(home: Path, changes: Mapping[str, Any]) -> None:
+     fsio.atomic_write_text(home / META_FILE, text, mode=0o600, preserve_mode=False)
+ 
+ 
++def _skill_count(scopes: ProfileScopes, pid: str) -> int | None:
++    """How many skills ``pid`` has on (plugin skills aside, as ``/api/skills``); None if unread."""
++    try:
++        scope = scopes.resolve(pid)
++        view = config_module.load(scope)
++        if view.error is not None:
++            return None
++        records = load_catalog(scope.with_config(view)).loadable()
++    except (ProfileUnknown, IndusError, OSError):
++        return None
++    return sum(1 for r in records if r.plugin is None and not r.disabled)
++
++
+ def _row(scopes: ProfileScopes, pid: str, sticky: str) -> dict[str, Any]:
+     home = profile_home(scopes.base.root, pid)
+     model, provider = _model_of(home)
+@@ -218,6 +234,7 @@ def _row(scopes: ProfileScopes, pid: str, sticky: str) -> dict[str, Any]:
+         "provider": provider or None,
+         "description": str(_read_meta(home).get("description") or "") or None,
+         "has_persona": (home / PERSONA_FILE).is_file(),
++        "skill_count": _skill_count(scopes, pid),
+     }
+ 
+ 
+diff --git a/tests/contract/web/test_cron_skills_routes.py b/tests/contract/web/test_cron_skills_routes.py
+index 39acae4..f40d02f 100644
+--- a/tests/contract/web/test_cron_skills_routes.py
++++ b/tests/contract/web/test_cron_skills_routes.py
+@@ -9,6 +9,7 @@ from typing import Any
+ 
+ import pytest
+ 
++from indus.cron import blueprints as bps
+ from indus.cron.ports import CronBackend
+ from indus.foundation.config import loader as config_loader
+ from indus.foundation.scope import Scope
+@@ -173,7 +174,7 @@ def test_delivery_targets_list_local_and_configured_platforms(rest: RestApp, sco
+     assert "slack" not in by_id  # never set up
+ 
+ 
+-def test_blueprints_come_from_skill_front_matter(rest: RestApp, scope: Scope) -> None:
++def test_blueprints_list_the_starter_catalogue_then_the_skills(rest: RestApp, scope: Scope) -> None:
+     _skill(
+         scope,
+         "morning-brief",
+@@ -183,14 +184,49 @@ def test_blueprints_come_from_skill_front_matter(rest: RestApp, scope: Scope) ->
+     )
+     _skill(scope, "plain", "No blueprint.")
+     rows = rest.client.get("/api/cron/blueprints").json()["blueprints"]
+-    assert rows == [
++    starters = rows[: len(bps.CATALOGUE)]
++    assert [r["key"] for r in starters] == [bp.key for bp in bps.CATALOGUE]
++    assert {r["source"] for r in starters} == {"catalogue"}
++    morning = starters[0]
++    assert morning["title"] == "Morning briefing" and morning["skill"] is None
++    assert morning["schedule"] == "0 8 * * 1-5" and "{" not in morning["prompt"]
++    assert [f["name"] for f in morning["fields"]] == ["time", "days", "topics"]
++    assert rows[len(bps.CATALOGUE) :] == [
+         {
++            "key": "morning-brief:blueprint",
++            "title": "morning-brief",
++            "source": "skill",
+             "skill": "morning-brief",
+             "description": "Daily brief.",
+             "schedule": "daily at 8am",
+             "prompt": "Write my brief.",
++            "fields": [],
+         }
+     ]
++    assert len({r["key"] for r in rows}) == len(rows)
++
++
++def test_a_skills_slotted_blueprints_replace_its_plain_block(rest: RestApp, scope: Scope) -> None:
++    _skill(
++        scope,
++        "releases",
++        "Release notes.",
++        extra="blueprint:\n  key: rollup\n  title: Release rollup\n"
++        "  schedule: '{minute} {hour} * * 1-5'\n  prompt: Summarise {repo}.\n"
++        "  slots:\n    - {name: time, kind: time, default: '09:15'}\n"
++        "    - {name: repo, kind: text}\n"
++        "metadata:\n  indus:\n    blueprint:\n      schedule: daily\n      prompt: Old.\n",
++    )
++    rows = rest.client.get("/api/cron/blueprints").json()["blueprints"]
++    skill_rows = [r for r in rows if r["source"] == "skill"]
++    assert [r["key"] for r in skill_rows] == ["releases:rollup"]
++    assert skill_rows[0]["skill"] == "releases" and skill_rows[0]["title"] == "Release rollup"
++    assert skill_rows[0]["schedule"] == "15 9 * * 1-5"
++    assert skill_rows[0]["prompt"] == "Summarise {repo}."
++    off = rest.client.post("/api/skills/toggle", json={"name": "releases", "enabled": False})
++    assert off.status_code == 200, off.text
++    rows = rest.client.get("/api/cron/blueprints").json()["blueprints"]
++    assert [r["key"] for r in rows] == [bp.key for bp in bps.CATALOGUE]  # a disabled skill: none
+ 
+ 
+ # -- the fire webhook ------------------------------------------------------------------------------
+diff --git a/tests/contract/web/test_plugins_mcp_routes.py b/tests/contract/web/test_plugins_mcp_routes.py
+index 58b631c..b45780a 100644
+--- a/tests/contract/web/test_plugins_mcp_routes.py
++++ b/tests/contract/web/test_plugins_mcp_routes.py
+@@ -247,6 +247,23 @@ def test_mcp_add_list_toggle_delete(rest: RestApp, scope: Scope) -> None:
+     assert rest.client.delete("/api/mcp/servers/fake").status_code == 404
+ 
+ 
++def test_mcp_catalog_lists_the_presets_and_installs_through_the_add_route(rest: RestApp) -> None:
++    """W55-F2-3: the catalogue is ``indus mcp add --preset``'s list; its entry adds as it reads."""
++    from indus.mcp import presets
++
++    rows = rest.client.get("/api/mcp/catalog").json()["entries"]
++    assert [r["name"] for r in rows] == sorted(presets.PRESETS)
++    assert all(r["description"] and r["transport"] == "stdio" for r in rows)
++    assert not any(r["installed"] for r in rows)
++    git = next(r for r in rows if r["name"] == "git")
++    assert {"command": git["command"], "args": git["args"]} == presets.entry("git")
++    body = {"name": "git", "command": git["command"], "args": git["args"]}
++    assert rest.client.post("/api/mcp/servers", json=body).status_code == 201
++    rows = {r["name"]: r for r in rest.client.get("/api/mcp/catalog").json()["entries"]}
++    assert rows["git"]["installed"] is True and rows["memory"]["installed"] is False
++    assert _servers(rest)["git"]["args"] == git["args"]
++
++
+ def test_mcp_add_suggests_the_jobs_waiting_for_the_server(rest: RestApp, scope: Scope) -> None:
+     """Wave 45 (D-16.981): a skill blueprint waiting for this server becomes a suggestion."""
+     from indus.cron.suggestions import SuggestionStore
+diff --git a/tests/contract/web/test_profiles_models_routes.py b/tests/contract/web/test_profiles_models_routes.py
+index 2facc65..95c7178 100644
+--- a/tests/contract/web/test_profiles_models_routes.py
++++ b/tests/contract/web/test_profiles_models_routes.py
+@@ -73,6 +73,32 @@ def test_list_names_every_live_profile(rest: RestApp) -> None:
+     assert got["active"] == "default"
+ 
+ 
++def test_the_list_counts_each_profile_s_turned_on_skills(rest: RestApp, scope: Scope) -> None:
++    """W55-F2-2: ``skill_count`` is what ``/api/skills`` lists as enabled, per profile."""
++    from indus.foundation.profiles import profile_home
++    from indus.learning.skills.resolver import clear_scan_cache
++
++    for name in ("alpha", "beta", "gamma"):
++        folder = scope.home / "skills" / name
++        folder.mkdir(parents=True)
++        (folder / "SKILL.md").write_text(
++            f"---\nname: {name}\ndescription: d\n---\n\n# {name}\n", encoding="utf-8"
++        )
++    (scope.home / "config.yaml").write_text("skills:\n  disabled: [beta]\n", encoding="utf-8")
++    clear_scan_cache()
++    config_loader.reset()
++    rows = {p["name"]: p for p in rest.client.get("/api/profiles").json()["profiles"]}
++    listed = rest.client.get("/api/skills", params={"profile": "work"}).json()["skills"]
++    assert rows["work"]["skill_count"] == sum(1 for r in listed if r["enabled"])
++    assert rows["work"]["skill_count"] >= 2
++    other = rest.client.get("/api/skills", params={"profile": "default"}).json()["skills"]
++    assert rows["default"]["skill_count"] == sum(1 for r in other if r["enabled"])
++    (profile_home(scope.root, "default") / "config.yaml").write_text("{{bad", encoding="utf-8")
++    config_loader.reset()
++    rows = {p["name"]: p for p in rest.client.get("/api/profiles").json()["profiles"]}
++    assert rows["default"]["skill_count"] is None and rows["work"]["skill_count"] is not None
++
++
+ def test_the_list_carries_each_bot_s_forever_chat(rest: RestApp, scope: Scope) -> None:
+     """P24-31 wiring (D-16.799): ``profile_rows`` on the real list — the row names the same chat
+     ``bots.open`` opens, a profile without one says null, and listing creates no store."""
+diff --git a/tests/unit/cron/test_blueprints.py b/tests/unit/cron/test_blueprints.py
+index f358683..8b4744a 100644
+--- a/tests/unit/cron/test_blueprints.py
++++ b/tests/unit/cron/test_blueprints.py
+@@ -150,6 +150,29 @@ def test_fill_refuses_out_of_schema_unknown_and_missing() -> None:
+         bps.fill(check_in, {"target": "x", "interval": "5"})  # this slot's minimum is 15
+ 
+ 
++def test_prefill_uses_the_defaults_and_leaves_gaps_for_the_person() -> None:
++    assert bps.prefill(by_key("morning-brief")) == {
++        "name": "Morning briefing",
++        "schedule": "0 8 * * 1-5",
++        "prompt": bps.fill(by_key("morning-brief"))["prompt"],
++        "deliver": "origin",
++    }
++    check_in = bps.prefill(by_key("check-in"))  # ``fill`` refuses it: no default for target
++    assert check_in["schedule"] == "every 60m"
++    assert check_in["prompt"] is not None and check_in["prompt"].startswith("Check {target}.")
++    wrap = bps.prefill(by_key("evening-wrap"))  # an optional slot with no default is blank
++    assert wrap["prompt"] is not None and "{extra}" not in wrap["prompt"]
++    untimed = bps.Blueprint(
++        key="t",
++        title="T",
++        description="",
++        schedule="{minute} {hour} * * *",
++        prompt="p",
++        slots=(bps.Slot("time", "time", "Time"),),
++    )
++    assert bps.prefill(untimed)["schedule"] is None
++
++
+ def test_every_catalogue_entry_is_valid() -> None:
+     keys = [bp.key for bp in bps.CATALOGUE]
+     assert len(keys) == len(set(keys))

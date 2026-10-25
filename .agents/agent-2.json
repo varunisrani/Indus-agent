@@ -2,10 +2,10 @@
   "agent": "AGENT_2",
   "account": "Account 2",
   "state": "ACTIVE",
-  "usage_pct": 60,
-  "remaining_pct": 40,
-  "resets_at": "2026-10-25T02:30:00+00:00",
-  "last_check": "2026-10-25T00:49:00+00:00",
-  "current_step": "Wave 53 landed (bc44020); wave 54 fixes D1/D2/W1 running",
-  "last_commit": "bc44020"
+  "usage_pct": 1,
+  "remaining_pct": 99,
+  "resets_at": "2026-10-25T07:30:00+00:00",
+  "last_check": "2026-10-25T02:40:00+00:00",
+  "current_step": "Wave 55: F1+F3 landed; F2 gate + Indus re-capture running",
+  "last_commit": "be4bf77"
 }

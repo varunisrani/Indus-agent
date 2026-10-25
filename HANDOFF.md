@@ -89,9 +89,12 @@ WAVE 54 LANDED (fixes from the side-by-side compare): W1 web `c4243ab` (D-16.127
 History, real Import dialog, mixed-case buttons reversing D-16.1208), D2 desktop settings states `473225c` (D-16.1271: real
 password-manager detection over PATH, keychain switch shows the effective store, wake word waits for the connection),
 D1 desktop chat + panes `6862338` (D-16.1272: prompt bubble CSS clash, terminal block, dots, right sidebar, xterm font).
-IN FLIGHT: wave 55 follow-ups — F1 (TUI tool rows in the web chat, session switcher live/running, why a wide Preview
-breaks security.electron), F2 (built-in cron blueprints served, profiles skills count, MCP/connector catalogue if the
-backend has one). If found PAUSED, look in `.agents/wip/w55/`. After that: re-capture Indus and send fresh PDFs.
+WAVE 55: F1 landed `f97d8f7` (D-16.1273: TUI/web tool-call tree, switcher dots, Preview 420 px — the band cluster covered
+a narrow zone's tabs, root cause of the security E2E failure), F3 landed `be4bf77` (D-16.1274: ten desktop display prefs
+made real). F2 (built-in cron blueprints served, profiles skill_count, `/api/mcp/catalog` over the 4 MCP presets) parked
+in `.agents/wip/w55/w55f2.patch`; full gate running on main + F2 in Agent 2's scratchpad (`land2`); F2's own Electron
+run saw a lifecycle E2E failure (passed alone) — must be root-caused if it repeats. Re-capture of Indus + fresh
+side-by-side PDFs running (scratchpad `compare2/`). Then: follow-ups in the w54/w55 READMEs and the new gaps list.
 Older text below (wave 52 era) is history.
 
 UI PARITY IN FLIGHT (owner 2026-10-24: "same to same UI as Hermes, every page and component, web + desktop").
