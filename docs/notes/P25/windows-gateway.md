@@ -139,3 +139,13 @@ that), and the OAuth token JSON is several KB. `foundation.secrets.KeychainBacke
 a shrink or delete removes the parts, values that fit stay one entry, and other OSes are unchanged.
 The sign-in route now logs why a save failed. Checked against the real Credential Manager (a
 4.5 KB bundle round-trips in 4 parts); tests: `tests/unit/foundation/test_keychain_parts.py`.
+
+## Follow-up: one home for the desktop app and the CLI on Windows (2026-10-25)
+
+`indus.foundation.home` and `scripts/install.ps1` default to `%LOCALAPPDATA%\indus` on Windows,
+but the desktop's `electron/paths.ts` used `~/.indus` everywhere, so the app and terminal commands
+saw different settings and sessions. `resolveIndusHome` now follows the CLI: `INDUS_HOME`, else
+`%LOCALAPPDATA%\indus` (with `INDUS_DATA_DIR_SUFFIX`) on Windows, `~/.indus` elsewhere as before.
+`legacyWindowsHome` lets main log where an earlier build's settings are when the new home has
+none; nothing is moved automatically. Keychain entries are keyed by profile id (`default`), not
+the path, so a moved home keeps its sign-ins. Tests: `apps/desktop/electron/paths.test.ts`.

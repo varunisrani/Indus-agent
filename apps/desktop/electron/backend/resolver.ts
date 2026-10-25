@@ -95,7 +95,7 @@ export interface ResolverOptions {
   argv: readonly string[];
   platform: string;
   packaged: boolean;
-  /** The Indus home (`~/.indus` or INDUS_HOME). */
+  /** The Indus home (INDUS_HOME, else `~/.indus`, or `%LOCALAPPDATA%\indus` on Windows). */
   home: string;
   /** The user's home directory (for `~/.local/bin`). */
   homeDir: string;

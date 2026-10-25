@@ -49,9 +49,10 @@ daemon by itself when it opens. What differs:
 - **First run.** With no model provider set up yet the daemon still starts, and the desktop app
   opens its provider setup; what you choose there is used from your next message on, without a
   restart.
-- **Two homes.** The desktop app keeps its settings in `%USERPROFILE%\.indus`, while `indus` in a
-  terminal defaults to `%LOCALAPPDATA%\indus`. Set `INDUS_HOME` to `%USERPROFILE%\.indus` for
-  terminal commands (such as `indus setup model`) that should change what the app uses.
+- **One home.** The desktop app and `indus` in a terminal share `%LOCALAPPDATA%\indus` (or
+  `INDUS_HOME` when set), so `indus setup model` changes what the app uses. Earlier desktop builds
+  kept settings in `%USERPROFILE%\.indus`; the app's log says so when it finds them there. Close
+  the app, move that folder to `%LOCALAPPDATA%\indus`, and start the app again.
 
 Messaging platforms (Telegram, WhatsApp and the others) remain supported in WSL2 only.
 

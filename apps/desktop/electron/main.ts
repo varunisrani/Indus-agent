@@ -63,7 +63,7 @@ import { DesktopLog } from "./log.ts";
 import { installMediaProtocol, MediaRoots, type MediaTarget } from "./mediaProtocol.ts";
 import { installPanes, type PaneElectron, type PanesHandle } from "./panesInstall.ts";
 import { installPasswordManagersIpc } from "./passwordManagers.ts";
-import { desktopPaths, resolveIndusHome, userDataOverride } from "./paths.ts";
+import { desktopPaths, legacyWindowsHome, resolveIndusHome, userDataOverride } from "./paths.ts";
 import { installDiskPlugins } from "./plugins/diskPlugins.ts";
 import { installPrefsIpc } from "./prefs.ts";
 import { type BackendPort, installProfiles } from "./profiles/routing.ts";
@@ -143,6 +143,15 @@ const log = new DesktopLog({
   file: paths.desktopLog,
   ...(dev ? { echo: (line: string) => process.stderr.write(`${line}\n`) } : {}),
 });
+{
+  const legacy = legacyWindowsHome(paths.home, process.env, os.homedir());
+  if (legacy !== null) {
+    log.write(
+      `[home] settings from an earlier build are in ${legacy}; Indus now uses ${paths.home} ` +
+        "(the CLI's home): move that folder there, or set INDUS_HOME to keep using it",
+    );
+  }
+}
 
 {
   let yaml = "";
