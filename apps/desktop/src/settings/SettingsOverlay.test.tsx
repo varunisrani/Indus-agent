@@ -232,7 +232,14 @@ describe("settings overlay", () => {
       quickEntryShortcut: "CommandOrControl+Shift+Space",
       hudSnapShortcut: "CommandOrControl+Shift+G",
       hudToggleShortcut: "CommandOrControl+Shift+H",
-      notifications: { turnComplete: true, approvals: true, sounds: true },
+      notifications: {
+        turnComplete: true,
+        approvals: true,
+        sounds: true,
+        input: true,
+        turnFailed: true,
+        plugins: true,
+      },
       keybindings: {},
       chatTextScale: 110,
       ...DISPLAY_DEFAULTS,
@@ -328,7 +335,14 @@ describe("settings-b pages (W52-j)", () => {
       quickEntryShortcut: "CommandOrControl+Shift+Space",
       hudSnapShortcut: "CommandOrControl+Shift+G",
       hudToggleShortcut: "CommandOrControl+Shift+H",
-      notifications: { turnComplete: true, approvals: true, sounds: true },
+      notifications: {
+        turnComplete: true,
+        approvals: true,
+        sounds: true,
+        input: true,
+        turnFailed: true,
+        plugins: true,
+      },
       keybindings: {},
       chatTextScale: 110,
       ...DISPLAY_DEFAULTS,
@@ -345,7 +359,7 @@ describe("settings-b pages (W52-j)", () => {
     return { set, prefs: { get: async () => state, set, onChanged: () => () => undefined } };
   }
 
-  it("the notifications master switch writes both kinds; off dims the two rows", async () => {
+  it("the notifications master switch writes every kind; off dims the five rows", async () => {
     const fake = prefsBridge();
     const bridge = { prefs: fake.prefs } as unknown as SettingsBridge;
     render(<Harness initial="view=notifications" api={backend(["default"])} bridge={bridge} />);
@@ -354,12 +368,43 @@ describe("settings-b pages (W52-j)", () => {
       fireEvent.click(screen.getByRole("switch", { name: "Enable notifications" }));
     });
     expect(fake.set).toHaveBeenLastCalledWith({
-      notifications: { turnComplete: false, approvals: false },
+      notifications: {
+        approvals: false,
+        input: false,
+        turnComplete: false,
+        turnFailed: false,
+        plugins: false,
+      },
     });
     await settle();
+    for (const name of [
+      "Approval needed",
+      "Input needed",
+      "Response ready",
+      "Turn failed",
+      "Plugin notifications",
+    ]) {
+      expect((screen.getByRole("switch", { name }) as HTMLInputElement).disabled).toBe(true);
+    }
+  });
+
+  it("each alert kind has its own switch (W59-K1-1)", async () => {
+    const fake = prefsBridge();
+    const bridge = { prefs: fake.prefs } as unknown as SettingsBridge;
+    render(<Harness initial="view=notifications" api={backend(["default"])} bridge={bridge} />);
+    await settle();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("switch", { name: "Turn failed" }));
+    });
+    expect(fake.set).toHaveBeenLastCalledWith({ notifications: { turnFailed: false } });
+    await settle();
+    // one kind off leaves the master switch on and the others live
     expect(
-      (screen.getByRole("switch", { name: "Approval needed" }) as HTMLInputElement).disabled,
+      (screen.getByRole("switch", { name: "Enable notifications" }) as HTMLInputElement).checked,
     ).toBe(true);
+    expect(
+      (screen.getByRole("switch", { name: "Input needed" }) as HTMLInputElement).disabled,
+    ).toBe(false);
   });
 
   it("the completion sound select maps to the sounds preference", async () => {

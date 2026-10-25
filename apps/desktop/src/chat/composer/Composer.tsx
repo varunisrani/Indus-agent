@@ -69,6 +69,7 @@ import {
   PromptHistory,
 } from "./completion.ts";
 import "./composerMenus.css";
+import { useKeyAction } from "../../settings/keyActions.ts";
 import {
   adoptGoneDraft,
   type DraftStore,
@@ -215,6 +216,12 @@ export function Composer(props: ComposerProps) {
     props.sessionId === null ? null : (props.inflight?.imageDraft(props.sessionId) ?? null),
   );
   const textarea = useRef<HTMLTextAreaElement>(null);
+  // the rebindable "go to the message box" key (W59-K1-2)
+  useKeyAction(["composer.focus"], () => {
+    if (textarea.current === null) return false;
+    textarea.current.focus();
+    return true;
+  });
   const listId = useId();
   const composing = useRef(false);
   /** The fresh draft's create key: kept until the daemon answers definitely. */

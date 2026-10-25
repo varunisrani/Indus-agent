@@ -25,7 +25,14 @@ describe("desktop preferences", () => {
     expect(prefs.minimizeToTray).toBe(true);
     expect(prefs.keepAwake).toBe("while-working");
     expect(prefs.chatTextScale).toBe(110);
-    expect(prefs.notifications).toEqual({ turnComplete: true, approvals: true, sounds: false });
+    expect(prefs.notifications).toEqual({
+      turnComplete: true,
+      approvals: true,
+      sounds: false,
+      input: true,
+      turnFailed: true,
+      plugins: true,
+    });
     expect(prefs.keybindings).toEqual({ "chat.new": "CommandOrControl+N" });
     expect(readPrefs([1, 2])).toEqual(DEFAULT_PREFS);
   });
@@ -71,10 +78,37 @@ describe("desktop preferences", () => {
     ).toThrow();
   });
 
+  it("alert kinds split out later (W59-K1-1) follow the switch that covered them", () => {
+    // an older file: questions were under "approvals", failed turns under "turnComplete"
+    const old = readPrefs({ notifications: { approvals: false, turnComplete: false } });
+    expect(old.notifications).toMatchObject({
+      approvals: false,
+      input: false,
+      turnComplete: false,
+      turnFailed: false,
+      plugins: true,
+    });
+    // a file that names the new kinds keeps them
+    const now = readPrefs({ notifications: { approvals: false, input: true, turnFailed: true } });
+    expect(now.notifications).toMatchObject({ approvals: false, input: true, turnFailed: true });
+    expect(DEFAULT_PREFS.notifications).toMatchObject({
+      input: true,
+      turnFailed: true,
+      plugins: true,
+    });
+  });
+
   it("a patch merges notifications and replaces the binding overrides", () => {
     const start = applyPatch(DEFAULT_PREFS, { keybindings: { a: "X" } });
     const next = applyPatch(start, { notifications: { sounds: false }, keybindings: { b: "Y" } });
-    expect(next.notifications).toEqual({ turnComplete: true, approvals: true, sounds: false });
+    expect(next.notifications).toEqual({
+      turnComplete: true,
+      approvals: true,
+      sounds: false,
+      input: true,
+      turnFailed: true,
+      plugins: true,
+    });
     expect(next.keybindings).toEqual({ b: "Y" });
     expect(DEFAULT_PREFS.notifications.sounds).toBe(true); // defaults never mutated
   });

@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { translate } from "../i18n/index.tsx";
 import { CHIME_NOTES, playChime } from "./sound.ts";
-import { requestNotice, tagSession, turnNotice, WorkTracker } from "./turnNotices.ts";
+import {
+  noticeAllowed,
+  pluginNotice,
+  requestKind,
+  requestNotice,
+  tagSession,
+  turnKind,
+  turnNotice,
+  WorkTracker,
+} from "./turnNotices.ts";
 
 describe("work tracker", () => {
   it("one item per running session; ends only with its own turn", () => {
@@ -79,5 +88,37 @@ describe("completion chime", () => {
       true,
     );
     expect(playChime(null)).toBe(false);
+  });
+});
+
+describe("notice kinds (W59-K1-1)", () => {
+  it("a reply and a failure each have their own switch; questions split from approvals", () => {
+    expect(turnKind({ type: "turn.done", reason: "completed" })).toBe("turnComplete");
+    expect(turnKind({ type: "turn.done", reason: "provider_failed" })).toBe("turnFailed");
+    expect(turnKind({ type: "turn.done", reason: "completed", failure: { reason: "quota" } })).toBe(
+      "turnFailed",
+    );
+    expect(requestKind("approval")).toBe("approvals");
+    for (const kind of ["clarify", "sudo", "secret"]) expect(requestKind(kind)).toBe("input");
+  });
+
+  it("a kind is on until the person turns it off", () => {
+    expect(noticeAllowed(null, "turnFailed")).toBe(true);
+    expect(noticeAllowed({ turnComplete: false }, "turnFailed")).toBe(true);
+    expect(noticeAllowed({ turnFailed: false }, "turnFailed")).toBe(false);
+    expect(noticeAllowed({ plugins: false, input: true }, "input")).toBe(true);
+  });
+
+  it("a plugin's message reaches the OS only while the window is in the background", () => {
+    expect(pluginNotice("Build finished", true, translate)).toBeNull();
+    expect(pluginNotice("   ", false, translate)).toBeNull();
+    expect(pluginNotice("Build finished", false, translate)).toEqual({
+      title: "Message from a plugin",
+      body: "Build finished",
+      tag: "plugin",
+      actions: [],
+    });
+    expect(pluginNotice("x".repeat(900), false, translate)?.body).toHaveLength(500);
+    expect(tagSession("plugin")).toBeNull();
   });
 });

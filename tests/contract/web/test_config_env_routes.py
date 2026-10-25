@@ -14,7 +14,7 @@ from indus.foundation.envfile import read_env_file
 from indus.foundation.envload import env_file_path
 from indus.foundation.scope import Scope
 from indus.foundation.secrets import SecretStore
-from indus.web.routes import config_env
+from indus.web.routes import config_env, config_view
 from indus.web.routes.config_view import PLACEHOLDER
 from tests.contract.web.rest_app import RestApp, build_rest_app, route_table, unscoped_writes
 
@@ -111,6 +111,23 @@ def test_references_stay_references_and_credentials_stay_hidden(
         "value": 150,
         "source": "default",
     }
+
+
+def test_keyboard_keys_and_store_choices_are_not_credentials(rest: RestApp, scope: Scope) -> None:
+    # W59-K1-6: a push-to-talk key and the secret-store choice are plain settings, shown as set
+    _config_path(scope).write_text(
+        "voice:\n  record_key: ctrl+r\nsecurity:\n  secret_store: file\n", encoding="utf-8"
+    )
+    form = rest.client.get("/api/config").json()
+    assert form["voice"]["record_key"] == "ctrl+r"
+    assert form["security"]["secret_store"] == "file"
+    assert config_view.is_secret_setting("providers.mine.api_key")
+    assert config_view.is_secret_setting("platforms.telegram.bot_token")
+    assert not config_view.is_secret_setting("voice.record_key")
+    assert not config_view.is_secret_setting("security.secret_store")
+    # only those exact names are let through: a look-alike credential name stays masked
+    assert config_view.is_secret_setting("platforms.ntfy.push_key")
+    assert config_view.is_secret_setting("auth.token_store")
 
 
 def test_unreadable_config_is_500_and_nothing_is_written(rest: RestApp, scope: Scope) -> None:

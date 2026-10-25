@@ -266,3 +266,43 @@ describe("TranscriptStore history before the connection is ready", () => {
     store.dispose();
   });
 });
+
+describe("reply actions (W59-K1-5)", () => {
+  it("a settled reply shows its stored time and copies its text", async () => {
+    const at = new Date(2026, 9, 25, 9, 41).getTime();
+    const rows = [
+      { role: "user", text: "question", row_id: 1, at: at - 60_000 },
+      { role: "assistant", text: "the answer", row_id: 2, at },
+    ] as unknown as HistoryMessage[];
+    const writes: string[] = [];
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: async (text: string) => void writes.push(text) },
+    });
+    const { view } = await show(rows);
+    const reply = view.container.querySelector(".msg-assistant") as HTMLElement;
+    const time = reply.querySelector(".msg-actions time") as HTMLTimeElement;
+    expect(time.dateTime).toBe(new Date(at).toISOString());
+    const prompt = view.container.querySelector(".msg-user time") as HTMLTimeElement;
+    expect(prompt.dateTime).toBe(new Date(at - 60_000).toISOString());
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Copy reply" }));
+    });
+    expect(writes).toEqual(["the answer"]);
+    expect(screen.getByRole("button", { name: "Copied" })).toBeTruthy();
+  });
+
+  it("a reply without a stored time still offers copy; a streaming one shows nothing", async () => {
+    const { view, source } = await show([
+      { role: "user", text: "q", row_id: 1 },
+      { role: "assistant", text: "a", row_id: 2 },
+    ]);
+    expect(view.container.querySelector(".msg-actions time")).toBeNull();
+    expect(screen.getByRole("button", { name: "Copy reply" })).toBeTruthy();
+    await act(async () => {
+      source.emit({ type: "turn.started", turn_id: "t9" });
+      source.emit({ type: "message.delta", turn_id: "t9", text: "partial" });
+    });
+    expect(screen.getAllByRole("button", { name: "Copy reply" })).toHaveLength(1);
+  });
+});

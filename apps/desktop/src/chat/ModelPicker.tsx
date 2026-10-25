@@ -29,8 +29,9 @@ import {
 import type { ChatConnection, RequestOptions } from "../gateway/connectionStore.ts";
 import { useGatewayConnection } from "../gateway/react.tsx";
 import { useT } from "../i18n/index.tsx";
+import { useKeyAction } from "../settings/keyActions.ts";
 import { Button, Chip, MenuLabel, MenuRow, MenuSeparator } from "../ui/components.tsx";
-import { EffortChip, EffortOptions } from "./EffortChip.tsx";
+import { EffortChip, EffortOptions, stepEffort } from "./EffortChip.tsx";
 import type { StorageLike } from "./inflightJournal.ts";
 import { errorMessage, errorName } from "./rpcErrors.ts";
 
@@ -519,6 +520,28 @@ export function ModelPicker(props: ModelPickerProps) {
     bumpPresets();
   };
 
+  /** The composer's effort choice: this model's preset, and the running session when there is one. */
+  const pickEffort = (value: string | null) => {
+    if (current === null) return;
+    setEffort(modelKey(current), value);
+    if (connection !== null && props.sessionId !== null && value !== null) {
+      void connection
+        .request("config.set", { key: "reasoning", value, session_id: props.sessionId })
+        .catch(() => {});
+    }
+  };
+
+  // the rebindable keys (W59-K1-2): open this picker, step the effort up or down
+  useKeyAction(["model.picker", "effort.up", "effort.down"], (id) => {
+    if (id === "model.picker") {
+      setOpen(true);
+      return true;
+    }
+    if (current === null) return false;
+    pickEffort(stepEffort(effort ?? null, id === "effort.up" ? 1 : -1));
+    return true;
+  });
+
   const onMenuKey = (event: React.KeyboardEvent) => {
     if (event.key === "Escape") {
       event.stopPropagation();
@@ -553,23 +576,7 @@ export function ModelPicker(props: ModelPickerProps) {
       >
         {current ? current.model : <LoaderCircle aria-hidden="true" size={12} className="spin" />}
       </Chip>
-      {current !== null && (
-        <EffortChip
-          effort={effort ?? null}
-          onPick={(value) => {
-            setEffort(modelKey(current), value);
-            if (connection !== null && props.sessionId !== null && value !== null) {
-              void connection
-                .request("config.set", {
-                  key: "reasoning",
-                  value,
-                  session_id: props.sessionId,
-                })
-                .catch(() => {});
-            }
-          }}
-        />
-      )}
+      {current !== null && <EffortChip effort={effort ?? null} onPick={pickEffort} />}
       {note !== null ? <span className="model-picker-note">{note}</span> : null}
       {open ? (
         <div

@@ -144,6 +144,14 @@ export const FIELD_COPY: Readonly<Record<string, FieldCopy>> = {
     description: "settingsB.field.voiceRecordKeyBody",
   },
   "voice.max_seconds": { label: "settingsB.field.voiceMaxSeconds", description: "" },
+  "voice.silence_seconds": {
+    label: "settingsB.field.voiceSilenceSeconds",
+    description: "settingsB.field.voiceSilenceSecondsBody",
+  },
+  "voice.wait_seconds": {
+    label: "settingsB.field.voiceWaitSeconds",
+    description: "settingsB.field.voiceWaitSecondsBody",
+  },
   "stt.provider": {
     label: "settingsB.field.sttProvider",
     placeholder: "settingsB.field.sttProviderPlaceholder",
@@ -153,6 +161,11 @@ export const FIELD_COPY: Readonly<Record<string, FieldCopy>> = {
     label: "settingsB.field.sttLocalModel",
     description: "settingsB.field.sttLocalModelBody",
     options: opts("tiny", "base", "small", "medium", "large-v3"),
+  },
+  "stt.local_device": {
+    label: "settingsB.field.sttLocalDevice",
+    description: "settingsB.field.sttLocalDeviceBody",
+    options: opts("auto", "cpu", "cuda"),
   },
   "stt.language": { label: "settingsB.field.sttLanguage", description: "" },
   "stt.model": { label: "settingsB.field.sttModel", description: "" },

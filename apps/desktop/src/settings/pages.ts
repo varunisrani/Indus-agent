@@ -331,14 +331,26 @@ export const VIEWS: readonly ViewDef[] = [
           "voice.silence_seconds",
           "voice.wait_seconds",
         ],
-        curated: ["voice.record_key", "voice.max_seconds"],
+        // W59-K1-4: the recording rules show up front (they were behind "More settings")
+        curated: [
+          "voice.record_key",
+          "voice.max_seconds",
+          "voice.silence_seconds",
+          "voice.wait_seconds",
+        ],
         after: "voice-wake",
       },
       {
         id: "transcription",
         label: "settings.page.voice.transcription",
         prefixes: ["stt."],
-        curated: ["stt.provider", "stt.local_model", "stt.language", "stt.model"],
+        curated: [
+          "stt.provider",
+          "stt.local_model",
+          "stt.local_device",
+          "stt.language",
+          "stt.model",
+        ],
       },
       {
         id: "speech",
@@ -400,7 +412,8 @@ export const VIEWS: readonly ViewDef[] = [
         id: "output",
         label: "settings.page.advanced.output",
         fields: ["tool_output.max_chars"],
-        also: ["checkpoints.max_snapshots"],
+        // W59-K1-3: the per-read file limit also shows here (it stays owned by Files & execution)
+        also: ["checkpoints.max_snapshots", "file_read_max_chars"],
       },
       { id: "profiles", label: "settings.page.advanced.profiles", custom: "profiles" },
     ],
@@ -980,6 +993,27 @@ export const MANIFEST: readonly ManifestRow[] = [
     page: "alerts",
     label: "settings.notify.approvalNeeded",
     keywords: ["notification", "approval", "permission", "waiting"],
+  },
+  {
+    id: "notify-input",
+    view: "notifications",
+    page: "alerts",
+    label: "settings.notify.inputNeeded",
+    keywords: ["notification", "question", "clarify", "password", "secret", "waiting"],
+  },
+  {
+    id: "notify-failed",
+    view: "notifications",
+    page: "alerts",
+    label: "settings.notify.turnFailed",
+    keywords: ["notification", "error", "failed", "failure"],
+  },
+  {
+    id: "notify-plugins",
+    view: "notifications",
+    page: "alerts",
+    label: "settings.notify.plugins",
+    keywords: ["notification", "plugin", "extension"],
   },
   {
     id: "notify-test",

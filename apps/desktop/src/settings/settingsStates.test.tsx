@@ -214,7 +214,14 @@ describe("key bindings (W54-D2-9)", () => {
       quickEntryShortcut: "",
       hudSnapShortcut: "",
       hudToggleShortcut: "",
-      notifications: { turnComplete: true, approvals: true, sounds: true },
+      notifications: {
+        turnComplete: true,
+        approvals: true,
+        sounds: true,
+        input: true,
+        turnFailed: true,
+        plugins: true,
+      },
       keybindings: {},
       chatTextScale: 100,
       ...DISPLAY_DEFAULTS,
@@ -237,5 +244,17 @@ describe("key bindings (W54-D2-9)", () => {
     ]);
     for (const row of fixed) expect(row.querySelector("button")).toBeNull();
     expect(fixed[1]?.textContent).toContain("ShiftEnter");
+    // W59-K1-2: the composer and voice actions are rebindable rows; an unset one reads "set"
+    expect(screen.getByRole("button", { name: "Open the model picker" }).textContent).toBe(
+      "CtrlShiftM",
+    );
+    expect(screen.getByRole("button", { name: "Reasoning effort up" }).textContent).toBe("set");
+    expect(screen.getByRole("button", { name: "Start or stop dictation" })).toBeTruthy();
+    const profiles = screen.getByRole("region", { name: "Profiles" });
+    expect(
+      Array.from(profiles.querySelectorAll(".sb-bind-label")).map((label) => label.textContent),
+    ).toEqual(["Switch to the default profile", "Next profile", "Previous profile"]);
+    const tabs = screen.getByRole("region", { name: "Tabs" });
+    expect(tabs.textContent).toContain("Go to tab 1–9");
   });
 });

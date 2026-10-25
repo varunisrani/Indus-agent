@@ -1,12 +1,13 @@
 // Applies the desktop preferences that change how this window looks (P20-32): the chat text
-// size, and the display choices of Settings › Appearance (W55-F3) — published to the display
+// size, the rebindable key actions (W59-K1-2), and the display choices of Settings › Appearance (W55-F3) — published to the display
 // store for the transcript, sidebar and shell, and mirrored on the root element for the rules in
 // `displayPrefs.css`. Renders nothing but the cold-start "reopen last chat" step.
 
 import { useEffect } from "react";
-import { desktopBridge } from "../app/bridge.ts";
+import { desktopBridge, launchFacts } from "../app/bridge.ts";
 import { type SettingsBridge, usePrefs } from "./context.tsx";
 import { publishDisplayPrefs } from "./displayPrefs.ts";
+import { useKeyActionDispatch } from "./keyActions.ts";
 import { ReopenLastChat } from "./ReopenLastChat.tsx";
 import "./displayPrefs.css";
 
@@ -17,6 +18,8 @@ export const BUBBLE_FILL_VAR = "--indus-bubble-fill";
 export function PrefsEffects(props: { bridge?: SettingsBridge | null }) {
   const bridge = props.bridge === undefined ? (desktopBridge() ?? null) : props.bridge;
   const { prefs } = usePrefs(bridge);
+  // the rebindable composer, voice and profile keys (W59-K1-2), under the person's own bindings
+  useKeyActionDispatch(prefs?.keybindings ?? null, launchFacts().platform);
   const scale = prefs?.chatTextScale;
   useEffect(() => {
     if (scale === undefined) return;

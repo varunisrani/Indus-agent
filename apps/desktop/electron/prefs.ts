@@ -23,7 +23,14 @@ export const DEFAULT_PREFS: DesktopPrefsValue = {
   quickEntryShortcut: "CommandOrControl+Shift+Space",
   hudSnapShortcut: "CommandOrControl+Shift+G",
   hudToggleShortcut: "CommandOrControl+Shift+H",
-  notifications: { turnComplete: true, approvals: true, sounds: true },
+  notifications: {
+    turnComplete: true,
+    approvals: true,
+    sounds: true,
+    input: true,
+    turnFailed: true,
+    plugins: true,
+  },
   keybindings: {},
   chatTextScale: 110,
   introSplash: true,
@@ -63,6 +70,13 @@ export function readPrefs(raw: unknown): DesktopPrefsValue {
         for (const [name, value] of Object.entries(parsed.data)) {
           if (typeof value === "boolean") out.notifications[name as "sounds"] = value;
         }
+        // W59-K1-1: the kinds split out of an older file follow the switch that covered them
+        // (questions were "approvals", failed turns were "turnComplete").
+        const stored = parsed.data;
+        if (stored.input === undefined && stored.approvals !== undefined)
+          out.notifications.input = stored.approvals;
+        if (stored.turnFailed === undefined && stored.turnComplete !== undefined)
+          out.notifications.turnFailed = stored.turnComplete;
       }
       continue;
     }

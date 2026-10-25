@@ -3,7 +3,7 @@
 // is at the bottom the view follows the stream; scrolling up stops following and shows "Scroll
 // to bottom". Each session's reading position is kept for when it is shown again.
 
-import { ArrowDown } from "lucide-react";
+import { ArrowDown, Check, Copy } from "lucide-react";
 import {
   type ReactNode,
   type UIEvent,
@@ -13,18 +13,20 @@ import {
   useRef,
   useState,
 } from "react";
+import { copyText } from "../app/clipboard.ts";
 import { useT } from "../i18n/index.tsx";
 import { useDisplayPrefs } from "../settings/displayPrefs.ts";
 import { ErrorCard } from "./ErrorCard.tsx";
 import { type FailureAction, failureEcho } from "./failure.ts";
 import { Markdown } from "./Markdown.tsx";
-import type {
-  AssistantItem,
-  AsyncItem,
-  ErrorItem,
-  NoticeItem,
-  TranscriptItem,
-  UserItem,
+import {
+  type AssistantItem,
+  type AsyncItem,
+  assistantText,
+  type ErrorItem,
+  type NoticeItem,
+  type TranscriptItem,
+  type UserItem,
 } from "./messageStream.ts";
 import { Timeline } from "./Timeline.tsx";
 import { ToolRow } from "./ToolRow.tsx";
@@ -62,12 +64,14 @@ export interface TranscriptProps {
 }
 
 /**
- * When this window sent a prompt (W52-g). Only prompts typed here have a time: the stored history
- * carries none, so a reloaded row shows no time rather than a guessed one.
+ * When this window sent a prompt (W52-g). A stored row carries its own time when the history came
+ * from the REST route (W59-K1-5); otherwise only prompts typed here have one, and a reloaded row
+ * shows no time rather than a guessed one.
  */
 const sentTimes = new Map<string, number>();
 
 function sentAt(sessionId: string, item: UserItem): number | null {
+  if (typeof item.at === "number") return item.at;
   const key = `${sessionId}\u0000${item.text}`;
   if (!item.persisted && item.localId !== null && !sentTimes.has(key)) {
     sentTimes.set(key, Date.now());
@@ -103,6 +107,49 @@ function UserRow(props: { item: UserItem; sessionId: string }) {
             {label}
           </time>
         </span>
+      )}
+    </div>
+  );
+}
+
+function clockTime(at: number): string {
+  return new Date(at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+/**
+ * Under a settled reply (W59-K1-5): when it was stored, if known, and a copy button for its text.
+ * Shown on hover or focus, like a prompt's time.
+ */
+function ReplyActions(props: { item: AssistantItem }) {
+  const t = useT();
+  const [copied, setCopied] = useState(false);
+  const text = assistantText(props.item).trim();
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(timer);
+  }, [copied]);
+  const at = typeof props.item.at === "number" ? props.item.at : null;
+  if (text === "" && at === null) return null;
+  return (
+    <div className="msg-actions">
+      {at !== null && (
+        <time dateTime={new Date(at).toISOString()} title={clockTime(at)}>
+          {clockTime(at)}
+        </time>
+      )}
+      {text !== "" && (
+        <button
+          type="button"
+          className="msg-action"
+          aria-label={t(copied ? "transcript.copied" : "transcript.copyReply")}
+          title={t(copied ? "transcript.copied" : "transcript.copyReply")}
+          onClick={() => {
+            void copyText(text).then((ok) => setCopied(ok));
+          }}
+        >
+          {copied ? <Check aria-hidden="true" size={13} /> : <Copy aria-hidden="true" size={13} />}
+        </button>
       )}
     </div>
   );
@@ -147,6 +194,7 @@ function AssistantRow(props: { item: AssistantItem; showReasoning: boolean; hide
       })}
       {item.streaming && <TurnActivity turnKey={item.key} />}
       {item.interrupted && <p className="msg-note">{t("transcript.interrupted")}</p>}
+      {!item.streaming && <ReplyActions item={item} />}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 // Settings › Keyboard Shortcuts (W52-j): Key bindings (grouped in-app actions as key chips, search,
-// reset all, per-row reset) and Global shortcuts (quick entry and the HUD, with their live state).
+// reset all, per-row reset; the built-in keys as plain chips; composer, voice and profile actions
+// since W59-K1-2) and Global shortcuts (quick entry and the HUD, with their live state).
 
 import { AlertTriangle, RotateCcw, Search } from "lucide-react";
 import { useState } from "react";
@@ -24,20 +25,42 @@ const GROUP_LABELS: Readonly<Record<KeyGroup, MessageKey>> = {
   composer: "settings.keys2.groupComposer",
   tabs: "settings.keys2.groupTabs",
   conversation: "settings.keys2.groupConversation",
+  profiles: "settings.keys2.groupProfiles",
 };
 
-/** The composer's built-in keys (the ones its `?` help card lists): real, but not rebindable, so
- * they show as plain chips under the Composer group (W54-D2-9). */
-const FIXED_COMPOSER_KEYS: ReadonlyArray<{ keys: (mac: boolean) => string[]; label: MessageKey }> =
-  [
+type FixedKey = { keys: (mac: boolean) => string[]; label: MessageKey };
+
+const mod = (mac: boolean) => (mac ? "⌘" : "Ctrl");
+const shift = (mac: boolean) => (mac ? "⇧" : "Shift");
+
+/** Built-in keys that work but are not rebindable, shown as plain chips in their group: the
+ * composer's (the ones its `?` help card lists, W54-D2-9) and the pane shell's and window's
+ * (panes/shortcuts.ts, the layout editor, the app menu; W59-K1-2). */
+const FIXED_KEYS: Readonly<Partial<Record<KeyGroup, readonly FixedKey[]>>> = {
+  general: [
+    { keys: (mac) => [mod(mac), shift(mac), "N"], label: "settings.keys2.fixedNewWindow" },
+    { keys: (mac) => [mod(mac), "J"], label: "settings.keys2.fixedRightSidebar" },
+    { keys: (mac) => [mod(mac), shift(mac), "\\"], label: "settings.keys2.fixedLayout" },
+  ],
+  composer: [
     { keys: () => ["Enter"], label: "settings.keys2.fixedSend" },
-    { keys: (mac) => [mac ? "⇧" : "Shift", "Enter"], label: "settings.keys2.fixedNewline" },
+    { keys: (mac) => [shift(mac), "Enter"], label: "settings.keys2.fixedNewline" },
     { keys: () => ["@"], label: "settings.keys2.fixedMention" },
     { keys: () => ["/"], label: "settings.keys2.fixedSlash" },
     { keys: () => ["?"], label: "settings.keys2.fixedHelp" },
     { keys: () => ["↑", "↓"], label: "settings.keys2.fixedHistory" },
     { keys: () => ["Esc"], label: "settings.keys2.fixedEscape" },
-  ];
+  ],
+  tabs: [
+    { keys: (mac) => [mod(mac), "T"], label: "settings.keys2.fixedNewTab" },
+    { keys: (mac) => [mod(mac), "1–9"], label: "settings.keys2.fixedJumpTab" },
+    { keys: (mac) => [mac ? "⌃" : "Ctrl", "PageUp"], label: "settings.keys2.fixedPrevTab" },
+    {
+      keys: (mac) => [mac ? "⌃" : "Ctrl", shift(mac), "Tab"],
+      label: "settings.keys2.fixedPrevChat",
+    },
+  ],
+};
 
 const GLOBAL_TO_ACTION: Readonly<Record<string, IndusShortcutAction>> = {
   quickEntryShortcut: "quick-entry",
@@ -135,12 +158,9 @@ export function KeyBindingsPage() {
       </label>
       {KEY_GROUPS.map((group) => {
         const rows = shown.filter((action) => keyGroupOf(action.id) === group);
-        const fixed =
-          group === "composer"
-            ? FIXED_COMPOSER_KEYS.filter(
-                (row) => q === "" || t(row.label).toLowerCase().includes(q),
-              )
-            : [];
+        const fixed = (FIXED_KEYS[group] ?? []).filter(
+          (row) => q === "" || t(row.label).toLowerCase().includes(q),
+        );
         if (rows.length === 0 && fixed.length === 0) return null;
         return (
           <section key={group} className="sb-key-group" aria-label={t(GROUP_LABELS[group])}>

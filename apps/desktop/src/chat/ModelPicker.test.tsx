@@ -2,6 +2,8 @@
 import type { ModelOptionsResult } from "@indus/protocol";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
+import { KEY_ACTION_EVENT } from "../settings/keyActions.ts";
+import { stepEffort } from "./EffortChip.tsx";
 import {
   applyModelPick,
   entriesFrom,
@@ -322,5 +324,49 @@ describe("the composer chips (W51-b)", () => {
     expect(prefs.preset("openai:gpt-4o").effort).toBe("high");
     expect(connection.called("config.set").map((call) => call.params.key)).toEqual(["reasoning"]);
     expect(screen.getByRole("button", { name: "Reasoning effort: High" })).toBeTruthy();
+  });
+});
+
+describe("the composer keys (W59-K1-2)", () => {
+  const press = (id: string) =>
+    act(async () => {
+      window.dispatchEvent(new CustomEvent(KEY_ACTION_EVENT, { detail: { id, handled: false } }));
+    });
+
+  it("effort steps one level at a time, from the default when on Auto, clamped", () => {
+    expect(stepEffort(null, 1)).toBe("high");
+    expect(stepEffort(null, -1)).toBe("low");
+    expect(stepEffort("high", 1)).toBe("xhigh");
+    expect(stepEffort("ultra", 1)).toBe("ultra");
+    expect(stepEffort("none", -1)).toBe("none");
+    expect(stepEffort("minimal", -1)).toBe("none");
+  });
+
+  it("the picker key opens the picker; the effort keys set the effort and tell the session", async () => {
+    const connection = new FakeConnection()
+      .on("model.options", () => OPTIONS)
+      .on("config.set", (params) => ({
+        key: "reasoning",
+        value: params.value,
+        applied: "applied",
+        saved: false,
+      }));
+    const prefs = new ModelPrefs(new MemoryStorage());
+    render(<ModelPicker sessionId="s1" profile={null} connection={connection} prefs={prefs} />);
+    await screen.findByRole("button", { name: "Reasoning effort: Auto" });
+    await press("effort.up");
+    expect(prefs.preset("openai:gpt-4o").effort).toBe("high");
+    expect(screen.getByRole("button", { name: "Reasoning effort: High" })).toBeTruthy();
+    await press("effort.down");
+    await press("effort.down");
+    expect(prefs.preset("openai:gpt-4o").effort).toBe("low");
+    expect(connection.called("config.set").map((call) => call.params.value)).toEqual([
+      "high",
+      "medium",
+      "low",
+    ]);
+    expect(screen.queryByRole("dialog", { name: "Choose a model" })).toBeNull();
+    await press("model.picker");
+    expect(screen.getByRole("dialog")).toBeTruthy();
   });
 });

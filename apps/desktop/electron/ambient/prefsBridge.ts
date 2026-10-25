@@ -29,14 +29,28 @@ const PREF_KEY: Readonly<
   "quick-entry": "quickEntryShortcut",
 };
 
+/** The kinds of OS notification, each with its own switch (W59-K1-1); `sounds` is not one. */
+export const NOTICE_KINDS = [
+  "approvals",
+  "input",
+  "turnComplete",
+  "turnFailed",
+  "plugins",
+] as const;
+
+/** Whether any kind of notification is on (the master switch's view). */
+export function anyNoticeOn(notifications: DesktopPrefsValue["notifications"]): boolean {
+  return NOTICE_KINDS.some((kind) => notifications[kind]);
+}
+
 /** The ambient settings the preferences describe (`offered` comes from the ambient file). */
 export function ambientFromPrefs(prefs: DesktopPrefsValue, offered: boolean): AmbientSettings {
   return {
     minimizeToTray: prefs.minimizeToTray,
     keepAwake: prefs.keepAwake,
     keepAwakeOffered: offered,
-    // the master switch: off only when both kinds of notice are off (the renderer gates each kind)
-    notifications: prefs.notifications.turnComplete || prefs.notifications.approvals,
+    // the master switch: off only when every kind of notice is off (the renderer gates each kind)
+    notifications: anyNoticeOn(prefs.notifications),
     sounds: prefs.notifications.sounds,
   };
 }
@@ -53,8 +67,7 @@ export function prefsPatchFromAmbient(patch: {
   if (patch.keepAwake !== undefined) out.keepAwake = patch.keepAwake;
   const notifications: NonNullable<DesktopPrefsPatch["notifications"]> = {};
   if (patch.notifications !== undefined) {
-    notifications.turnComplete = patch.notifications;
-    notifications.approvals = patch.notifications;
+    for (const kind of NOTICE_KINDS) notifications[kind] = patch.notifications;
   }
   if (patch.sounds !== undefined) notifications.sounds = patch.sounds;
   if (Object.keys(notifications).length > 0) out.notifications = notifications;

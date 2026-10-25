@@ -1,5 +1,6 @@
-// Settings › Notifications (W52-j): Desktop alerts (a master switch over the two kinds we can
-// detect, a test notification) and Sounds (our one completion chime, with a preview).
+// Settings › Notifications (W52-j): Desktop alerts (a master switch over the kinds of OS
+// notification the app raises — approvals, questions, replies, failed turns and plugin messages
+// since W59-K1-1 — and a test notification) and Sounds (our one completion chime, with a preview).
 
 import { Bell, Play } from "lucide-react";
 import { useState } from "react";
@@ -9,28 +10,53 @@ import { attempt, usePrefs, useSettings } from "../context.tsx";
 import { CompactSelect, OutlineButton, PageBody, SettingRow, Switch } from "../primitives.tsx";
 import { Note, notAvailable } from "./kit.tsx";
 
+/** One switch per kind of OS notification the app raises (W59-K1-1), in the order they matter. */
+const ALERT_ROWS = [
+  {
+    id: "approvals",
+    row: "notify-approvals",
+    label: "settings.notify.approvalNeeded",
+    body: "settings.notify.approvalNeededBody",
+  },
+  {
+    id: "input",
+    row: "notify-input",
+    label: "settings.notify.inputNeeded",
+    body: "settings.notify.inputNeededBody",
+  },
+  {
+    id: "turnComplete",
+    row: "notify-turn",
+    label: "settings.notify.replyReady",
+    body: "settings.notify.replyReadyBody",
+  },
+  {
+    id: "turnFailed",
+    row: "notify-failed",
+    label: "settings.notify.turnFailed",
+    body: "settings.notify.turnFailedBody",
+  },
+  {
+    id: "plugins",
+    row: "notify-plugins",
+    label: "settings.notify.plugins",
+    body: "settings.notify.pluginsBody",
+  },
+] as const;
+
+type AlertKind = (typeof ALERT_ROWS)[number]["id"];
+
 export function AlertsPage() {
   const t = useT();
   const { bridge, focusRow } = useSettings();
   const { prefs, error, update } = usePrefs(bridge);
   const [tested, setTested] = useState<{ text: string; error: boolean } | null>(null);
   const kinds = prefs?.notifications;
-  // the master switch is a view over both kinds (W52-B-10): on when both are on
-  const allOn = kinds === undefined ? true : kinds.turnComplete || kinds.approvals;
-  const rows = [
-    {
-      id: "approvals",
-      row: "notify-approvals",
-      label: "settings.notify.approvalNeeded",
-      body: "settings.notify.approvalNeededBody",
-    },
-    {
-      id: "turnComplete",
-      row: "notify-turn",
-      label: "settings.notify.replyReady",
-      body: "settings.notify.replyReadyBody",
-    },
-  ] as const;
+  // the master switch is a view over every kind (W52-B-10): on while any one is on
+  const allOn = kinds === undefined ? true : ALERT_ROWS.some((row) => kinds[row.id]);
+  const everyKind = (on: boolean) =>
+    Object.fromEntries(ALERT_ROWS.map((row) => [row.id, on])) as Record<AlertKind, boolean>;
+  const rows = ALERT_ROWS;
   const notifications = bridge?.notifications;
   return (
     <PageBody intro={t("settings.notify.intro")}>
@@ -43,7 +69,7 @@ export function AlertsPage() {
             label={t("settings.notify.all")}
             checked={allOn}
             disabled={prefs === null}
-            onChange={(on) => void update({ notifications: { turnComplete: on, approvals: on } })}
+            onChange={(on) => void update({ notifications: everyKind(on) })}
           />
         }
       />

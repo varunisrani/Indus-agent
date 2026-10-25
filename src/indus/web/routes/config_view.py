@@ -66,6 +66,9 @@ _SECRET_WORDS: Final = frozenset(
 _NOT_A_SECRET_TAIL: Final = frozenset(
     {"env", "name", "names", "url", "id", "file", "path", "type", "mode", "tokens"}
 )
+# named exactly, so a new credential-like name stays masked: a keyboard key (``record_key``, the
+# push-to-talk key; ``hot_key``) and the choice of secret store (W59-K1-6, narrowed by the lead)
+_NOT_SECRET_LEAVES: Final = frozenset({"record_key", "hot_key", "secret_store"})
 _WORDS: Final = re.compile(r"[_\-.\s]+")
 _CREDENTIAL_SUFFIXES: Final = ("_API_KEY", "_TOKEN", "_SECRET", "_PASSWORD")
 
@@ -137,8 +140,11 @@ def schema_form() -> dict[str, Any]:
 
 def is_secret_setting(path: str) -> bool:
     """The last segment of a dotted setting names a credential (``api_key``, ``bot_token``,
-    ``password_hash``); ``max_tokens`` or ``key_env`` do not."""
-    words = [w for w in _WORDS.split(path.rsplit(".", 1)[-1].lower()) if w]
+    ``password_hash``); ``max_tokens``, ``key_env``, ``secret_store`` or ``record_key`` do not."""
+    leaf = path.rsplit(".", 1)[-1].lower()
+    if leaf in _NOT_SECRET_LEAVES:
+        return False
+    words = [w for w in _WORDS.split(leaf) if w]
     if not words or words[-1] in _NOT_A_SECRET_TAIL:
         return False
     return any(w in _SECRET_WORDS for w in words)

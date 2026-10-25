@@ -25,6 +25,15 @@ describe("REST history", () => {
     ]);
   });
 
+  it("keeps each row's stored time, in milliseconds (W59-K1-5)", () => {
+    const rows = displayRows([
+      { id: 2, role: "user", content: "hi", timestamp: 1_700_000_000.5 },
+      { id: 3, role: "assistant", content: "hello", timestamp: "soon" },
+    ]);
+    expect(rows[0]).toEqual({ role: "user", text: "hi", row_id: 2, at: 1_700_000_000_500 });
+    expect(rows[1]).toEqual({ role: "assistant", text: "hello", row_id: 3 });
+  });
+
   it("gives tool rows their call's arguments, as the live rows have them (W47-a)", () => {
     const rows = [
       {

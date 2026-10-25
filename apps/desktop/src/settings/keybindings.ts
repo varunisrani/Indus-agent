@@ -25,6 +25,19 @@ export const KEY_ACTIONS: readonly KeyAction[] = [
   { id: "tab.cycle", label: "settings.key.nextTab", defaultKey: "Control+PageDown" },
   { id: "palette.open", label: "settings.key.palette", defaultKey: "CommandOrControl+K" },
   { id: "find", label: "settings.key.find", defaultKey: "CommandOrControl+F" },
+  // W59-K1-2: composer, voice and profile actions (run by keyActions.ts); "" = not set yet
+  { id: "model.picker", label: "settings.key.modelPicker", defaultKey: "CommandOrControl+Shift+M" },
+  { id: "effort.up", label: "settings.key.effortUp", defaultKey: "" },
+  { id: "effort.down", label: "settings.key.effortDown", defaultKey: "" },
+  { id: "voice.dictation", label: "settings.key.dictation", defaultKey: "" },
+  {
+    id: "voice.conversation",
+    label: "settings.key.voiceConversation",
+    defaultKey: "CommandOrControl+Alt+V",
+  },
+  { id: "profile.default", label: "settings.key.profileDefault", defaultKey: "" },
+  { id: "profile.next", label: "settings.key.profileNext", defaultKey: "" },
+  { id: "profile.previous", label: "settings.key.profilePrevious", defaultKey: "" },
 ];
 
 /** The global shortcuts held as their own preferences (P20-35). */
@@ -162,7 +175,7 @@ export function conflictsFor(
 
 // -- settings-b (W52-j): groups and key chips for the Key bindings page --------------------------
 
-export type KeyGroup = "general" | "composer" | "tabs" | "conversation";
+export type KeyGroup = "general" | "composer" | "tabs" | "conversation" | "profiles";
 
 /** The section each in-app action is listed under (unknown ids fall into "general"). */
 const KEY_GROUP_OF: Readonly<Record<string, KeyGroup>> = {
@@ -174,9 +187,23 @@ const KEY_GROUP_OF: Readonly<Record<string, KeyGroup>> = {
   "tab.reopen": "tabs",
   "tab.next": "tabs",
   find: "conversation",
+  "model.picker": "composer",
+  "effort.up": "composer",
+  "effort.down": "composer",
+  "voice.dictation": "composer",
+  "voice.conversation": "composer",
+  "profile.default": "profiles",
+  "profile.next": "profiles",
+  "profile.previous": "profiles",
 };
 
-export const KEY_GROUPS: readonly KeyGroup[] = ["general", "composer", "tabs", "conversation"];
+export const KEY_GROUPS: readonly KeyGroup[] = [
+  "general",
+  "composer",
+  "tabs",
+  "conversation",
+  "profiles",
+];
 
 export function keyGroupOf(id: string): KeyGroup {
   return KEY_GROUP_OF[id] ?? "general";

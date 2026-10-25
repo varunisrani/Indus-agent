@@ -4,8 +4,9 @@
 // - reports the session the route shows (and re-reports on focus) so main knows the last-active
 //   conversation for quick entry and the HUD toggle;
 // - reports running turns (`work.report`: the quit guard and keep awake);
-// - notifies a finished turn or a waiting question while the window is not focused, with our own
-//   chime when sounds are on; a click opens that session;
+// - notifies a finished or failed turn, a waiting approval or question, or a plugin's message
+//   while the window is not focused (each kind behind its own switch), with our own chime when
+//   sounds are on; a click opens that session;
 // - receives quick-entry text and submits it through the composer's send path, then answers main;
 // - shows the one-time keep-awake offer, update availability and skew notices.
 
@@ -17,6 +18,7 @@ import { backgroundOf, classifyPath, sessionPath } from "../app/routes.ts";
 import { ChatActions, type Request, sharedActions } from "../chat/busyActions.ts";
 import { InflightJournal } from "../chat/inflightJournal.ts";
 import type { TranscriptStore } from "../chat/transcriptStore.ts";
+import { PLUGIN_TOAST_EVENT } from "../contrib/host.ts";
 import type { GatewayConnection } from "../gateway/connectionStore.ts";
 import type {
   IndusAmbientState,
@@ -31,8 +33,12 @@ import { UpdateNotice } from "../updates/UpdateNotice.tsx";
 import { playChime } from "./sound.ts";
 import {
   type NoticeRequest,
+  noticeAllowed,
+  pluginNotice,
+  requestKind,
   requestNotice,
   tagSession,
+  turnKind,
   turnNotice,
   WorkTracker,
 } from "./turnNotices.ts";
@@ -127,8 +133,11 @@ export function AmbientHost(props: AmbientHostProps) {
     const offEvents = connection.onEvent((event) => {
       const record = event as { type: string; session_id?: string; turn_id?: string };
       if (work.onEvent(record)) bridge.work.report({ items: work.items() });
-      if (record.type === "turn.done" && noticeKinds.current?.turnComplete !== false) {
-        notify(turnNotice(event as Parameters<typeof turnNotice>[0], focusedNow(), t));
+      if (record.type === "turn.done") {
+        const done = event as Parameters<typeof turnNotice>[0];
+        // W59-K1-1: a reply and a failure each have their own switch
+        if (noticeAllowed(noticeKinds.current, turnKind(done)))
+          notify(turnNotice(done, focusedNow(), t));
       }
     });
     const seen = new Set<string>();
@@ -137,10 +146,17 @@ export function AmbientHost(props: AmbientHostProps) {
       for (const request of store.list()) {
         if (seen.has(request.id)) continue;
         seen.add(request.id);
-        if (!request.replayed && noticeKinds.current?.approvals !== false)
+        if (!request.replayed && noticeAllowed(noticeKinds.current, requestKind(request.kind)))
           notify(requestNotice(request.kind, request.sessionId, focusedNow(), t));
       }
     });
+    // a desktop plugin's toast also reaches the OS while the window is in the background
+    const onPluginToast = (event: Event) => {
+      const text = (event as CustomEvent<{ text?: unknown }>).detail?.text;
+      if (typeof text !== "string" || !noticeAllowed(noticeKinds.current, "plugins")) return;
+      notify(pluginNotice(text, focusedNow(), t));
+    };
+    window.addEventListener(PLUGIN_TOAST_EVENT, onPluginToast);
     const offAction = bridge.notifications.onAction(({ tag }) => {
       const target = tagSession(tag);
       if (target !== null) navigate(sessionPath(target));
@@ -148,6 +164,7 @@ export function AmbientHost(props: AmbientHostProps) {
     return () => {
       offEvents();
       offRequests();
+      window.removeEventListener(PLUGIN_TOAST_EVENT, onPluginToast);
       offAction();
       if (work.clear()) bridge.work.report({ items: [] });
     };

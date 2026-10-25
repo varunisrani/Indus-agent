@@ -49,6 +49,8 @@ export interface UserItem {
   readonly localId: string | null;
   readonly persisted: boolean;
   readonly rowId: number | null;
+  /** When the row was stored (epoch ms), from the REST history (W59-K1-5); absent when unknown. */
+  readonly at?: number | null;
 }
 
 export interface AssistantItem {
@@ -61,6 +63,16 @@ export interface AssistantItem {
   readonly interrupted: boolean;
   /** This window saw the turn start (it holds the whole turn, not a tail of it). */
   readonly sawStart: boolean;
+  /** When the reply's last row was stored (epoch ms), from the REST history (W59-K1-5). */
+  readonly at?: number | null;
+}
+
+/** A history row with the time it was stored, when the source knows it (the REST route does). */
+export type TimedHistoryRow = HistoryMessage & { readonly at?: number };
+
+function storedAt(row: HistoryMessage): number | null {
+  const at = (row as TimedHistoryRow).at;
+  return typeof at === "number" && Number.isFinite(at) ? at : null;
 }
 
 export interface ErrorItem {
@@ -500,6 +512,7 @@ export function historyItems(rows: readonly HistoryMessage[]): TranscriptItem[] 
         localId: null,
         persisted: true,
         rowId: row.row_id ?? null,
+        at: storedAt(row),
       });
       return;
     }
@@ -531,7 +544,7 @@ export function historyItems(rows: readonly HistoryMessage[]): TranscriptItem[] 
         result: row.text,
       });
     }
-    items[items.length - 1] = { ...last, parts };
+    items[items.length - 1] = { ...last, parts, at: storedAt(row) ?? last.at ?? null };
   });
   return items;
 }

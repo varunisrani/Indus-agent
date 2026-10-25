@@ -32,6 +32,7 @@ export const AMBIENT_STRINGS = {
   "notify.ask.approval": "A command is waiting for your approval.",
   "notify.ask.other": "A question is waiting for you.",
   "notify.open": "Open",
+  "notify.plugin.title": "Message from a plugin",
 
   "keepAwake.offer":
     "Your computer went to sleep while Indus was working. Keep it awake while a reply is running?",

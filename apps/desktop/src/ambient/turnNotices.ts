@@ -87,6 +87,39 @@ export function turnNotice(event: DoneEvent, focused: boolean, t: Translate): No
   return { title: t("notify.turnFailed.title"), body: reason, tag, actions };
 }
 
+/** The notification switches (Settings › Notifications › Desktop alerts, W59-K1-1). */
+export interface NoticeKinds {
+  readonly turnComplete?: boolean;
+  readonly turnFailed?: boolean;
+  readonly approvals?: boolean;
+  readonly input?: boolean;
+  readonly plugins?: boolean;
+}
+
+/** The switch that covers a finished turn: a failure has its own (stopped turns raise none). */
+export function turnKind(event: DoneEvent): "turnComplete" | "turnFailed" {
+  return event.reason === "completed" && (event.failure ?? null) === null
+    ? "turnComplete"
+    : "turnFailed";
+}
+
+/** The switch that covers a question: approvals have their own, the rest are "input needed". */
+export function requestKind(kind: string): "approvals" | "input" {
+  return kind === "approval" ? "approvals" : "input";
+}
+
+/** A kind is on unless the person turned it off (before the prefs arrive, everything is on). */
+export function noticeAllowed(kinds: NoticeKinds | null, kind: keyof NoticeKinds): boolean {
+  return kinds?.[kind] !== false;
+}
+
+/** The notification for a desktop plugin's message (`ctx.toast`), only while not focused. */
+export function pluginNotice(text: string, focused: boolean, t: Translate): NoticeRequest | null {
+  const body = text.trim();
+  if (focused || body === "") return null;
+  return { title: t("notify.plugin.title"), body: body.slice(0, 500), tag: "plugin", actions: [] };
+}
+
 /** The notification for a question the backend asks (approval, clarify, sudo, secret). */
 export function requestNotice(
   kind: string,

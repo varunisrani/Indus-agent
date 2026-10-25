@@ -25,6 +25,19 @@ const LISTED = LEVELS.filter((level) => level.value !== "none");
 
 export const DEFAULT_THINKING_EFFORT = "medium";
 
+/** The levels a key steps through, lowest first (W59-K1-2); Auto counts as the default level. */
+const LADDER = LEVELS.map((level) => level.value).filter(
+  (value): value is string => value !== null,
+);
+
+/** One level up or down from `effort` (Auto steps from the default level); clamped at the ends. */
+export function stepEffort(effort: string | null, step: 1 | -1): string {
+  const at = LADDER.indexOf(effort ?? DEFAULT_THINKING_EFFORT);
+  const from = at === -1 ? LADDER.indexOf(DEFAULT_THINKING_EFFORT) : at;
+  const next = Math.min(LADDER.length - 1, Math.max(0, from + step));
+  return LADDER[next] ?? DEFAULT_THINKING_EFFORT;
+}
+
 export function effortShort(value: string | null): MessageKey {
   return LEVELS.find((level) => level.value === value)?.short ?? "effort.auto";
 }

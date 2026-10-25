@@ -60,6 +60,7 @@ import type { PreviewTarget } from "../panes/preview/target.ts";
 import { type PaneAction, usePaneShortcuts } from "../panes/shortcuts.ts";
 import { ProfileRail, type ProfilesApi, useProfileNames } from "../profiles/ProfileRail.tsx";
 import { useSwitcher, useSwitcherState } from "../profiles/switcherReact.tsx";
+import { useKeyAction } from "../settings/keyActions.ts";
 import { freshDraftFolder } from "../sidebar/projects.ts";
 import { beginNewChat, rowTitle, Sidebar, SidebarModel } from "../sidebar/Sidebar.tsx";
 import { IconButton, KeyHint, Menu, type MenuItem } from "../ui/components.tsx";
@@ -533,6 +534,24 @@ function useChatState(
 
 // -- the shell -----------------------------------------------------------------------------------
 
+/** The profile a profile key switches to, or null (no other profile to go to). */
+export function profileTarget(
+  id: string,
+  profiles: readonly string[],
+  current: string,
+  defaultProfile: string | null,
+): string | null {
+  if (id === "profile.default") {
+    const target = defaultProfile ?? "default";
+    return target !== current && profiles.includes(target) ? target : null;
+  }
+  if (profiles.length < 2) return null;
+  const at = profiles.indexOf(current);
+  const step = id === "profile.next" ? 1 : -1;
+  const next = profiles[(Math.max(at, 0) + step + profiles.length) % profiles.length] ?? null;
+  return next === current ? null : next;
+}
+
 export function Shell(props: {
   statusBar?: ReactNode;
   /** The route's conversation (null: a new chat or a page). */
@@ -778,6 +797,26 @@ export function Shell(props: {
       if (result.ok && result.freshDraft) navigate(NEW_CHAT_PATH);
     });
   };
+
+  // the rebindable window keys (W59-K1-2): new chat, settings, and profile switching
+  useKeyAction(
+    ["chat.new", "settings.open", "profile.default", "profile.next", "profile.previous"],
+    (id) => {
+      if (id === "chat.new") {
+        beginNewChat(chrome.sidebar, profile, null);
+        navigate(NEW_CHAT_PATH);
+        return true;
+      }
+      if (id === "settings.open") {
+        openOverlay("settings");
+        return true;
+      }
+      const next = profileTarget(id, profiles, profile, defaultProfile);
+      if (next === null || switcher === null) return false;
+      selectProfile(next);
+      return true;
+    },
+  );
 
   return (
     <div

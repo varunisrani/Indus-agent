@@ -7,6 +7,7 @@ import { AudioLines, Mic, MicOff } from "lucide-react";
 import { useEffect, useSyncExternalStore } from "react";
 import type { ChatConnection } from "../../gateway/connectionStore.ts";
 import { type MessageKey, useT } from "../../i18n/index.tsx";
+import { useKeyAction } from "../../settings/keyActions.ts";
 import { type DictateRequest, dictationDone, WAKE_DICTATE_EVENT } from "../../wake/appWake.ts";
 import { type DraftStore, draftOf, FRESH, setDraft } from "../composer/goneSession.ts";
 import { Conversation, type LevelSource, type Player } from "./conversation.ts";
@@ -182,6 +183,12 @@ export function VoiceButtons(props: {
   const recording = snap.state === "recording" || snap.state === "starting";
   const recipient: Recipient = { sessionId: props.sessionId, profile: props.profile };
 
+  // the rebindable dictation key (W59-K1-2) does what the microphone button does
+  useKeyAction(["voice.dictation"], () => {
+    void (recording ? dictation.stop() : dictation.start(recipient));
+    return true;
+  });
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape" && dictation.active) dictation.cancel();
@@ -283,6 +290,12 @@ function ConversationButton(props: {
     () => live.phase,
   );
   const on = phase !== "off";
+  // the rebindable voice-conversation key (W59-K1-2) does what this button does
+  useKeyAction(["voice.conversation"], () => {
+    if (on) live.stop();
+    else void live.start(props.recipient).catch(() => undefined);
+    return true;
+  });
   return (
     <button
       type="button"

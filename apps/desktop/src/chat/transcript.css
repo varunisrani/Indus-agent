@@ -59,6 +59,49 @@
   opacity: 1;
 }
 
+/* under a settled reply: its stored time and a copy button, on hover or focus (W59-K1-5) */
+.msg-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 20px;
+  margin-top: 2px;
+  color: var(--desk-fg-4);
+  font-size: var(--desk-text-micro);
+  font-variant-numeric: tabular-nums;
+  opacity: 0;
+  transition: opacity var(--indus-duration-fast, 120ms);
+}
+
+.msg-assistant:hover .msg-actions,
+.msg-assistant:focus-within .msg-actions {
+  opacity: 1;
+}
+
+.msg-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.msg-action:hover {
+  background: var(--desk-row-hover);
+  color: var(--desk-fg-2);
+}
+
+.msg-action:focus-visible {
+  outline: 1px solid var(--desk-accent);
+  outline-offset: 1px;
+}
+
 .msg-text > .md > :first-child {
   margin-top: 0;
 }

@@ -9,6 +9,7 @@
 
 import type { HistoryMessage } from "@indus/protocol";
 import type { IndusApiRequest, IndusApiResult } from "../global.d.ts";
+import type { TimedHistoryRow } from "./messageStream.ts";
 
 export type ApiCall = (request: IndusApiRequest) => Promise<IndusApiResult>;
 
@@ -22,6 +23,8 @@ interface StoredRow {
   tool_calls?: unknown;
   tool_call_id?: unknown;
   tool_name?: unknown;
+  /** Stored time, epoch seconds. */
+  timestamp?: unknown;
 }
 
 const SHOWN = new Set(["user", "assistant", "tool"]);
@@ -44,10 +47,10 @@ function parseArguments(raw: unknown): Arguments | null {
 }
 
 /** Stored rows (oldest first) → what the transcript shows. */
-export function displayRows(rows: readonly StoredRow[]): HistoryMessage[] {
+export function displayRows(rows: readonly StoredRow[]): TimedHistoryRow[] {
   const names = new Map<string, string>();
   const calls = new Map<string, unknown>();
-  const out: HistoryMessage[] = [];
+  const out: TimedHistoryRow[] = [];
   for (const row of rows) {
     const role = typeof row.role === "string" ? row.role : "";
     if (!SHOWN.has(role)) continue;
@@ -63,6 +66,11 @@ export function displayRows(rows: readonly StoredRow[]): HistoryMessage[] {
     }
     const text = typeof row.content === "string" ? row.content : "";
     const rowId = typeof row.id === "number" ? row.id : null;
+    // the stored time (W59-K1-5): the transcript shows it under each prompt and reply
+    const stamp =
+      typeof row.timestamp === "number" && Number.isFinite(row.timestamp)
+        ? { at: row.timestamp * 1000 }
+        : {};
     if (role === "tool") {
       const callId = typeof row.tool_call_id === "string" ? row.tool_call_id : "";
       const name =
@@ -76,11 +84,12 @@ export function displayRows(rows: readonly StoredRow[]): HistoryMessage[] {
         name,
         ...(args === null ? {} : { arguments: args }),
         row_id: rowId,
+        ...stamp,
       });
       continue;
     }
     if (text.trim() === "") continue; // an assistant row with only tool calls
-    out.push({ role: role as "user" | "assistant", text, row_id: rowId });
+    out.push({ role: role as "user" | "assistant", text, row_id: rowId, ...stamp });
   }
   return out;
 }
@@ -89,7 +98,7 @@ export function displayRows(rows: readonly StoredRow[]): HistoryMessage[] {
 export function restHistory(
   api: ApiCall,
   profile: string | null,
-): (sessionId: string) => Promise<HistoryMessage[]> {
+): (sessionId: string) => Promise<TimedHistoryRow[]> {
   return async (sessionId) => {
     const answer = await api({
       method: "GET",

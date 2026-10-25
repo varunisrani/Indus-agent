@@ -81,6 +81,23 @@ describe("settings pages", () => {
       output && fieldsOnPage(output, ["checkpoints.max_snapshots", "tool_output.max_chars"]),
     ).toEqual(["checkpoints.max_snapshots", "tool_output.max_chars"]);
     expect(pageForField("checkpoints.max_snapshots")?.page.id).toBe("checkpoints");
+    // W59-K1-3: and the per-read file limit, still owned by Files & execution
+    expect(
+      output &&
+        fieldsOnPage(output, ["file_read_max_chars", "tool_output.max_chars", "agent.max_turns"]),
+    ).toEqual(["file_read_max_chars", "tool_output.max_chars"]);
+    expect(pageForField("file_read_max_chars")?.page.id).toBe("files");
+    // W59-K1-4: the voice recording rules and the transcription device are up-front rows
+    const voice = VIEWS.find((v) => v.id === "voice");
+    expect(voice?.pages.find((p) => p.id === "conversation")?.curated).toEqual([
+      "voice.record_key",
+      "voice.max_seconds",
+      "voice.silence_seconds",
+      "voice.wait_seconds",
+    ]);
+    expect(voice?.pages.find((p) => p.id === "transcription")?.curated).toContain(
+      "stt.local_device",
+    );
     // voice.read_aloud lands on Text to speech, the other voice.* rows on Voice conversation
     expect(pageForField("voice.read_aloud")?.page.id).toBe("speech");
     expect(pageForField("voice.record_key")?.page.id).toBe("conversation");

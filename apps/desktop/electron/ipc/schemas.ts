@@ -447,10 +447,19 @@ export const prefsSnapshot = z.object({
   quickEntryShortcut: accelerator,
   hudSnapShortcut: accelerator,
   hudToggleShortcut: accelerator,
+  /** Which OS notifications this device shows (W59-K1-1: one switch per kind we can raise). */
   notifications: z.object({
+    /** A reply finished while the window was in the background. */
     turnComplete: z.boolean(),
+    /** An approval card is waiting. */
     approvals: z.boolean(),
     sounds: z.boolean(),
+    /** A clarify question, a sudo password or a secret is waiting. */
+    input: z.boolean(),
+    /** A turn ended in a failure while the window was in the background. */
+    turnFailed: z.boolean(),
+    /** A desktop plugin's message (`ctx.toast`) while the window was in the background. */
+    plugins: z.boolean(),
   }),
   /** In-app shortcut overrides: action id → accelerator ("" = unbound). */
   keybindings: z.record(z.string().max(64), accelerator),
@@ -491,6 +500,9 @@ export const prefsPatch = z.strictObject({
       turnComplete: z.boolean().optional(),
       approvals: z.boolean().optional(),
       sounds: z.boolean().optional(),
+      input: z.boolean().optional(),
+      turnFailed: z.boolean().optional(),
+      plugins: z.boolean().optional(),
     })
     .optional(),
   keybindings: z.record(z.string().max(64), accelerator).optional(),

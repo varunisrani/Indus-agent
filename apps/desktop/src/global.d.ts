@@ -145,7 +145,14 @@ export type IndusPrefsPatch = {
   quickEntryShortcut?: string;
   hudSnapShortcut?: string;
   hudToggleShortcut?: string;
-  notifications?: { turnComplete?: boolean; approvals?: boolean; sounds?: boolean };
+  notifications?: {
+    turnComplete?: boolean;
+    approvals?: boolean;
+    sounds?: boolean;
+    input?: boolean;
+    turnFailed?: boolean;
+    plugins?: boolean;
+  };
   keybindings?: Record<string, string>;
   chatTextScale?: number;
   introSplash?: boolean;
@@ -169,7 +176,14 @@ export type IndusPrefsSnapshot = {
   quickEntryShortcut: string;
   hudSnapShortcut: string;
   hudToggleShortcut: string;
-  notifications: { turnComplete: boolean; approvals: boolean; sounds: boolean };
+  notifications: {
+    turnComplete: boolean;
+    approvals: boolean;
+    sounds: boolean;
+    input: boolean;
+    turnFailed: boolean;
+    plugins: boolean;
+  };
   keybindings: Record<string, string>;
   chatTextScale: number;
   introSplash: boolean;

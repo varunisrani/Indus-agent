@@ -47,6 +47,8 @@ export const TRANSCRIPT_STRINGS = {
   "transcript.elapsed": "{seconds}s",
   "transcript.activity": "Working on the reply",
   "transcript.sentAt": "Sent {time}",
+  "transcript.copyReply": "Copy reply",
+  "transcript.copied": "Copied",
   "markdown.copyCode": "Copy code",
 
   "toast.close": "Close",
