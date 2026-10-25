@@ -1,0 +1,2533 @@
+diff --git a/.dockerignore b/.dockerignore
+index 12fee16..8805bb0 100644
+--- a/.dockerignore
++++ b/.dockerignore
+@@ -39,6 +39,8 @@ apps/web/playwright-report
+ tests
+ tooling
+ docs
++# ...except the user guides: the dashboard bundles them for its in-app Docs page (W58-J2-1)
++!docs/user
+ nix
+ HANDOFF.md
+ AGENTS.md
+diff --git a/apps/web/e2e/dashboard.spec.ts b/apps/web/e2e/dashboard.spec.ts
+index 25c3718..5cf379a 100644
+--- a/apps/web/e2e/dashboard.spec.ts
++++ b/apps/web/e2e/dashboard.spec.ts
+@@ -1,5 +1,5 @@
+ // Admin pages against a real `indus dashboard` and daemon (P18-30): Sessions search and delete,
+-// Config save.
++// Config save (form and raw YAML), Skills create, the in-app Docs.
+ 
+ import { expect, test } from "./fixtures.ts";
+ 
+@@ -73,6 +73,45 @@ test("Config: a saved value lands in config.yaml and survives a reload", async (
+   await expect(page.getByRole("spinbutton", { name: "agent.max_turns" })).toHaveValue("37");
+ });
+ 
++test("Config: raw YAML saves through the writer; an invalid text is refused whole", async ({
++  launch,
++  page,
++}) => {
++  const stack = await launch({ turns: [[{ text: "Hello." }]] });
++  await page.goto(`${stack.url}/config`);
++  await page.getByRole("button", { name: "YAML", exact: true }).click();
++  const editor = page.getByRole("textbox", { name: "Raw YAML configuration" });
++  await expect(editor).toHaveValue(/base_url: /);
++  const before = String((await stack.ask("read", { path: "config.yaml" })).text);
++  await editor.fill(`${await editor.inputValue()}agent:\n  max_turns: lots\n`);
++  await page.getByRole("button", { name: "Save" }).click();
++  await expect(page.getByRole("alert").filter({ hasText: "agent.max_turns" })).toBeVisible();
++  expect(String((await stack.ask("read", { path: "config.yaml" })).text)).toBe(before);
++  await editor.fill((await editor.inputValue()).replace("max_turns: lots", "max_turns: 41"));
++  await page.getByRole("button", { name: "Save" }).click();
++  await expect
++    .poll(async () => String((await stack.ask("read", { path: "config.yaml" })).text))
++    .toMatch(/max_turns: 41/);
++  const saved = String((await stack.ask("read", { path: "config.yaml" })).text);
++  expect(saved).toMatch(/base_url: http:\/\/127\.0\.0\.1:\d+\/v1/);
++});
++
++test("Skills: New skill saves SKILL.md into the profile's skills folder", async ({
++  launch,
++  page,
++}) => {
++  const stack = await launch({ turns: [[{ text: "Hello." }]] });
++  await page.goto(`${stack.url}/skills`);
++  await page.getByRole("button", { name: "New skill" }).click();
++  const dialog = page.getByRole("dialog", { name: "New skill" });
++  await dialog.getByLabel("Name").fill("release-notes");
++  await dialog.getByRole("button", { name: "Create skill" }).click();
++  await expect(dialog).toHaveCount(0);
++  const written = await stack.ask("read", { path: "skills/release-notes/SKILL.md" });
++  expect(String(written.text)).toContain("name: release-notes");
++  await expect(page.getByText("release-notes", { exact: true }).first()).toBeVisible();
++});
++
+ test("Logs: the gateway log's tail as the daemon wrote it", async ({ launch, page }) => {
+   const stack = await launch({ turns: [[{ text: "Hello." }]] });
+   await page.goto(`${stack.url}/logs`);
+@@ -93,6 +132,13 @@ test("Docs: a direct load and a reload of /docs render the in-app page", async (
+   await page.goto(`${stack.url}/docs`);
+   await expect(page.getByRole("heading", { level: 1, name: "Documentation" })).toBeVisible();
+   await expect(page.getByRole("link", { name: "Open docs" })).toBeVisible();
++  // Our guides render in the page; a guide link opens the guide here, and a reload keeps it.
++  const panel = page.getByRole("region", { name: "Documentation" });
++  await expect(panel.getByRole("heading", { level: 1, name: "Indus Agent" })).toBeVisible();
++  await panel.getByRole("link", { name: "Quickstart" }).first().click();
++  await expect(page).toHaveURL(/\/docs\?page=getting-started%2Fquickstart/);
++  const title = await panel.getByRole("heading", { level: 1 }).first().textContent();
+   await page.reload();
+   await expect(page.getByRole("heading", { level: 1, name: "Documentation" })).toBeVisible();
++  await expect(panel.getByRole("heading", { level: 1, name: title ?? "" })).toBeVisible();
+ });
+diff --git a/apps/web/src/lib/api.ts b/apps/web/src/lib/api.ts
+index dbec996..a36a3c3 100644
+--- a/apps/web/src/lib/api.ts
++++ b/apps/web/src/lib/api.ts
+@@ -67,6 +67,7 @@ import type {
+   SessionStats,
+   ShellHookCreate,
+   ShellHooksResponse,
++  SkillCreated,
+   SkillInfo,
+   StatusResponse,
+   ToolsetInfo,
+@@ -740,6 +741,11 @@ export const api = {
+     /** The built-in defaults as a config tree (public, never per profile). */
+     defaults: () => request<ConfigObject>("/api/config/defaults"),
+     effective: () => request<EffectiveConfig>("/api/config/effective"),
++    /** The config file's own settings (no defaults, unexpanded, credentials hidden). */
++    raw: () => request<{ config: ConfigObject }>("/api/config/raw"),
++    /** Save raw YAML as the whole file's settings; a parse or schema error is a 422 with problems. */
++    putRaw: (yaml: string) =>
++      request<OkResponse>("/api/config/raw", { method: "PUT", json: { yaml } }),
+   },
+ 
+   env: {
+@@ -814,6 +820,9 @@ export const api = {
+       request<OkResponse>(forProfile("/api/skills/toggle", profile), {
+         json: { name, enabled },
+       }),
++    /** A new skill through the agent's own skill writer (held when write approval is on). */
++    create: (skill: { name: string; content: string; category?: string }, profile?: string) =>
++      request<SkillCreated>(forProfile("/api/skills/create", profile), { json: skill }),
+     toolsets: () => request<{ toolsets: ToolsetInfo[] }>("/api/tools/toolsets"),
+     hubSearch: (q: string) =>
+       request<HubSearchResponse>(withQuery("/api/skills/hub/search", { q })),
+diff --git a/apps/web/src/lib/restTypes.ts b/apps/web/src/lib/restTypes.ts
+index eb0b290..22e55a2 100644
+--- a/apps/web/src/lib/restTypes.ts
++++ b/apps/web/src/lib/restTypes.ts
+@@ -231,6 +231,8 @@ export interface ProviderOption {
+   configured: boolean;
+   /** A documented device-code sign-in exists. */
+   device_login: boolean;
++  /** Any documented sign-in (browser or device) that `indus auth add --type oauth` runs. */
++  sign_in?: boolean;
+   supports_model_listing: boolean;
+ }
+ 
+@@ -721,6 +723,14 @@ export interface SkillInfo {
+   enabled: boolean;
+ }
+ 
++/** `POST /api/skills/create`: saved, or held for approval (`skills.write_approval`). */
++export interface SkillCreated {
++  ok: boolean;
++  name: string;
++  staged: boolean;
++  message: string;
++}
++
+ export interface ToolsetInfo {
+   name: string;
+   label: string;
+diff --git a/apps/web/src/lib/yaml.test.ts b/apps/web/src/lib/yaml.test.ts
+index a33f6eb..423db4d 100644
+--- a/apps/web/src/lib/yaml.test.ts
++++ b/apps/web/src/lib/yaml.test.ts
+@@ -32,10 +32,13 @@ describe("yaml writer", () => {
+       "#x",
+       "- y",
+       "k:",
++      "2026-10-25",
++      "1:30",
++      "<<",
+     ]) {
+       expect(needsQuotes(text)).toBe(true);
+     }
+-    for (const text of ["fake-model", "http://127.0.0.1:9119/v1", "a b", "$HOME/x"]) {
++    for (const text of ["fake-model", "http://127.0.0.1:9119/v1", "a b", "$HOME/x", "v2-1:3"]) {
+       expect(needsQuotes(text)).toBe(false);
+     }
+     expect(toYaml({ v: "yes", none: null, s: "two\nlines", n: 1 })).toBe(
+diff --git a/apps/web/src/lib/yaml.ts b/apps/web/src/lib/yaml.ts
+index 952ad00..7879301 100644
+--- a/apps/web/src/lib/yaml.ts
++++ b/apps/web/src/lib/yaml.ts
+@@ -1,5 +1,6 @@
+-// A small YAML writer for the Config page's read-only YAML view (W52-pc-10). It covers what a
+-// config tree holds: maps, lists, strings, numbers, booleans and null, two spaces per level.
++// A small YAML writer for the Config page's YAML view (W52-pc-10; saved back since W58-J2-2, so
++// what it writes must read back as the same values under the server's YAML 1.1 reader). It covers
++// what a config tree holds: maps, lists, strings, numbers, booleans and null, two spaces per level.
+ // Strings are double-quoted (JSON escapes are valid YAML) whenever plain style could be misread.
+ 
+ import { setPath } from "./nested.ts";
+@@ -16,12 +17,15 @@ const SPECIAL_WORDS = /^(true|false|yes|no|on|off|y|n|null|~)$/i;
+ const NUMBER_LIKE =
+   /^[-+]?(\d[\d_]*(\.\d*)?|\.\d+)([eE][-+]?\d+)?$|^0x[0-9a-f]+$|^0o[0-7]+$|^[-+]?\.(inf|nan)$/i;
+ const RISKY_START = /^[-?:,[\]{}#&*!|>'"%@`\s]/;
++/** YAML 1.1 dates and timestamps (`2026-10-25`) and base-60 numbers (`1:30`), the merge key. */
++const YAML11_SCALAR =
++  /^\d{4}-\d\d?-\d\d?([Tt\s].*)?$|^[-+]?\d[\d_]*(:[0-5]?\d)+(\.[\d_]*)?$|^(<<|=)$/;
+ 
+ /** True when `text` must be quoted to read back as the same string. */
+ export function needsQuotes(text: string): boolean {
+   if (text === "") return true;
+   if (text !== text.trim()) return true;
+-  if (SPECIAL_WORDS.test(text) || NUMBER_LIKE.test(text)) return true;
++  if (SPECIAL_WORDS.test(text) || NUMBER_LIKE.test(text) || YAML11_SCALAR.test(text)) return true;
+   if (RISKY_START.test(text)) return true;
+   if (text.includes(": ") || text.includes(" #") || text.endsWith(":")) return true;
+   // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters force quoting
+diff --git a/apps/web/src/pages/ConfigPage.test.tsx b/apps/web/src/pages/ConfigPage.test.tsx
+index 92f1997..78a0db8 100644
+--- a/apps/web/src/pages/ConfigPage.test.tsx
++++ b/apps/web/src/pages/ConfigPage.test.tsx
+@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+ import { createMockApi, type MockApi } from "../testing/mockApi.ts";
+ import { renderPage } from "../testing/render.tsx";
+-import { APPLY_NOTE, ConfigPage, YAML_SAVE_NOTE } from "./ConfigPage.tsx";
++import { APPLY_NOTE, ConfigPage } from "./ConfigPage.tsx";
+ 
+ let mock: MockApi;
+ let restore: () => void;
+@@ -154,13 +154,8 @@ describe("config form", () => {
+     expect(mock.callsTo("PUT", "/api/config")).toHaveLength(0);
+   });
+ 
+-  it("shows the file's own settings as read-only YAML", async () => {
+-    mock.state.effective = [
+-      { key: "model.provider", value: "fake", source: "file" },
+-      { key: "model.name", value: "fake-large", source: "file" },
+-      { key: "display.bell", value: true, source: "env" },
+-      { key: "agent.max_turns", value: 90, source: "default" },
+-    ];
++  it("shows the file's own settings as YAML and saves the edited text", async () => {
++    mock.state.configFile = { model: { provider: "fake", name: "fake-large" } };
+     renderPage(<ConfigPage />, "/config");
+     await screen.findByLabelText("model.provider");
+     fireEvent.click(screen.getByRole("button", { name: "YAML" }));
+@@ -168,15 +163,35 @@ describe("config form", () => {
+       name: "Raw YAML configuration",
+     })) as HTMLTextAreaElement;
+     await waitFor(() => expect(yaml.value).toBe("model:\n  provider: fake\n  name: fake-large\n"));
+-    expect(yaml.readOnly).toBe(true);
++    expect(yaml.readOnly).toBe(false);
+     const save = screen.getByRole("button", { name: "Save" }) as HTMLButtonElement;
+     expect(save.disabled).toBe(true);
+-    expect(save.title).toBe(YAML_SAVE_NOTE);
+     expect(screen.queryByRole("button", { name: "Reset section to defaults" })).toBeNull();
++    fireEvent.change(yaml, { target: { value: "model:\n  provider: other\n" } });
++    expect(save.disabled).toBe(false);
++    fireEvent.click(save);
++    await waitFor(() => expect(mock.state.rawSaves).toEqual(["model:\n  provider: other\n"]));
++    expect(await screen.findByText(/Saved config.yaml/)).toBeTruthy();
+     fireEvent.click(screen.getByRole("button", { name: "Form" }));
+     expect(await screen.findByLabelText("model.provider")).toBeTruthy();
+   });
+ 
++  it("lists the problems of a refused YAML save and keeps the text", async () => {
++    mock.state.rawProblems = ["agent.max_turns: Input should be a valid integer"];
++    renderPage(<ConfigPage />, "/config");
++    await screen.findByLabelText("model.provider");
++    fireEvent.click(screen.getByRole("button", { name: "YAML" }));
++    const yaml = (await screen.findByRole("textbox", {
++      name: "Raw YAML configuration",
++    })) as HTMLTextAreaElement;
++    fireEvent.change(yaml, { target: { value: "agent:\n  max_turns: lots\n" } });
++    fireEvent.click(screen.getByRole("button", { name: "Save" }));
++    const alert = await screen.findByText("agent.max_turns: Input should be a valid integer");
++    expect(alert.closest("[role=alert]")?.textContent).toContain("Not saved");
++    expect(yaml.value).toBe("agent:\n  max_turns: lots\n");
++    expect(mock.state.rawSaves).toEqual([]);
++  });
++
+   it("says so when the file sets nothing", async () => {
+     renderPage(<ConfigPage />, "/config");
+     await screen.findByLabelText("model.provider");
+diff --git a/apps/web/src/pages/ConfigPage.tsx b/apps/web/src/pages/ConfigPage.tsx
+index 16c1c11..d8060b6 100644
+--- a/apps/web/src/pages/ConfigPage.tsx
++++ b/apps/web/src/pages/ConfigPage.tsx
+@@ -1,7 +1,7 @@
+ // Config (P18-20, re-laid out in W52-e): a section list beside one card of fields built from the
+ // config schema, a search in the header, a toolbar (export / import JSON, reset a section to the
+-// defaults, the YAML and Effective views, Save), a read-only YAML view of what the file sets, and
+-// the effective view naming where each value comes from.
++// defaults, the YAML and Effective views, Save), an editable YAML view of what the file sets (Save
++// sends it whole, W58-J2-2), and the effective view naming where each value comes from.
+ 
+ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+ import {
+@@ -42,11 +42,9 @@ import {
+ } from "./config/categories.ts";
+ import { EffectiveView } from "./config/EffectiveView.tsx";
+ import { FilterColumn } from "./config/FilterColumn.tsx";
+-import { YamlView } from "./config/YamlView.tsx";
++import { useYamlDraft, YamlView } from "./config/YamlView.tsx";
+ 
+ export const APPLY_NOTE = "Changes apply to the next session, or to the daemon after it restarts.";
+-export const YAML_SAVE_NOTE =
+-  "Raw YAML editing is not available yet; edit the settings in the form.";
+ 
+ type View = "form" | "yaml" | "effective";
+ 
+@@ -141,6 +139,11 @@ export function ConfigPage() {
+   useEffect(() => {
+     if (config.data && form === null) setForm(config.data);
+   }, [config.data, form]);
++  // A saved YAML text replaced the file: the form reloads from it instead of keeping stale values.
++  const draft = useYamlDraft(view === "yaml", () => {
++    setForm(null);
++    setDirty(false);
++  });
+ 
+   const save = useMutation({
+     mutationFn: (next: ConfigObject) => api.config.put(next),
+@@ -331,16 +334,15 @@ export function ConfigPage() {
+           size="sm"
+           tone="primary"
+           className={saveClass}
+-          disabled={yaml || !dirty || !form || save.isPending}
+-          title={yaml ? YAML_SAVE_NOTE : undefined}
+-          onClick={() => form && save.mutate(form)}
++          disabled={yaml ? !draft.dirty || draft.saving : !dirty || !form || save.isPending}
++          onClick={() => (yaml ? draft.save() : form && save.mutate(form))}
+         >
+           Save
+         </Button>
+       </div>
+ 
+       {view === "effective" ? <EffectiveView /> : null}
+-      {yaml ? <YamlView /> : null}
++      {yaml ? <YamlView draft={draft} /> : null}
+       {view === "form" ? (
+         config.isPending || schema.isPending || (form === null && !config.error) ? (
+           <div className="flex justify-center py-24">
+diff --git a/apps/web/src/pages/DocsPage.test.tsx b/apps/web/src/pages/DocsPage.test.tsx
+index 845da58..4591933 100644
+--- a/apps/web/src/pages/DocsPage.test.tsx
++++ b/apps/web/src/pages/DocsPage.test.tsx
+@@ -1,16 +1,74 @@
+-import { render, screen } from "@testing-library/react";
+-import { describe, expect, it } from "vitest";
++import { fireEvent, screen, waitFor, within } from "@testing-library/react";
++import { afterEach, beforeEach, describe, expect, it } from "vitest";
+ import { DOCS_LINK } from "../shell/routes.ts";
++import { createMockApi, type MockApi } from "../testing/mockApi.ts";
++import { currentLocation, renderPage } from "../testing/render.tsx";
+ import { DocsPage } from "./DocsPage.tsx";
+ 
++let mock: MockApi;
++let restore: () => void;
++
++beforeEach(() => {
++  mock = createMockApi();
++  restore = mock.install();
++});
++
++afterEach(() => {
++  restore();
++});
++
+ describe("docs page", () => {
+-  it("frames a pointer that opens our docs in a new tab", () => {
+-    render(<DocsPage />);
++  it("renders our docs home with the site's navigation and a link out", async () => {
++    renderPage(<DocsPage />, "/docs");
+     const panel = screen.getByRole("region", { name: "Documentation" });
+-    expect(panel.textContent).toContain("Indus Agent documentation");
+-    const link = screen.getByRole("link", { name: "Open docs" });
+-    expect(link.getAttribute("href")).toBe(DOCS_LINK.href);
+-    expect(link.getAttribute("target")).toBe("_blank");
+-    expect(link.getAttribute("rel")).toBe("noopener noreferrer");
++    expect(
++      await within(panel).findByRole("heading", { level: 1, name: "Indus Agent" }),
++    ).toBeTruthy();
++    const nav = within(screen.getByRole("navigation", { name: "Guides" }));
++    expect(nav.getByRole("button", { name: "Home" }).getAttribute("aria-current")).toBe("page");
++    expect(nav.getByText("Getting started")).toBeTruthy();
++    expect(nav.getByRole("button", { name: "Quickstart" })).toBeTruthy();
++    const out = screen.getByRole("link", { name: "Open docs" });
++    expect(out.getAttribute("href")).toBe(DOCS_LINK.href);
++    expect(out.getAttribute("target")).toBe("_blank");
++    expect(out.getAttribute("rel")).toBe("noopener noreferrer");
++    // Tables render as tables, never as raw HTML.
++    expect(within(panel).getAllByRole("table").length).toBeGreaterThan(0);
++  });
++
++  it("opens a guide from the navigation and from a link inside a guide", async () => {
++    renderPage(<DocsPage />, "/docs");
++    const panel = screen.getByRole("region", { name: "Documentation" });
++    await within(panel).findByRole("heading", { level: 1, name: "Indus Agent" });
++    fireEvent.click(within(panel).getAllByRole("link", { name: "Install" })[0] as HTMLElement);
++    await waitFor(() => expect(currentLocation()).toBe("/docs?page=getting-started%2Finstall"));
++    expect(await within(panel).findByRole("heading", { level: 1 })).toBeTruthy();
++    const nav = within(screen.getByRole("navigation", { name: "Guides" }));
++    expect(nav.getByRole("button", { name: "Install" }).getAttribute("aria-current")).toBe("page");
++    fireEvent.click(nav.getByRole("button", { name: "Command line" }));
++    await waitFor(() => expect(currentLocation()).toBe("/docs?page=reference%2Fcli"));
++    expect(
++      await within(panel).findByRole("heading", { level: 1, name: "Command line" }),
++    ).toBeTruthy();
++  });
++
++  it("opens web addresses in a new tab", async () => {
++    renderPage(<DocsPage />, "/docs?page=getting-started/install");
++    const panel = screen.getByRole("region", { name: "Documentation" });
++    await within(panel).findByRole("heading", { level: 1 });
++    const external = within(panel)
++      .getAllByRole("link")
++      .filter((a) => /^https?:/.test(a.getAttribute("href") ?? ""));
++    for (const link of external) {
++      expect(link.getAttribute("target")).toBe("_blank");
++      expect(link.getAttribute("rel")).toBe("noopener noreferrer");
++    }
++  });
++
++  it("says so for a guide that does not exist", async () => {
++    renderPage(<DocsPage />, "/docs?page=nope/missing");
++    expect(await screen.findByText(/No guide is called/)).toBeTruthy();
++    fireEvent.click(screen.getByRole("button", { name: "Go to the docs home" }));
++    await waitFor(() => expect(currentLocation()).toBe("/docs"));
+   });
+ });
+diff --git a/apps/web/src/pages/DocsPage.tsx b/apps/web/src/pages/DocsPage.tsx
+index 3cdd33e..11731e9 100644
+--- a/apps/web/src/pages/DocsPage.tsx
++++ b/apps/web/src/pages/DocsPage.tsx
+@@ -1,34 +1,138 @@
+-// Documentation (W52-docs-1): an in-app page with the framed panel the docs will live in. Until
+-// our docs site exists (P25-20) the panel holds a pointer that opens the docs in a new tab; once
+-// it does, the panel becomes an iframe of `DOCS_LINK.href` (needs a `frame-src` for that origin).
++// Documentation (W52-docs-1; our guides in-app since W58-J2-1): the user guides of docs/user,
++// bundled with the dashboard, beside the navigation of our docs site. `?page=<slug>` picks the
++// guide (Home without one) and `#anchor` a heading in it, so a guide can be linked and reloaded.
++// The full docs site stays one click away (DOCS_LINK). There is no API reference page: the
++// backend keeps FastAPI's OpenAPI pages off.
+ 
++import { useQuery } from "@tanstack/react-query";
+ import { BookOpen, ExternalLink } from "lucide-react";
++import { useEffect, useMemo, useRef } from "react";
++import { useLocation, useNavigate, useSearchParams } from "react-router";
+ import { DOCS_LINK } from "../shell/routes.ts";
++import { Card, Loading, QueryState } from "../ui/controls.tsx";
++import { cx } from "../ui/cx.ts";
++import { DocArticle, type DocLinkTarget } from "./docs/DocArticle.tsx";
++import { docsNav, HOME_SLUG, loadDoc } from "./docs/library.ts";
++
++function DocsNav({ active, onPick }: { active: string; onPick: (slug: string) => void }) {
++  const sections = useMemo(() => docsNav(), []);
++  return (
++    <nav
++      aria-label="Guides"
++      className="flex shrink-0 flex-col border border-line bg-surface lg:sticky lg:top-4 lg:w-[230px] lg:self-start"
++    >
++      <div className="flex h-[31px] items-center gap-2 border-b border-line px-3">
++        <BookOpen aria-hidden="true" className="size-3 text-ink-soft" />
++        <span className="type-label text-[0.6875rem] tracking-[0.12em] text-ink-muted">Guides</span>
++      </div>
++      <div className="max-h-[40vh] overflow-y-auto p-2 lg:max-h-[calc(100vh-220px)]">
++        {sections.map((section) => (
++          <div key={section.title || "home"} className="mb-2 last:mb-0">
++            {section.title ? (
++              <p className="type-label m-0 px-2 pt-2 pb-1 text-[0.6875rem] text-ink-soft">
++                {section.title}
++              </p>
++            ) : null}
++            <ul className="m-0 flex list-none flex-col gap-px p-0">
++              {section.pages.map((page) => {
++                const on = page.slug === active;
++                return (
++                  <li key={page.slug}>
++                    <button
++                      type="button"
++                      aria-current={on ? "page" : undefined}
++                      onClick={() => onPick(page.slug)}
++                      className={cx(
++                        "type-data flex min-h-[23px] w-full items-center px-2 py-0.5 text-left text-[0.75rem] transition-colors",
++                        on ? "bg-selected text-ink" : "text-ink-muted hover:bg-hover",
++                      )}
++                    >
++                      {page.title}
++                    </button>
++                  </li>
++                );
++              })}
++            </ul>
++          </div>
++        ))}
++      </div>
++    </nav>
++  );
++}
+ 
+ export function DocsPage() {
++  const [params] = useSearchParams();
++  const location = useLocation();
++  const navigate = useNavigate();
++  const slug = (params.get("page") ?? "").trim() || HOME_SLUG;
++  const doc = useQuery({
++    queryKey: ["docs", slug],
++    queryFn: () => loadDoc(slug),
++    staleTime: Number.POSITIVE_INFINITY,
++  });
++  const top = useRef<HTMLDivElement>(null);
++
++  // Other query values (the profile) ride along; the anchor is the URL's hash.
++  const open = (target: DocLinkTarget) => {
++    const next = new URLSearchParams(params);
++    if (target.slug === HOME_SLUG) next.delete("page");
++    else next.set("page", target.slug);
++    const search = next.toString();
++    navigate({
++      search: search ? `?${search}` : "",
++      hash: target.anchor ? `#${target.anchor}` : "",
++    });
++  };
++
++  // Once the guide is on screen, bring its anchor (or its top) into view.
++  const hash = location.hash;
++  useEffect(() => {
++    if (doc.data == null) return;
++    const anchor = decodeURIComponent(hash.slice(1));
++    const target = anchor ? document.getElementById(anchor) : top.current;
++    target?.scrollIntoView?.({ block: "start" });
++  }, [doc.data, hash]);
++
+   return (
+-    <div className="flex min-h-0 flex-1 flex-col px-[1.4375rem] py-[1.875rem]">
+-      <section
+-        aria-label="Documentation"
+-        className="flex min-h-[24rem] flex-1 flex-col items-center justify-center gap-3 rounded-[2px] border border-line bg-white px-6 text-center [color-scheme:light]"
+-      >
+-        <BookOpen aria-hidden="true" className="size-8 text-[#0b1d3a]/70" />
+-        <h2 className="m-0 text-[1.125rem] font-semibold text-[#0b1d3a]">
+-          Indus Agent documentation
+-        </h2>
+-        <p className="m-0 max-w-md text-[0.875rem] text-[#0b1d3a]/70">
+-          The guides and reference pages open in a new browser tab.
+-        </p>
+-        <a
+-          href={DOCS_LINK.href}
+-          target="_blank"
+-          rel="noopener noreferrer"
+-          className="type-button mt-2 inline-flex h-[1.875rem] items-center gap-2 border border-[#0b1d3a] px-3 text-[#0b1d3a] uppercase hover:bg-[#0b1d3a]/5 [&_svg]:size-3.5"
+-        >
+-          <ExternalLink aria-hidden="true" />
+-          Open docs
+-        </a>
+-      </section>
++    <div className="flex flex-col gap-4 px-4 py-[1.4375rem] lg:flex-row lg:items-start lg:px-[1.4375rem]">
++      <DocsNav active={slug} onPick={(next) => open({ slug: next, anchor: "" })} />
++      <Card padded={false} className="min-w-0 flex-1">
++        <section aria-label="Documentation" className="px-5 py-6 sm:px-8">
++          <div ref={top} className="mb-4 flex flex-wrap items-center justify-end gap-2">
++            <a
++              href={DOCS_LINK.href}
++              target="_blank"
++              rel="noopener noreferrer"
++              className="type-button inline-flex h-[1.75rem] items-center gap-2 border border-line px-2.5 text-ink-muted uppercase hover:bg-hover [&_svg]:size-3.5"
++            >
++              <ExternalLink aria-hidden="true" />
++              Open docs
++            </a>
++          </div>
++          {doc.isPending ? (
++            <div className="flex justify-center py-12">
++              <Loading />
++            </div>
++          ) : (
++            <QueryState loading={false} error={doc.error} onRetry={() => void doc.refetch()}>
++              {doc.data == null ? (
++                <p className="m-0 py-8 text-center text-[0.875rem] text-ink-muted">
++                  No guide is called “{slug}”.{" "}
++                  <button
++                    type="button"
++                    className="text-ink underline underline-offset-2"
++                    onClick={() => open({ slug: HOME_SLUG, anchor: "" })}
++                  >
++                    Go to the docs home
++                  </button>
++                </p>
++              ) : (
++                <DocArticle slug={slug} source={doc.data} onNavigate={open} />
++              )}
++            </QueryState>
++          )}
++        </section>
++      </Card>
+     </div>
+   );
+ }
+diff --git a/apps/web/src/pages/EnvPage.test.tsx b/apps/web/src/pages/EnvPage.test.tsx
+index 05ac807..f11c69a 100644
+--- a/apps/web/src/pages/EnvPage.test.tsx
++++ b/apps/web/src/pages/EnvPage.test.tsx
+@@ -145,6 +145,26 @@ describe("keys", () => {
+     expect(await screen.findByRole("region", { name: "Provider sign-ins" })).toBeTruthy();
+   });
+ 
++  it("lists providers with a documented sign-in and their CLI command", async () => {
++    mock.state.modelOptions.providers.push({
++      name: "openrouter",
++      label: "OpenRouter",
++      description: "",
++      family: "openai",
++      auth_type: "api_key",
++      configured: false,
++      device_login: false,
++      sign_in: true,
++      supports_model_listing: true,
++    });
++    renderPage(<EnvPage />, "/env");
++    const row = within(await screen.findByTestId("oauth-openrouter"));
++    expect(row.getByText("Browser sign-in")).toBeTruthy();
++    expect(row.getByText("indus auth add openrouter --type oauth")).toBeTruthy();
++    expect(row.queryByRole("button", { name: "Login" })).toBeNull();
++    expect(screen.queryByTestId("oauth-fake")).toBeNull();
++  });
++
+   it("adds a custom key by name and refuses a name that is not an env name", async () => {
+     renderPage(<EnvPage />, "/env");
+     const card = within(await screen.findByRole("region", { name: "Custom keys" }));
+diff --git a/apps/web/src/pages/EnvPage.tsx b/apps/web/src/pages/EnvPage.tsx
+index 26fc8fd..bf3e966 100644
+--- a/apps/web/src/pages/EnvPage.tsx
++++ b/apps/web/src/pages/EnvPage.tsx
+@@ -264,12 +264,14 @@ function OAuthRow({ provider }: { provider: ProviderOption }) {
+         <div className="flex min-w-0 flex-1 flex-col gap-1">
+           <div className="flex flex-wrap items-center gap-2">
+             <span className="text-[0.875rem] font-medium text-ink">{provider.label}</span>
+-            <Badge>{provider.device_login ? "Device code" : "CLI sign-in"}</Badge>
++            <Badge>{provider.device_login ? "Device code" : "Browser sign-in"}</Badge>
+           </div>
+           <p className="m-0 text-[0.75rem] text-ink-muted">
+             {provider.configured
+               ? "Connected."
+-              : "Not connected. Sign in here when offered, or from a terminal."}
++              : provider.device_login
++                ? "Not connected. Log in here, or from a terminal."
++                : "Not connected. Run the command in a terminal on this machine; it opens the provider's sign-in page."}
+           </p>
+           <div className="flex flex-wrap items-center gap-1">
+             <CodeChip faded>{command}</CodeChip>
+@@ -304,8 +306,10 @@ function OAuthRow({ provider }: { provider: ProviderOption }) {
+ function OAuthCard() {
+   const client = useQueryClient();
+   const options = useQuery({ queryKey: OPTIONS_QUERY, queryFn: () => api.model.options() });
++  // Providers with a documented sign-in flow (providers.auth.flows, W58-J2-4), plus any whose
++  // auth type is a sign-in.
+   const list = (options.data?.providers ?? []).filter(
+-    (p) => p.device_login || p.auth_type.includes("oauth"),
++    (p) => p.device_login || p.sign_in === true || p.auth_type.includes("oauth"),
+   );
+   const connected = list.filter((p) => p.configured).length;
+   return (
+diff --git a/apps/web/src/pages/SkillsPage.test.tsx b/apps/web/src/pages/SkillsPage.test.tsx
+index fa69954..3f19b92 100644
+--- a/apps/web/src/pages/SkillsPage.test.tsx
++++ b/apps/web/src/pages/SkillsPage.test.tsx
+@@ -90,6 +90,30 @@ describe("skills page", () => {
+     expect((await dialog.findByRole("alert")).textContent).toContain("Name the skill");
+   });
+ 
++  it("saves a new skill through the skill writer and shows a refusal", async () => {
++    renderPage(<SkillsPage />, "/skills");
++    fireEvent.click(await screen.findByRole("button", { name: "New skill" }));
++    let dialog = within(await screen.findByRole("dialog", { name: "New skill" }));
++    fireEvent.change(dialog.getByLabelText("Name"), { target: { value: "summarise" } });
++    fireEvent.click(dialog.getByRole("button", { name: "Create skill" }));
++    expect((await dialog.findByRole("alert")).textContent).toContain("already exists");
++    fireEvent.change(dialog.getByLabelText("Name"), { target: { value: "release-notes" } });
++    fireEvent.change(dialog.getByLabelText("Category (optional)"), {
++      target: { value: "writing" },
++    });
++    fireEvent.click(dialog.getByRole("button", { name: "Create skill" }));
++    await waitFor(() => expect(screen.queryByRole("dialog", { name: "New skill" })).toBeNull());
++    const sent = mock.callsTo("POST", "/api/skills/create");
++    expect(sent.at(-1)?.body).toMatchObject({ name: "release-notes", category: "writing" });
++    // The untouched template follows the name, so its front matter names the new skill.
++    expect(String((sent.at(-1)?.body as { content?: unknown })?.content)).toContain(
++      "name: release-notes",
++    );
++    expect(await screen.findByText("release-notes")).toBeTruthy();
++    dialog = within(document.body);
++    expect(dialog.getByText("Skill release-notes saved.")).toBeTruthy();
++  });
++
+   it("toggles an installed skill", async () => {
+     renderPage(<SkillsPage />, "/skills");
+     fireEvent.click(await screen.findByRole("switch", { name: "Enable summarise" }));
+diff --git a/apps/web/src/pages/config/YamlView.tsx b/apps/web/src/pages/config/YamlView.tsx
+index 4093baf..ff2ff49 100644
+--- a/apps/web/src/pages/config/YamlView.tsx
++++ b/apps/web/src/pages/config/YamlView.tsx
+@@ -1,40 +1,113 @@
+-// The read-only YAML view (W52-pc-10): the settings the config file itself sets, from the
+-// effective entries whose source is the file, nested by key and written as YAML. Values arrive
+-// redacted. There is no raw-file endpoint yet, so nothing here writes.
++// The raw YAML view (W52-pc-10, editable since W58-J2-2): the config file's own settings (no
++// defaults, `${NAME}` references as written, credentials shown as the mask) written as YAML.
++// Save sends the text to `PUT /api/config/raw`, which parses it, puts the hidden values back,
++// checks it against the schema and only then writes the whole file through the config writer; a
++// problem is a 422 that lists every one and changes nothing. Comments typed here are not kept
++// (the file's own comments are).
+ 
+-import { useQuery } from "@tanstack/react-query";
++import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+ import { FileText } from "lucide-react";
+-import { api } from "../../lib/api.ts";
+-import { nestEntries, toYaml } from "../../lib/yaml.ts";
+-import { Card, CardHeader, Loading, QueryState } from "../../ui/controls.tsx";
++import { useState } from "react";
++import { ApiError, api } from "../../lib/api.ts";
++import { toYaml } from "../../lib/yaml.ts";
++import { errorText, useToast } from "../../shell/Toasts.tsx";
++import { Card, CardHeader, Loading, Notice, QueryState } from "../../ui/controls.tsx";
+ 
+ export const EMPTY_YAML = "# config.yaml has no settings yet\n";
+ 
+-export function YamlView() {
+-  const effective = useQuery({
+-    queryKey: ["config", "effective"],
+-    queryFn: () => api.config.effective(),
++/** The `problems` list of a 422 `config_invalid` answer, else none. */
++export function problemsOf(error: unknown): string[] {
++  if (!(error instanceof ApiError) || typeof error.body !== "object" || error.body === null)
++    return [];
++  const detail = (error.body as { detail?: unknown }).detail;
++  if (typeof detail !== "object" || detail === null) return [];
++  const problems = (detail as { problems?: unknown }).problems;
++  return Array.isArray(problems) ? problems.map(String) : [];
++}
++
++export interface YamlDraft {
++  loading: boolean;
++  error: unknown;
++  retry: () => void;
++  text: string;
++  setText: (next: string) => void;
++  dirty: boolean;
++  saving: boolean;
++  problems: string[];
++  save: () => void;
++}
++
++/** The YAML text being edited, kept by the page so the toolbar's Save can send it. */
++export function useYamlDraft(active: boolean, onSaved: () => void): YamlDraft {
++  const client = useQueryClient();
++  const toast = useToast();
++  const file = useQuery({
++    queryKey: ["config", "raw"],
++    queryFn: () => api.config.raw(),
++    enabled: active,
+   });
+-  const fromFile = (effective.data?.entries ?? []).filter((entry) => entry.source === "file");
+-  const text = toYaml(nestEntries(fromFile)) || EMPTY_YAML;
++  const loaded = file.data ? toYaml(file.data.config) || EMPTY_YAML : null;
++  const [draft, setDraft] = useState<string | null>(null);
++  const [problems, setProblems] = useState<string[]>([]);
++  const text = draft ?? loaded ?? "";
++  const save = useMutation({
++    mutationFn: (yaml: string) => api.config.putRaw(yaml),
++    onSuccess: () => {
++      setDraft(null);
++      setProblems([]);
++      toast.show("Saved config.yaml. Changes apply to the next session.", "success");
++      onSaved();
++      void client.invalidateQueries({ queryKey: ["config"] });
++    },
++    onError: (error) => {
++      setProblems(problemsOf(error));
++      toast.show(errorText(error), "error");
++    },
++  });
++  return {
++    loading: file.isPending && active,
++    error: file.error,
++    retry: () => void file.refetch(),
++    text,
++    setText: (next) => setDraft(next),
++    dirty: draft !== null && draft !== loaded,
++    saving: save.isPending,
++    problems,
++    save: () => save.mutate(text),
++  };
++}
++
++export function YamlView({ draft }: { draft: YamlDraft }) {
+   return (
+     <Card padded={false}>
+       <CardHeader icon={FileText} title="Raw YAML configuration" />
+-      {effective.isPending ? (
++      {draft.loading ? (
+         <div className="flex justify-center py-12">
+           <Loading />
+         </div>
+       ) : (
+-        <QueryState
+-          loading={false}
+-          error={effective.error}
+-          onRetry={() => void effective.refetch()}
+-        >
++        <QueryState loading={false} error={draft.error} onRetry={draft.retry}>
++          {draft.problems.length > 0 ? (
++            <div className="px-4 pt-3">
++              <Notice tone="danger">
++                <div className="min-w-0">
++                  <span className="block">Not saved: fix these first.</span>
++                  <ul className="m-0 mt-1 list-disc pl-5">
++                    {draft.problems.map((problem) => (
++                      <li key={problem} className="type-data text-[0.75rem] break-words">
++                        {problem}
++                      </li>
++                    ))}
++                  </ul>
++                </div>
++              </Notice>
++            </div>
++          ) : null}
+           <textarea
+             aria-label="Raw YAML configuration"
+-            readOnly
+             spellCheck={false}
+-            value={text}
++            value={draft.text}
++            onChange={(e) => draft.setText(e.currentTarget.value)}
+             className="type-data block min-h-[600px] w-full resize-y border-0 bg-transparent px-4 py-3 text-[0.8125rem] leading-[21px] text-ink outline-none"
+           />
+         </QueryState>
+diff --git a/apps/web/src/pages/docs/DocArticle.tsx b/apps/web/src/pages/docs/DocArticle.tsx
+new file mode 100644
+index 0000000..f0326ff
+--- /dev/null
++++ b/apps/web/src/pages/docs/DocArticle.tsx
+@@ -0,0 +1,253 @@
++// One user guide as React elements (W58-J2-1): headings carry our docs site's anchors, a link to
++// another guide opens it in this page, a web address opens in a new tab, anything else is text.
++// Nothing is ever rendered as HTML; colours come from the theme tokens, so it follows light/dark.
++
++import { ExternalLink } from "lucide-react";
++import { Fragment, type ReactNode } from "react";
++import { cx } from "../../ui/cx.ts";
++import { resolveLink } from "./library.ts";
++import {
++  type Block,
++  type Inline,
++  parseBlocks,
++  parseInline,
++  plainText,
++  slugify,
++  splitItem,
++} from "./markdown.ts";
++
++export interface DocLinkTarget {
++  slug: string;
++  anchor: string;
++}
++
++interface Context {
++  slug: string;
++  onNavigate: (target: DocLinkTarget) => void;
++  /** Anchors already used on this page (repeats get `_1`, `_2` like the docs site). */
++  anchors: Map<string, number>;
++}
++
++function anchorFor(ctx: Context, text: string): string {
++  const base = slugify(plainText(parseInline(text))) || "section";
++  const seen = ctx.anchors.get(base) ?? 0;
++  ctx.anchors.set(base, seen + 1);
++  return seen === 0 ? base : `${base}_${seen}`;
++}
++
++function Inlines({ runs, ctx }: { runs: readonly Inline[]; ctx: Context }) {
++  return (
++    <>
++      {runs.map((run, index) => {
++        const key = `${run.type}-${index}`;
++        switch (run.type) {
++          case "text":
++            return <Fragment key={key}>{run.text}</Fragment>;
++          case "break":
++            return <br key={key} />;
++          case "code":
++            return (
++              <code
++                key={key}
++                className="type-data bg-wash px-1 py-px text-[0.8125rem] break-words text-ink"
++              >
++                {run.text}
++              </code>
++            );
++          case "strong":
++            return (
++              <strong key={key} className="font-semibold text-ink">
++                <Inlines runs={run.children} ctx={ctx} />
++              </strong>
++            );
++          case "em":
++            return (
++              <em key={key}>
++                <Inlines runs={run.children} ctx={ctx} />
++              </em>
++            );
++          case "strike":
++            return (
++              <s key={key}>
++                <Inlines runs={run.children} ctx={ctx} />
++              </s>
++            );
++          case "link":
++            return <DocLink key={key} run={run} ctx={ctx} />;
++        }
++        return null;
++      })}
++    </>
++  );
++}
++
++const LINK = "text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink";
++
++function DocLink({ run, ctx }: { run: Extract<Inline, { type: "link" }>; ctx: Context }) {
++  const target = resolveLink(ctx.slug, run.href);
++  const label = <Inlines runs={run.children} ctx={ctx} />;
++  if (target === null) return <span>{label}</span>;
++  if ("external" in target) {
++    return (
++      <a href={target.external} target="_blank" rel="noopener noreferrer" className={LINK}>
++        {label}
++        <ExternalLink aria-hidden="true" className="ml-0.5 inline size-3 align-baseline" />
++      </a>
++    );
++  }
++  const query = new URLSearchParams({ page: target.slug });
++  return (
++    <a
++      href={`?${query.toString()}${target.anchor ? `#${target.anchor}` : ""}`}
++      className={LINK}
++      onClick={(event) => {
++        if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
++        event.preventDefault();
++        ctx.onNavigate(target);
++      }}
++    >
++      {label}
++    </a>
++  );
++}
++
++function inline(text: string, ctx: Context): ReactNode {
++  return <Inlines runs={parseInline(text)} ctx={ctx} />;
++}
++
++const HEADING_CLASS: Record<number, string> = {
++  1: "type-section-title mt-0 mb-4 text-[1.375rem] normal-case tracking-[0.02em]",
++  2: "type-section-title mt-8 mb-3 border-b border-line pb-1.5 text-[1.0625rem] normal-case",
++  3: "mt-6 mb-2 text-[0.9375rem] font-semibold",
++  4: "mt-5 mb-2 text-[0.875rem] font-semibold",
++  5: "mt-4 mb-1 text-[0.8125rem] font-semibold",
++  6: "mt-4 mb-1 text-[0.8125rem] font-semibold text-ink-muted",
++};
++
++/** A list item: its leading text inline, then any blocks it holds (a nested list, code). */
++function ListItem({ text, ctx }: { text: string; ctx: Context }) {
++  const { lead, rest } = splitItem(text);
++  return (
++    <li className="my-1">
++      {inline(lead, ctx)}
++      {rest.trim() ? <Blocks blocks={parseBlocks(rest)} ctx={ctx} /> : null}
++    </li>
++  );
++}
++
++function Blocks({ blocks, ctx }: { blocks: readonly Block[]; ctx: Context }) {
++  return (
++    <>
++      {blocks.map((block, index) => {
++        const key = `${block.type}-${index}`;
++        switch (block.type) {
++          case "paragraph":
++            return (
++              <p key={key} className="my-3 leading-[1.65]">
++                {inline(block.text, ctx)}
++              </p>
++            );
++          case "heading": {
++            const level = Math.min(6, Math.max(1, block.level));
++            const Tag = `h${level}` as "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
++            return (
++              <Tag
++                key={key}
++                id={anchorFor(ctx, block.text)}
++                className={cx("scroll-mt-4 text-ink", HEADING_CLASS[level])}
++              >
++                {inline(block.text, ctx)}
++              </Tag>
++            );
++          }
++          case "code":
++            return (
++              <pre
++                key={key}
++                className="type-data my-3 overflow-x-auto border border-line bg-wash px-3 py-2.5 text-[0.8125rem] leading-[1.55] text-ink"
++              >
++                <code>{block.code}</code>
++              </pre>
++            );
++          case "list": {
++            const items = block.items.map((item, i) => (
++              // biome-ignore lint/suspicious/noArrayIndexKey: list items have no identity of their own
++              <ListItem key={i} text={item} ctx={ctx} />
++            ));
++            return block.ordered ? (
++              <ol key={key} start={block.start} className="my-3 list-decimal pl-6">
++                {items}
++              </ol>
++            ) : (
++              <ul key={key} className="my-3 list-disc pl-6">
++                {items}
++              </ul>
++            );
++          }
++          case "quote":
++            return (
++              <blockquote
++                key={key}
++                className="my-3 border-l-2 border-line-strong pl-4 text-ink-muted"
++              >
++                <Blocks blocks={parseBlocks(block.text)} ctx={ctx} />
++              </blockquote>
++            );
++          case "rule":
++            return <hr key={key} className="my-6 border-0 border-t border-line" />;
++          case "table":
++            return (
++              <div key={key} className="my-4 overflow-x-auto">
++                <table className="w-full border-collapse text-left text-[0.8125rem]">
++                  <thead>
++                    <tr>
++                      {block.header.map((cell, i) => (
++                        <th
++                          // biome-ignore lint/suspicious/noArrayIndexKey: columns are positional
++                          key={i}
++                          className="border-b border-line-strong px-2 py-1.5 align-bottom font-semibold text-ink"
++                        >
++                          {inline(cell, ctx)}
++                        </th>
++                      ))}
++                    </tr>
++                  </thead>
++                  <tbody>
++                    {block.rows.map((row, r) => (
++                      // biome-ignore lint/suspicious/noArrayIndexKey: rows are positional
++                      <tr key={r} className="border-b border-line">
++                        {row.map((cell, c) => (
++                          // biome-ignore lint/suspicious/noArrayIndexKey: columns are positional
++                          <td key={c} className="px-2 py-1.5 align-top">
++                            {inline(cell, ctx)}
++                          </td>
++                        ))}
++                      </tr>
++                    ))}
++                  </tbody>
++                </table>
++              </div>
++            );
++        }
++        return null;
++      })}
++    </>
++  );
++}
++
++export function DocArticle({
++  slug,
++  source,
++  onNavigate,
++}: {
++  slug: string;
++  source: string;
++  onNavigate: (target: DocLinkTarget) => void;
++}) {
++  const ctx: Context = { slug, onNavigate, anchors: new Map() };
++  return (
++    <article className="type-serif max-w-[52rem] text-[0.9375rem] text-ink">
++      <Blocks blocks={parseBlocks(source)} ctx={ctx} />
++    </article>
++  );
++}
+diff --git a/apps/web/src/pages/docs/docs.test.tsx b/apps/web/src/pages/docs/docs.test.tsx
+new file mode 100644
+index 0000000..1d72532
+--- /dev/null
++++ b/apps/web/src/pages/docs/docs.test.tsx
+@@ -0,0 +1,148 @@
++import { render, screen } from "@testing-library/react";
++import { describe, expect, it, vi } from "vitest";
++import { DocArticle } from "./DocArticle.tsx";
++import { bundledSlugs, docsNav, loadDoc, parseNav, resolveLink } from "./library.ts";
++import { cells, parseBlocks, parseInline, slugify, splitItem } from "./markdown.ts";
++
++describe("docs markdown", () => {
++  it("reads headings, fences, tables with escaped pipes, nested lists and skips comments", () => {
++    const blocks = parseBlocks(
++      [
++        "<!-- generated -->",
++        "# Title",
++        "",
++        "| Key | Values |",
++        "|---|---|",
++        "| `a.b` | 'x' \\| 'y' |",
++        "",
++        "- one",
++        "  - nested",
++        "- two",
++        "",
++        "```bash",
++        "indus --tui",
++        "```",
++      ].join("\n"),
++    );
++    expect(blocks.map((b) => b.type)).toEqual(["heading", "table", "list", "code"]);
++    expect(blocks[1]).toMatchObject({ rows: [["`a.b`", "'x' \\| 'y'"]] });
++    expect(blocks[2]).toMatchObject({ items: ["one\n- nested", "two"] });
++    expect(blocks[3]).toMatchObject({ lang: "bash", code: "indus --tui" });
++    expect(cells("| a \\| b | c |")).toEqual(["a \\| b", "c"]);
++  });
++
++  it("keeps a list item's wrapped text inline and its nested blocks apart", () => {
++    expect(splitItem("first line\nwrapped on\n- nested")).toEqual({
++      lead: "first line\nwrapped on",
++      rest: "- nested",
++    });
++  });
++
++  it("keeps hrefs and turns soft line breaks into spaces", () => {
++    expect(parseInline("see [the `cli`](user-guide/cli.md#one)\nnext")).toEqual([
++      { type: "text", text: "see " },
++      {
++        type: "link",
++        href: "user-guide/cli.md#one",
++        children: [
++          { type: "text", text: "the " },
++          { type: "code", text: "cli" },
++        ],
++      },
++      { type: "text", text: " next" },
++    ]);
++  });
++
++  it("makes anchors the way the docs site does", () => {
++    expect(slugify("One-shot runs")).toBe("one-shot-runs");
++    expect(slugify("Who may talk to the bot?")).toBe("who-may-talk-to-the-bot");
++    expect(slugify("Feishu / Lark")).toBe("feishu-lark");
++    expect(slugify("`indus auth` add")).toBe("indus-auth-add");
++  });
++});
++
++describe("docs library", () => {
++  it("resolves relative guide links, anchors and web addresses", () => {
++    expect(resolveLink("messaging/teams", "../reference/protocol.md")).toEqual({
++      slug: "reference/protocol",
++      anchor: "",
++    });
++    expect(resolveLink("index", "user-guide/cli.md#one-shot-runs")).toEqual({
++      slug: "user-guide/cli",
++      anchor: "one-shot-runs",
++    });
++    expect(resolveLink("user-guide/cli", "#flags")).toEqual({
++      slug: "user-guide/cli",
++      anchor: "flags",
++    });
++    expect(resolveLink("index", "https://example.com/x")).toEqual({
++      external: "https://example.com/x",
++    });
++    expect(resolveLink("index", "javascript:alert(1)")).toBeNull();
++    expect(resolveLink("index", "/etc/passwd")).toBeNull();
++    expect(resolveLink("index", "../../outside.md")).toBeNull();
++  });
++
++  it("reads the site's nav: top-level pages first, then one section per group", () => {
++    const nav = parseNav(
++      "site_name: x\nnav:\n  - Home: index.md\n  - Guide:\n      - CLI: user-guide/cli.md\n" +
++        "      - TUI: user-guide/tui.md\nplugins:\n  - search\n",
++    );
++    expect(nav).toEqual([
++      { title: "", pages: [{ slug: "index", title: "Home" }] },
++      {
++        title: "Guide",
++        pages: [
++          { slug: "user-guide/cli", title: "CLI" },
++          { slug: "user-guide/tui", title: "TUI" },
++        ],
++      },
++    ]);
++  });
++
++  it("bundles every guide and lists each one in the navigation", () => {
++    const listed = docsNav().flatMap((section) => section.pages.map((page) => page.slug));
++    expect(bundledSlugs().length).toBeGreaterThan(50);
++    expect([...listed].sort()).toEqual(bundledSlugs());
++  });
++
++  it("every link between guides lands on a bundled guide", async () => {
++    const bundled = new Set(bundledSlugs());
++    const broken: string[] = [];
++    for (const slug of bundled) {
++      const text = (await loadDoc(slug)) ?? "";
++      for (const match of text.matchAll(/\]\(([^)\s]+)\)/g)) {
++        const target = resolveLink(slug, match[1] ?? "");
++        if (target && "slug" in target && !bundled.has(target.slug)) {
++          broken.push(`${slug} -> ${match[1]}`);
++        }
++      }
++    }
++    expect(broken).toEqual([]);
++  });
++});
++
++describe("doc article", () => {
++  it("renders text only, numbers repeated anchors and routes guide links to the page", () => {
++    const onNavigate = vi.fn();
++    render(
++      <DocArticle
++        slug="user-guide/cli"
++        source={
++          "# CLI\n\n## Flags\n\n## Flags\n\n<b>not bold</b> and [tui](tui.md#keys) and " +
++          "[site](https://example.com)\n"
++        }
++        onNavigate={onNavigate}
++      />,
++    );
++    const headings = screen.getAllByRole("heading", { level: 2 });
++    expect(headings.map((h) => h.id)).toEqual(["flags", "flags_1"]);
++    expect(screen.getByText(/<b>not bold<\/b>/)).toBeTruthy();
++    expect(document.querySelector("b")).toBeNull();
++    screen.getByRole("link", { name: "tui" }).click();
++    expect(onNavigate).toHaveBeenCalledWith({ slug: "user-guide/tui", anchor: "keys" });
++    const site = screen.getByRole("link", { name: "site" });
++    expect(site.getAttribute("target")).toBe("_blank");
++    expect(site.getAttribute("rel")).toBe("noopener noreferrer");
++  });
++});
+diff --git a/apps/web/src/pages/docs/library.ts b/apps/web/src/pages/docs/library.ts
+new file mode 100644
+index 0000000..d614120
+--- /dev/null
++++ b/apps/web/src/pages/docs/library.ts
+@@ -0,0 +1,112 @@
++// Our user guides inside the dashboard (W58-J2-1): the pages of docs/user, bundled at build time
++// (one lazy chunk per page, so the Docs page loads only the page it shows), in the order and with
++// the titles of our docs site's navigation (the `nav:` of mkdocs.yml). The Docker and Nix web
++// builds copy docs/user and mkdocs.yml next to apps/ for this.
++
++import MKDOCS_YML from "../../../../../mkdocs.yml?raw";
++
++const SOURCES = import.meta.glob<string>("../../../../../docs/user/**/*.md", {
++  query: "?raw",
++  import: "default",
++});
++const PREFIX = "../../../../../docs/user/";
++
++export interface DocPage {
++  /** docs/user-relative path without `.md` (`user-guide/cli`). */
++  slug: string;
++  title: string;
++}
++
++export interface DocSection {
++  title: string;
++  pages: DocPage[];
++}
++
++/** Every bundled page's slug. */
++export function bundledSlugs(): string[] {
++  return Object.keys(SOURCES)
++    .map((path) => path.slice(PREFIX.length).replace(/\.md$/, ""))
++    .sort();
++}
++
++/** The page's Markdown, or null when no such page is bundled. */
++export async function loadDoc(slug: string): Promise<string | null> {
++  const load = SOURCES[`${PREFIX}${slug}.md`];
++  return load ? await load() : null;
++}
++
++const NAV_ITEM = /^(\s*)-\s+(.+?):\s*(\S+\.md)?\s*$/;
++
++/**
++ * The `nav:` tree of a mkdocs.yml text: top-level pages land in a leading untitled section, each
++ * `- Title:` with nested entries opens a section. Only the plain `- Title: path.md` form our
++ * navigation uses is read.
++ */
++export function parseNav(yml: string): DocSection[] {
++  const lines = yml.replace(/\r\n?/g, "\n").split("\n");
++  const start = lines.findIndex((line) => /^nav:\s*$/.test(line));
++  if (start < 0) return [];
++  const sections: DocSection[] = [{ title: "", pages: [] }];
++  let current = sections[0] as DocSection;
++  let topIndent: number | null = null;
++  for (const line of lines.slice(start + 1)) {
++    if (line.trim() === "" || line.trim().startsWith("#")) continue;
++    if (!/^\s/.test(line)) break; // the next top-level key ends the nav
++    const match = NAV_ITEM.exec(line);
++    if (!match) continue;
++    const indent = match[1]?.length ?? 0;
++    const title = (match[2] ?? "").replace(/^["']|["']$/g, "");
++    const path = match[3];
++    topIndent ??= indent;
++    if (indent === topIndent) {
++      if (path) {
++        (sections[0] as DocSection).pages.push({ slug: path.replace(/\.md$/, ""), title });
++      } else {
++        current = { title, pages: [] };
++        sections.push(current);
++      }
++    } else if (path) {
++      current.pages.push({ slug: path.replace(/\.md$/, ""), title });
++    }
++  }
++  return sections.filter((section) => section.pages.length > 0);
++}
++
++/** Our docs navigation, limited to the pages this build bundles. */
++export function docsNav(): DocSection[] {
++  const bundled = new Set(bundledSlugs());
++  return parseNav(MKDOCS_YML)
++    .map((section) => ({
++      title: section.title,
++      pages: section.pages.filter((page) => bundled.has(page.slug)),
++    }))
++    .filter((section) => section.pages.length > 0);
++}
++
++export const HOME_SLUG = "index";
++
++/**
++ * Where a link in page `from` points: `{slug, anchor}` for another bundled page (relative `.md`
++ * paths, `#anchor` on the same page), `{external}` for an http(s) address, or null for anything
++ * else (shown as text).
++ */
++export function resolveLink(
++  from: string,
++  href: string,
++): { slug: string; anchor: string } | { external: string } | null {
++  if (/^https?:\/\//i.test(href)) return { external: href };
++  if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("/")) return null;
++  const [pathPart = "", anchor = ""] = href.split("#", 2);
++  if (pathPart === "") return { slug: from, anchor };
++  if (!pathPart.endsWith(".md")) return null;
++  const parts = from.split("/").slice(0, -1);
++  for (const segment of pathPart.replace(/\.md$/, "").split("/")) {
++    if (segment === "..") {
++      if (parts.length === 0) return null;
++      parts.pop();
++    } else if (segment !== "." && segment !== "") {
++      parts.push(segment);
++    }
++  }
++  return { slug: parts.join("/"), anchor };
++}
+diff --git a/apps/web/src/pages/docs/markdown.ts b/apps/web/src/pages/docs/markdown.ts
+new file mode 100644
+index 0000000..ca5a83b
+--- /dev/null
++++ b/apps/web/src/pages/docs/markdown.ts
+@@ -0,0 +1,306 @@
++// A small Markdown reader for our user guides (W58-J2-1), adapted from the desktop's reply reader
++// (apps/desktop/src/chat/markdown.ts, our own code): text becomes blocks and inline runs that React
++// renders as elements, never raw HTML. Differences for docs: no math, links keep any href (the page
++// decides what a link may do), table cells honour `\|`, HTML comment lines are skipped, and
++// headings get the anchor ids our docs site gives them (`slugify`, Python-Markdown's toc rule).
++
++export type Block =
++  | { readonly type: "paragraph"; readonly text: string }
++  | { readonly type: "heading"; readonly level: number; readonly text: string }
++  | { readonly type: "code"; readonly lang: string; readonly code: string }
++  | {
++      readonly type: "list";
++      readonly ordered: boolean;
++      readonly start: number;
++      readonly items: readonly string[];
++    }
++  | { readonly type: "quote"; readonly text: string }
++  | { readonly type: "rule" }
++  | {
++      readonly type: "table";
++      readonly header: readonly string[];
++      readonly rows: readonly (readonly string[])[];
++    };
++
++export type Inline =
++  | { readonly type: "text"; readonly text: string }
++  | { readonly type: "code"; readonly text: string }
++  | { readonly type: "strong"; readonly children: readonly Inline[] }
++  | { readonly type: "em"; readonly children: readonly Inline[] }
++  | { readonly type: "strike"; readonly children: readonly Inline[] }
++  | { readonly type: "link"; readonly children: readonly Inline[]; readonly href: string }
++  | { readonly type: "break" };
++
++const FENCE = /^(\s{0,3})(`{3,}|~{3,})\s*([\w+#.-]*)/;
++const HEADING = /^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/;
++const RULE = /^\s{0,3}([-*_])(\s*\1){2,}\s*$/;
++const BULLET = /^\s{0,3}[-*+]\s+(.*)$/;
++const ORDERED = /^\s{0,3}(\d{1,9})[.)]\s+(.*)$/;
++const QUOTE = /^\s{0,3}>\s?(.*)$/;
++const TABLE_RULE = /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$/;
++const COMMENT = /^\s*<!--.*-->\s*$/;
++
++function closesFence(line: string, marker: string): boolean {
++  const trimmed = line.trim();
++  const char = marker[0] ?? "`";
++  return trimmed.length >= marker.length && [...trimmed].every((c) => c === char);
++}
++
++/** A table row's cells: split on `|` that is not escaped (`\|` stays in the cell as written). */
++export function cells(line: string): string[] {
++  const trimmed = line
++    .trim()
++    .replace(/^\|/, "")
++    .replace(/(?<!\\)\|$/, "");
++  const out: string[] = [];
++  let cell = "";
++  for (let i = 0; i < trimmed.length; i += 1) {
++    const ch = trimmed[i] ?? "";
++    if (ch === "\\" && trimmed[i + 1] === "|") {
++      cell += "\\|";
++      i += 1;
++    } else if (ch === "|") {
++      out.push(cell.trim());
++      cell = "";
++    } else {
++      cell += ch;
++    }
++  }
++  out.push(cell.trim());
++  return out;
++}
++
++function startsBlock(line: string, next: string | undefined): boolean {
++  return (
++    FENCE.test(line) ||
++    HEADING.test(line) ||
++    RULE.test(line) ||
++    BULLET.test(line) ||
++    ORDERED.test(line) ||
++    QUOTE.test(line) ||
++    (line.includes("|") && next !== undefined && TABLE_RULE.test(next))
++  );
++}
++
++/** A list item's text split into its leading inline text (the first line and the lines that
++ * continue it) and the blocks after it (a nested list, code, a later paragraph). */
++export function splitItem(text: string): { lead: string; rest: string } {
++  const lines = text.split("\n");
++  let end = 1;
++  while (end < lines.length) {
++    const line = lines[end] ?? "";
++    if (line.trim() === "" || startsBlock(line, lines[end + 1])) break;
++    end += 1;
++  }
++  return { lead: lines.slice(0, end).join("\n"), rest: lines.slice(end).join("\n") };
++}
++
++export function parseBlocks(source: string): Block[] {
++  const lines = source.replace(/\r\n?/g, "\n").split("\n");
++  const blocks: Block[] = [];
++  let i = 0;
++  while (i < lines.length) {
++    const line = lines[i] ?? "";
++    if (line.trim() === "" || COMMENT.test(line)) {
++      i += 1;
++      continue;
++    }
++    const fence = FENCE.exec(line);
++    if (fence) {
++      const indent = fence[1]?.length ?? 0;
++      const marker = fence[2] ?? "```";
++      const lang = (fence[3] ?? "").toLowerCase();
++      const body: string[] = [];
++      i += 1;
++      while (i < lines.length) {
++        const current = lines[i] ?? "";
++        i += 1;
++        if (closesFence(current, marker)) break;
++        body.push(current.slice(Math.min(indent, current.length - current.trimStart().length)));
++      }
++      blocks.push({ type: "code", lang, code: body.join("\n") });
++      continue;
++    }
++    const heading = HEADING.exec(line);
++    if (heading) {
++      blocks.push({ type: "heading", level: heading[1]?.length ?? 1, text: heading[2] ?? "" });
++      i += 1;
++      continue;
++    }
++    if (RULE.test(line)) {
++      blocks.push({ type: "rule" });
++      i += 1;
++      continue;
++    }
++    if (line.includes("|") && TABLE_RULE.test(lines[i + 1] ?? "")) {
++      const header = cells(line);
++      const rows: string[][] = [];
++      i += 2;
++      while (i < lines.length && (lines[i] ?? "").includes("|") && (lines[i] ?? "").trim() !== "") {
++        rows.push(cells(lines[i] ?? ""));
++        i += 1;
++      }
++      blocks.push({ type: "table", header, rows });
++      continue;
++    }
++    if (QUOTE.test(line)) {
++      const body: string[] = [];
++      while (i < lines.length) {
++        const match = QUOTE.exec(lines[i] ?? "");
++        if (!match) break;
++        body.push(match[1] ?? "");
++        i += 1;
++      }
++      blocks.push({ type: "quote", text: body.join("\n") });
++      continue;
++    }
++    const bullet = BULLET.exec(line);
++    const ordered = ORDERED.exec(line);
++    if (bullet || ordered) {
++      const isOrdered = ordered !== null;
++      const pattern = isOrdered ? ORDERED : BULLET;
++      const items: string[] = [];
++      const start = isOrdered ? Number(ordered?.[1] ?? 1) : 1;
++      const base = line.length - line.trimStart().length;
++      while (i < lines.length) {
++        const current = lines[i] ?? "";
++        const match = pattern.exec(current);
++        // A marker indented past this list's own is a nested list: it belongs to the item.
++        const deeper = current.length - current.trimStart().length >= base + 2;
++        if (match && !deeper) {
++          items.push((isOrdered ? match[2] : match[1]) ?? "");
++          i += 1;
++          continue;
++        }
++        // An indented line (a continuation, a nested list or code) belongs to the item above; a
++        // blank line inside the item is kept when indented text follows it.
++        const following = lines[i + 1] ?? "";
++        const continues =
++          (current.trim() !== "" && (deeper || /^\s{2,}/.test(current))) ||
++          (current.trim() === "" && /^\s{2,}\S/.test(following));
++        if (continues && items.length > 0) {
++          items[items.length - 1] = `${items[items.length - 1]}\n${current.replace(/^ {2,4}/, "")}`;
++          i += 1;
++          continue;
++        }
++        break;
++      }
++      blocks.push({ type: "list", ordered: isOrdered, start, items });
++      continue;
++    }
++    const body: string[] = [line];
++    i += 1;
++    while (i < lines.length) {
++      const current = lines[i] ?? "";
++      if (current.trim() === "" || startsBlock(current, lines[i + 1])) break;
++      body.push(current);
++      i += 1;
++    }
++    blocks.push({ type: "paragraph", text: body.join("\n") });
++  }
++  return blocks;
++}
++
++/** Inline runs of one block's text. A soft line break inside a paragraph is a space. */
++export function parseInline(source: string): Inline[] {
++  const out: Inline[] = [];
++  let text = "";
++  const flush = (): void => {
++    if (text !== "") out.push({ type: "text", text });
++    text = "";
++  };
++  let i = 0;
++  while (i < source.length) {
++    const rest = source.slice(i);
++    const ch = source[i] ?? "";
++    if (
++      ch === "\\" &&
++      i + 1 < source.length &&
++      /[\\`*_{}[\]()#+\-.!$~|>]/.test(source[i + 1] ?? "")
++    ) {
++      text += source[i + 1];
++      i += 2;
++      continue;
++    }
++    if (ch === "\n") {
++      text += " ";
++      i += 1;
++      continue;
++    }
++    if (ch === "`") {
++      const ticks = /^`+/.exec(rest)?.[0] ?? "`";
++      const end = source.indexOf(ticks, i + ticks.length);
++      if (end > 0) {
++        flush();
++        const code = source.slice(i + ticks.length, end).replace(/\\\|/g, "|");
++        out.push({ type: "code", text: code.trim() });
++        i = end + ticks.length;
++        continue;
++      }
++    }
++    if (ch === "[") {
++      const link = /^\[((?:[^\]`]|`[^`]*`)*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/.exec(rest);
++      if (link) {
++        flush();
++        const href = link[2] ?? "";
++        out.push({ type: "link", children: parseInline(link[1] || href), href });
++        i += link[0].length;
++        continue;
++      }
++    }
++    const strong = /^(\*\*|__)(?=\S)([\s\S]*?\S)\1/.exec(rest);
++    if (strong && (ch === "*" || i === 0 || !/\w/.test(source[i - 1] ?? ""))) {
++      flush();
++      out.push({ type: "strong", children: parseInline(strong[2] ?? "") });
++      i += strong[0].length;
++      continue;
++    }
++    const strike = /^~~(?=\S)([\s\S]*?\S)~~/.exec(rest);
++    if (strike) {
++      flush();
++      out.push({ type: "strike", children: parseInline(strike[1] ?? "") });
++      i += strike[0].length;
++      continue;
++    }
++    const em = /^(\*|_)(?=\S)([\s\S]*?\S)\1(?![*_\w])/.exec(rest);
++    if (em && (ch === "*" || i === 0 || !/\w/.test(source[i - 1] ?? ""))) {
++      flush();
++      out.push({ type: "em", children: parseInline(em[2] ?? "") });
++      i += em[0].length;
++      continue;
++    }
++    text += ch;
++    i += 1;
++  }
++  flush();
++  return out;
++}
++
++/** The plain text of inline runs (what a heading's anchor is made from). */
++export function plainText(runs: readonly Inline[]): string {
++  return runs
++    .map((run) => {
++      switch (run.type) {
++        case "text":
++        case "code":
++          return run.text;
++        case "break":
++          return " ";
++        default:
++          return plainText(run.children);
++      }
++    })
++    .join("");
++}
++
++/** A heading's anchor as our docs site makes it (Python-Markdown's toc): ASCII only, word
++ * characters, spaces and dashes kept, lower case, runs of spaces and dashes become one dash. */
++export function slugify(text: string): string {
++  return text
++    .normalize("NFKD")
++    .replace(/[^\x20-\x7e]/g, "")
++    .replace(/[^\w\s-]/g, "")
++    .trim()
++    .toLowerCase()
++    .replace(/[-\s]+/g, "-");
++}
+diff --git a/apps/web/src/pages/skills/SkillDialogs.tsx b/apps/web/src/pages/skills/SkillDialogs.tsx
+index 321fef5..ce1a8e2 100644
+--- a/apps/web/src/pages/skills/SkillDialogs.tsx
++++ b/apps/web/src/pages/skills/SkillDialogs.tsx
+@@ -1,9 +1,13 @@
+-// The New skill editor and the Learn a skill dialog (W52-c). Our backend has no route that writes a
+-// skill or starts a chat with a prompt yet, so the editor composes SKILL.md and copies it for the
+-// person to save, and the learn dialog explains where to ask instead (decisions W52-c-7).
++// The New skill editor and the Learn a skill dialog (W52-c). The editor saves SKILL.md through
++// `POST /api/skills/create`, the agent's own skill writer (W58-J2-3): its name, format and path
++// checks apply, and with `skills.write_approval` on the new skill is held for approval. Our
++// backend has no route that starts a chat with a prompt yet, so the learn dialog explains where to
++// ask instead (decision W52-c-7).
+ 
++import { useQueryClient } from "@tanstack/react-query";
+ import { useId, useState } from "react";
+-import { useToast } from "../../shell/Toasts.tsx";
++import { api } from "../../lib/api.ts";
++import { errorText, useToast } from "../../shell/Toasts.tsx";
+ import { Button, Field, Input, Notice, Textarea } from "../../ui/controls.tsx";
+ import { DialogActions, Modal } from "../../ui/Dialog.tsx";
+ 
+@@ -33,11 +37,13 @@ const NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+ 
+ export function SkillEditorDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+   const toast = useToast();
++  const client = useQueryClient();
+   const ids = useId();
+   const [name, setName] = useState("");
+   const [category, setCategory] = useState("");
+   const [body, setBody] = useState(() => skillTemplate(""));
+   const [problem, setProblem] = useState("");
++  const [saving, setSaving] = useState(false);
+ 
+   const create = async () => {
+     if (!NAME.test(name.trim()))
+@@ -46,12 +52,25 @@ export function SkillEditorDialog({ open, onClose }: { open: boolean; onClose: (
+       );
+     if (!body.trim()) return setProblem("Write the skill's SKILL.md.");
+     setProblem("");
++    setSaving(true);
+     try {
+-      await navigator.clipboard.writeText(body);
+-      toast.show(`Copied. Save it as ${skillPath(name, category)}.`, "success");
++      const made = await api.skills.create({
++        name: name.trim(),
++        content: body,
++        ...(category.trim() ? { category: category.trim() } : {}),
++      });
++      await client.invalidateQueries({ queryKey: ["skills"] });
++      toast.show(
++        made.staged
++          ? `${made.name} is held for approval: run indus skills pending in a terminal.`
++          : `Skill ${made.name} saved.`,
++        "success",
++      );
+       onClose();
+-    } catch {
+-      setProblem("The browser refused the clipboard; copy the text by hand.");
++    } catch (error) {
++      setProblem(errorText(error));
++    } finally {
++      setSaving(false);
+     }
+   };
+ 
+@@ -71,7 +90,12 @@ export function SkillEditorDialog({ open, onClose }: { open: boolean; onClose: (
+               autoFocus
+               placeholder="my-skill"
+               value={name}
+-              onChange={(e) => setName(e.currentTarget.value)}
++              onChange={(e) => {
++                const next = e.currentTarget.value;
++                // The front matter must name the skill: an untouched template follows the name.
++                if (body === skillTemplate(name)) setBody(skillTemplate(next));
++                setName(next);
++              }}
+             />
+           </Field>
+           <Field label="Category (optional)" htmlFor={`${ids}-category`}>
+@@ -93,15 +117,21 @@ export function SkillEditorDialog({ open, onClose }: { open: boolean; onClose: (
+           />
+         </Field>
+         <p className="type-serif m-0 text-[0.75rem] text-ink-soft">
+-          Saving from the dashboard is not available yet: Create skill copies the file so you can
+-          save it as <code className="type-data text-[0.75rem]">{skillPath(name, category)}</code>.
++          Saved as <code className="type-data text-[0.75rem]">{skillPath(name, category)}</code>{" "}
++          unless your settings name another skills folder.
+         </p>
+         {problem ? <Notice tone="danger">{problem}</Notice> : null}
+         <DialogActions>
+           <Button tone="ghost" size="sm" onClick={onClose}>
+             Cancel
+           </Button>
+-          <Button tone="primary" size="sm" className="uppercase" onClick={() => void create()}>
++          <Button
++            tone="primary"
++            size="sm"
++            className="uppercase"
++            disabled={saving}
++            onClick={() => void create()}
++          >
+             Create skill
+           </Button>
+         </DialogActions>
+diff --git a/apps/web/src/test/routes.generated.ts b/apps/web/src/test/routes.generated.ts
+index a63b237..7c2f065 100644
+--- a/apps/web/src/test/routes.generated.ts
++++ b/apps/web/src/test/routes.generated.ts
+@@ -18,6 +18,8 @@ export const GENERATED_ROUTES: readonly GeneratedRoute[] = [
+   { method: "PUT", path: "/api/config", scoped: true },
+   { method: "GET", path: "/api/config/defaults", scoped: false },
+   { method: "GET", path: "/api/config/effective", scoped: true },
++  { method: "GET", path: "/api/config/raw", scoped: true },
++  { method: "PUT", path: "/api/config/raw", scoped: true },
+   { method: "GET", path: "/api/config/schema", scoped: false },
+   { method: "GET", path: "/api/credentials/pool", scoped: true },
+   { method: "POST", path: "/api/credentials/pool", scoped: true },
+@@ -125,6 +127,7 @@ export const GENERATED_ROUTES: readonly GeneratedRoute[] = [
+   { method: "GET", path: "/api/sessions/{session_id}/messages", scoped: true },
+   { method: "GET", path: "/api/sessions/{session_id}/mutation-snapshot", scoped: true },
+   { method: "GET", path: "/api/skills", scoped: true },
++  { method: "POST", path: "/api/skills/create", scoped: true },
+   { method: "GET", path: "/api/skills/hub/inspect", scoped: true },
+   { method: "POST", path: "/api/skills/hub/install", scoped: true },
+   { method: "GET", path: "/api/skills/hub/search", scoped: true },
+diff --git a/apps/web/src/testing/mockApi.ts b/apps/web/src/testing/mockApi.ts
+index 851c0f0..622ec17 100644
+--- a/apps/web/src/testing/mockApi.ts
++++ b/apps/web/src/testing/mockApi.ts
+@@ -63,6 +63,12 @@ export interface MockState {
+   /** What `/api/config/defaults` answers (W52-e). */
+   configDefaults: ConfigObject;
+   effective: EffectiveEntry[];
++  /** What `GET /api/config/raw` answers: the config file's own settings (W58-J2-2). */
++  configFile: ConfigObject;
++  /** The YAML texts `PUT /api/config/raw` accepted, oldest first. */
++  rawSaves: string[];
++  /** When set, `PUT /api/config/raw` refuses with these problems (a 422 `config_invalid`). */
++  rawProblems: string[] | null;
+   env: EnvKeys;
+   /** What the secret store holds; never sent back by any route. */
+   envValues: Record<string, string>;
+@@ -254,6 +260,9 @@ export function defaultMockState(): MockState {
+     },
+     configDefaults: { model: { provider: "" }, display: { interface: "cli", bell: false } },
+     effective: [],
++    configFile: {},
++    rawSaves: [],
++    rawProblems: null,
+     env: {},
+     envValues: {},
+     logs: { agent: [], errors: [], gateway: [] },
+@@ -575,6 +584,29 @@ function routes(state: MockState): Array<[string, RegExp, Handler]> {
+     ["GET", /^\/api\/config\/schema$/, () => ok(state.schema)],
+     ["GET", /^\/api\/config\/defaults$/, () => ok(state.configDefaults)],
+     ["GET", /^\/api\/config\/effective$/, () => ok({ entries: state.effective })],
++    ["GET", /^\/api\/config\/raw$/, () => ok({ config: state.configFile })],
++    [
++      "PUT",
++      /^\/api\/config\/raw$/,
++      (call) => {
++        const yaml = asRecord(call.body).yaml;
++        if (typeof yaml !== "string") return fail(422, "invalid", "no yaml");
++        if (state.rawProblems) {
++          return {
++            status: 422,
++            body: {
++              detail: {
++                code: "config_invalid",
++                message: "The settings do not match the schema. Nothing was changed.",
++                problems: state.rawProblems,
++              },
++            },
++          };
++        }
++        state.rawSaves.push(yaml);
++        return ok({ ok: true, warnings: [] });
++      },
++    ],
+ 
+     ["GET", /^\/api\/env$/, () => ok(state.env)],
+     [
+@@ -798,6 +830,24 @@ function routes(state: MockState): Array<[string, RegExp, Handler]> {
+         return ok();
+       },
+     ],
++    [
++      "POST",
++      /^\/api\/skills\/create$/,
++      (call) => {
++        const body = asRecord(call.body);
++        const name = text(body.name);
++        if (state.skills.some((s) => s.name === name)) {
++          return fail(400, "skill_refused", `a skill named '${name}' already exists`);
++        }
++        state.skills.push({
++          name,
++          description: "",
++          category: text(body.category),
++          enabled: true,
++        });
++        return ok({ ok: true, name, staged: false, message: `1 change saved (${name}).` });
++      },
++    ],
+     ["GET", /^\/api\/tools\/toolsets$/, () => ok({ toolsets: state.toolsets })],
+     [
+       "GET",
+diff --git a/docker/Dockerfile b/docker/Dockerfile
+index d79f1c3..d0030db 100644
+--- a/docker/Dockerfile
++++ b/docker/Dockerfile
+@@ -47,6 +47,9 @@ WORKDIR /src
+ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
+ COPY apps/ apps/
+ COPY packages/ packages/
++# The in-app Docs page bundles the user guides and their navigation (W58-J2-1).
++COPY mkdocs.yml ./
++COPY docs/user/ docs/user/
+ RUN corepack enable \
+     && pnpm install --frozen-lockfile --filter "@indus/web..." \
+     && pnpm --filter @indus/web build \
+diff --git a/docs/notes/ui-parity/w58-j2-web-docs-yaml-skills-logins.md b/docs/notes/ui-parity/w58-j2-web-docs-yaml-skills-logins.md
+new file mode 100644
+index 0000000..1ca3bbf
+--- /dev/null
++++ b/docs/notes/ui-parity/w58-j2-web-docs-yaml-skills-logins.md
+@@ -0,0 +1,70 @@
++# Task: Web Docs, raw YAML save, skill create, provider logins (W58-J2) Phase: ui-parity Owner: builder w58j2
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): none (product-only wiring of our own
++backend; no reference file opened).
++Evidence: the wave-55 web compare set, slugs `docs`, `docs-direct-url`, `config-yaml`, `env`,
++`skill-editor` (`$S/compare2/deliver/gaps.md` lines for them). Nothing copied.
++
++What it does (own words):
++- **Docs** (W58-J2-1): /docs renders our user guides (docs/user) inside the page: the guides are
++  bundled into the dashboard at build time (one lazy chunk each) and listed in the order and with
++  the titles of our docs site's navigation (`nav:` of mkdocs.yml). `?page=<slug>` picks a guide and
++  `#anchor` a heading (anchors made the way the docs site makes them), so a guide can be linked and
++  reloaded. Markdown becomes React elements only (never HTML); a link to another guide opens it in
++  the page, an http(s) link opens in a new tab (`noopener noreferrer`), anything else is text.
++  Colours come from the theme tokens, so it is themed in light and dark. "Open docs" still links
++  the docs site out. No API reference page: the backend keeps the OpenAPI pages off.
++- **Config › YAML** (W58-J2-2): the YAML view is now the config file's own settings (new
++  `GET /api/config/raw`: no defaults, `${NAME}` unexpanded, credentials masked) and is editable;
++  Save sends the text to `PUT /api/config/raw`, which parses it with the loader's safe reader,
++  refuses `_`-internal keys and a mask with nothing stored behind it, puts the hidden values back,
++  expands references like the loader and validates with the schema. Any problem is a 422
++  `config_invalid` listing every one, and nothing is written. A valid text goes through
++  `config.save(..., replace=True)` (the one writer: backup, lock, comments kept, templates kept).
++- **Skill editor** (W58-J2-3): Create skill calls `POST /api/skills/create {name, content,
++  category?}`, which runs one `create` through the `skill_manage` tool's own handler (name, format,
++  path and lock checks, the `skills.write_approval` gate, the ledger). A refusal is 400
++  `skill_refused` with the tool's reason; a held write answers `staged: true`.
++- **Keys › Provider logins** (W58-J2-4): `/api/model/options` rows carry `sign_in` (any documented
++  flow in `providers.auth.flows`); the OAuth card lists those providers (today OpenRouter, browser
++  PKCE) with `indus auth add <name> --type oauth`. The Login button stays for device flows only (none
++  today), since the browser flow needs a localhost callback the dashboard does not run.
++
++Inputs → outputs: `/docs?page=…#…` → guide; YAML text → 422 problems | file rewritten; New skill
++dialog → `skills/<category>/<name>/SKILL.md` | held | refusal; options → OAuth rows.
++
++Files: src/indus/web/routes/{config_env,config_view,skills,models}.py; apps/web/src/pages/{DocsPage,
++ConfigPage}.tsx, pages/docs/*, pages/config/YamlView.tsx, pages/skills/SkillDialogs.tsx,
++pages/EnvPage.tsx, lib/{api,restTypes,yaml}.ts, testing/mockApi.ts, test/routes.generated.ts;
++docker/Dockerfile, .dockerignore, nix/packages.nix (the web build gets docs/user + mkdocs.yml).
++
++Edge cases / failure modes:
++- YAML: not a mapping, a parse error (line given), a schema error, `_config_version`, a mask moved
++  to a new key or list slot: 422, file untouched. Unreadable file: 500; managed install: 403.
++- Comments typed in the editor are not kept (the file's own comments are); an integer map key reads
++  back as a string key (JSON on the way to the page).
++- Skill: a duplicate or bad name, front matter that does not name the skill: the tool's message in
++  the dialog. The untouched template follows the typed name so its front matter matches.
++- Docs: an unknown `page` says so with a way home; a link outside docs/user is plain text.
++
++## Decisions for the lead
++- W58-J2-1: guides are bundled into the web build (no new route); Docker and Nix copy docs/user and
++  mkdocs.yml into the web stage. The Markdown reader is a docs variant of the desktop's reader (our
++  code), not shared yet: a follow-up could move both into packages/.
++- W58-J2-2: a raw save replaces the file's settings (`replace=True`); keys removed in the text are
++  removed from the file. Validation refuses on schema errors only; unknown keys are kept.
++- W58-J2-3: the dashboard create honours `skills.write_approval` like any skill write (held, then
++  `indus skills pending`), rather than treating the person's click as the approval.
++- W58-J2-4: only providers with a documented flow are listed (1 today vs the reference's 8).
++
++## Status
++- [x] Docs render, nav, links, anchors, unknown page (tests: `pages/DocsPage.test.tsx`,
++  `pages/docs/docs.test.tsx`; e2e `dashboard.spec.ts::Docs`)
++- [x] Raw YAML get/put, secrets, references, unknown keys, refusals, managed, unreadable, session
++  (tests: `tests/contract/web/test_config_env_routes.py::test_raw_*`; `ConfigPage.test.tsx`; e2e
++  `dashboard.spec.ts::Config: raw YAML`)
++- [x] Skill create, refusals, approval gate, session (tests:
++  `tests/contract/web/test_cron_skills_routes.py::test_skill_create_*`; `SkillsPage.test.tsx`; e2e
++  `dashboard.spec.ts::Skills`)
++- [x] Provider sign-in rows (tests: `test_profiles_models_routes.py::test_model_set_info_and_options`,
++  `EnvPage.test.tsx`)
+diff --git a/nix/packages.nix b/nix/packages.nix
+index 7349d22..7c52931 100644
+--- a/nix/packages.nix
++++ b/nix/packages.nix
+@@ -34,6 +34,9 @@
+           ../tsconfig.base.json
+           ../apps
+           ../packages
++          # The web dashboard's Docs page bundles the user guides and their nav (W58-J2-1).
++          ../mkdocs.yml
++          ../docs/user
+         ];
+       };
+ 
+diff --git a/src/indus/web/routes/config_env.py b/src/indus/web/routes/config_env.py
+index dc52aaa..529dcd1 100644
+--- a/src/indus/web/routes/config_env.py
++++ b/src/indus/web/routes/config_env.py
+@@ -7,6 +7,14 @@ fail-closed. A file that cannot be read right now is a 500 and nothing is writte
+ is a 403. ``/defaults`` and ``/schema`` are public and take no profile. ``/effective`` lists every
+ setting with its source (default, file, env, overlay).
+ 
++Raw YAML (W58-J2-2): ``GET /api/config/raw`` is the user's file alone as a tree (no defaults,
++unexpanded, credentials hidden; the page writes it as YAML). ``PUT {yaml}`` parses the text with the
++loader's own safe reader (a mapping at the top), puts hidden values back, keeps the file's
++``_``-prefixed internals, expands ``${NAME}`` references the way the loader does and checks the
++result against the schema; any parse or schema error is a 422 listing every problem and nothing is
++written. A valid text goes through the same writer as ``PUT /api/config``, as the complete desired
++state (a key removed from the text is removed from the file); comments already in the file stay.
++
+ Keys: ``GET /api/env`` lists the known key names and every name already stored, each with set/unset
+ and a redacted preview only. ``PUT {key, value}`` refuses the env writer's denylist first, then
+ stores a credential in the profile's ``SecretStore`` (keychain by default; ``.env`` when
+@@ -23,8 +31,9 @@ from fastapi import APIRouter, Depends, HTTPException
+ from pydantic import BaseModel, Field
+ 
+ from indus.foundation import config as config_module
+-from indus.foundation import redact
++from indus.foundation import redact, yamlio
+ from indus.foundation.config import keys as config_keys
++from indus.foundation.config import loader as config_loader
+ from indus.foundation.config import schema as config_schema
+ from indus.foundation.config.loader import ConfigView
+ from indus.foundation.envfile import (
+@@ -42,13 +51,16 @@ from indus.foundation.scope import Scope
+ from indus.foundation.secrets import SecretStore, open_secret_store
+ from indus.web.routes.config_view import (
+     KeyMeta,
++    config_errors,
+     defaults_form,
+     effective_entries,
++    file_tree,
+     form_tree,
+     is_credential_name,
+     key_catalog,
+     restore_placeholders,
+     schema_form,
++    unbacked_placeholders,
+ )
+ from indus.web.scope import read_scope, write_scope
+ 
+@@ -62,6 +74,8 @@ ROUTE_LIST: Final[tuple[tuple[str, str, bool], ...]] = (
+     ("GET", "/api/config/defaults", False),
+     ("GET", "/api/config/schema", False),
+     ("GET", "/api/config/effective", True),
++    ("GET", "/api/config/raw", True),
++    ("PUT", "/api/config/raw", True),
+     ("GET", "/api/env", True),
+     ("PUT", "/api/env", True),
+     ("DELETE", "/api/env", True),
+@@ -143,6 +157,72 @@ def get_effective(scope: ReadScope) -> dict[str, Any]:
+     return {"entries": effective_entries(_readable(scope))}
+ 
+ 
++# -- raw YAML -------------------------------------------------------------------------------------
++
++RAW_LIMIT: Final = 512 * 1024
++"""The largest raw YAML text a save takes, in characters."""
++
++
++class RawConfigUpdate(BaseModel):
++    yaml: str = Field(max_length=RAW_LIMIT)
++
++
++def _invalid(problems: list[str], message: str) -> NoReturn:
++    raise HTTPException(
++        status_code=422,
++        detail={"code": "config_invalid", "message": message, "problems": problems},
++    )
++
++
++def _parsed(text: str) -> dict[str, Any]:
++    try:
++        return config_loader.read_user_tree(text.encode("utf-8"))
++    except yamlio.YamlError as exc:
++        where = f"line {exc.line}: " if exc.line is not None else ""
++        _invalid([f"{where}{exc.reason}"], "The YAML cannot be read. Nothing was changed.")
++
++
++@router.get("/api/config/raw")
++def get_raw_config(scope: ReadScope) -> dict[str, Any]:
++    return {"config": file_tree(_readable(scope))}
++
++
++@router.put("/api/config/raw")
++def put_raw_config(body: RawConfigUpdate, scope: WriteScope) -> dict[str, Any]:
++    _refuse_managed(scope)
++    view = _readable(scope)
++    stored = view.user_raw()
++    incoming = _parsed(body.yaml)
++    hidden = sorted(str(k) for k in incoming if str(k).startswith("_"))
++    if hidden:
++        _invalid(
++            [f"{k}: internal setting, kept by Indus Agent" for k in hidden],
++            "Settings starting with _ are internal and cannot be set here. Nothing was changed.",
++        )
++    incoming = config_loader.canonicalise(incoming)
++    masked = unbacked_placeholders(incoming, stored)
++    if masked:
++        _invalid(
++            [f"{path}: a hidden value with nothing stored to keep" for path in masked],
++            "A hidden value was moved or added; type the real value or remove it. Nothing was "
++            "changed.",
++        )
++    wanted = restore_placeholders(incoming, stored)
++    wanted = {**{k: v for k, v in stored.items() if str(k).startswith("_")}, **wanted}
++    expanded = config_loader.expand(wanted, scope.env, {}, set())
++    problems = config_errors(expanded)
++    if problems:
++        _invalid(problems, "The settings do not match the schema. Nothing was changed.")
++    try:
++        config_module.save(scope, wanted, replace=True)
++    except ConfigManaged:
++        _fail(403, "config_managed", "This installation is managed; nothing was changed.")
++    except ConfigError as exc:
++        _fail(500, "config_unreadable", f"{exc.message}. Nothing was changed.")
++    saved = config_module.load(scope)
++    return {"ok": True, "warnings": config_schema.validate(saved.as_dict())}
++
++
+ # -- keys -----------------------------------------------------------------------------------------
+ 
+ 
+diff --git a/src/indus/web/routes/config_view.py b/src/indus/web/routes/config_view.py
+index facd797..7683b7e 100644
+--- a/src/indus/web/routes/config_view.py
++++ b/src/indus/web/routes/config_view.py
+@@ -9,6 +9,9 @@ and the key catalog.
+   laid over, *unexpanded* (a ``${NAME}`` reference stays a reference, so no secret reaches the page
+   through one), ``_``-prefixed internals dropped, and literal values under credential-shaped keys
+   replaced by ``PLACEHOLDER``. ``restore_placeholders`` puts the stored values back on the way in.
++- ``file_tree(view)`` is the user's own file alone (no defaults), redacted the same way: what the
++  Config page's raw YAML editor shows. ``config_errors`` keeps the schema's errors and drops its
++  unknown-setting notes, so a raw save can refuse an invalid file and keep an unknown key.
+ - ``effective_entries(view)`` lists every leaf with where its value comes from.
+ - ``key_catalog()`` is the keys page's list of known names (bundled provider keys and their
+   base-URL overrides); ``is_credential_name`` decides which names go to the secret store.
+@@ -35,13 +38,16 @@ __all__ = [
+     "PLACEHOLDER",
+     "KeyMeta",
+     "ValueSource",
++    "config_errors",
+     "effective_entries",
++    "file_tree",
+     "form_tree",
+     "is_credential_name",
+     "is_secret_setting",
+     "key_catalog",
+     "restore_placeholders",
+     "schema_form",
++    "unbacked_placeholders",
+ ]
+ 
+ PLACEHOLDER: Final = "••••••••"
+@@ -166,6 +172,21 @@ def form_tree(view: ConfigView) -> dict[str, Any]:
+     return cast(dict[str, Any], _redacted(_public(merged), ""))
+ 
+ 
++def file_tree(view: ConfigView) -> dict[str, Any]:
++    """The user's file alone (canonicalised, unexpanded), internals dropped, credentials hidden."""
++    return cast(dict[str, Any], _redacted(_public(view.user_raw()), ""))
++
++
++_UNKNOWN_NOTE: Final = ": unknown setting (kept)"
++"""The tail of ``schema.validate``'s note for a key no model knows (a note, not an error)."""
++
++
++def config_errors(data: Mapping[str, Any]) -> list[str]:
++    """``schema.validate``'s errors for ``data`` (expanded settings), its unknown-key notes left
++    out: an empty list means the settings are valid."""
++    return [w for w in schema.validate(data) if not w.endswith(_UNKNOWN_NOTE)]
++
++
+ def defaults_form() -> dict[str, Any]:
+     return _public(schema.defaults_tree())
+ 
+@@ -182,11 +203,52 @@ def restore_placeholders(incoming: Mapping[str, Any], stored: Mapping[str, Any])
+         elif value == PLACEHOLDER:
+             if here is not None:
+                 out[key] = copy.deepcopy(here)
++        elif isinstance(value, list) and isinstance(here, list):
++            out[key] = _restore_items(cast(list[Any], value), cast(list[Any], here))
+         else:
+             out[key] = copy.deepcopy(value)
+     return out
+ 
+ 
++def _restore_items(incoming: list[Any], stored: list[Any]) -> list[Any]:
++    """A list item by item against the stored list at the same index (a hidden item is put back
++    only where the stored list has an item at that index)."""
++    out: list[Any] = []
++    for index, value in enumerate(incoming):
++        here: object = stored[index] if index < len(stored) else None
++        if value == PLACEHOLDER and here is not None:
++            out.append(copy.deepcopy(here))
++        elif isinstance(value, dict):
++            inner = cast(Mapping[str, Any], here) if isinstance(here, dict) else {}
++            out.append(restore_placeholders(cast(Mapping[str, Any], value), inner))
++        elif isinstance(value, list):
++            inner_list = cast(list[Any], here) if isinstance(here, list) else []
++            out.append(_restore_items(cast(list[Any], value), inner_list))
++        else:
++            out.append(copy.deepcopy(value))
++    return out
++
++
++def unbacked_placeholders(incoming: object, stored: object, path: str = "") -> list[str]:
++    """Dotted paths where ``incoming`` holds ``PLACEHOLDER`` but ``stored`` has nothing at that
++    place: a hidden value moved or typed in, which ``restore_placeholders`` would drop."""
++    if isinstance(incoming, dict):
++        here = cast(dict[str, Any], stored) if isinstance(stored, dict) else {}
++        found: list[str] = []
++        for key, value in cast(dict[str, Any], incoming).items():
++            where = f"{path}.{key}" if path else str(key)
++            found += unbacked_placeholders(value, here.get(key), where)
++        return found
++    if isinstance(incoming, list):
++        items = cast(list[Any], stored) if isinstance(stored, list) else []
++        found = []
++        for index, value in enumerate(cast(list[Any], incoming)):
++            inner = items[index] if index < len(items) else None
++            found += unbacked_placeholders(value, inner, f"{path}[{index}]")
++        return found
++    return [path] if incoming == PLACEHOLDER and stored is None else []
++
++
+ # -- the effective view ---------------------------------------------------------------------------
+ 
+ 
+diff --git a/src/indus/web/routes/models.py b/src/indus/web/routes/models.py
+index 5827be5..789f1d7 100644
+--- a/src/indus/web/routes/models.py
++++ b/src/indus/web/routes/models.py
+@@ -5,7 +5,9 @@
+   and numbers only: no URL, key or account.
+ - ``GET /api/model/options``: the provider catalogue (built-in, local, config and plugin
+   providers) with ``configured`` (a key in the pool, the secret store or the environment, or a
+-  sign-in) and the current main choice.
++  sign-in), ``device_login`` (a device flow this page can run) and ``sign_in`` (any documented
++  sign-in flow in ``providers.auth.flows``, browser or device, that ``indus auth add <name> --type
++  oauth`` runs), and the current main choice.
+ - ``POST /api/model/set {scope: main|auxiliary, task?, provider, model, base_url?}``: through the
+   config writer; a side task must be one the schema knows.
+ - ``GET /api/model/auxiliary``: each side task's provider, model and base URL, and the main model.
+@@ -144,6 +146,7 @@ def model_options(scope: ReadScope) -> dict[str, Any]:
+                 "auth_type": profile.auth_type,
+                 "configured": _configured(scope, store, profile.name, profile.env_vars),
+                 "device_login": flows.device is not None,
++                "sign_in": flows.any,
+                 "supports_model_listing": profile.supports_model_listing,
+             }
+         )
+diff --git a/src/indus/web/routes/skills.py b/src/indus/web/routes/skills.py
+index e1e5d9a..046074e 100644
+--- a/src/indus/web/routes/skills.py
++++ b/src/indus/web/routes/skills.py
+@@ -4,6 +4,10 @@
+   category, source (``local``, ``bundled``, ``hub``, ``external``…) and whether it is enabled.
+ - ``POST /api/skills/toggle {name, enabled}``: writes ``skills.disabled`` through the config
+   writer (P01); an unknown name is 404.
++- ``POST /api/skills/create {name, content, category?}`` (W58-J2-3): one ``create`` through the
++  ``skill_manage`` tool's own handler, so its name, format, path and lock checks, its
++  ``skills.write_approval`` gate (a held write answers ``staged: true``) and its ledger all apply.
++  A refusal is 400 ``skill_refused`` with the tool's reason; nothing is written then.
+ - ``GET /api/tools/toolsets``: the plain toolsets (no bundles, postures or ``core``) with their
+   tools, and whether the CLI's tool selection (``platform_toolsets.cli``, else its bundle) offers
+   every one of them.
+@@ -21,8 +25,9 @@ tests (``DashboardState.extras``): ``skills.hub_sources`` (``Scope -> SourceSet`
+ from __future__ import annotations
+ 
+ import asyncio
++import json
+ from collections.abc import Callable, Coroutine, Mapping
+-from typing import Annotated, Any, Final, NoReturn
++from typing import Annotated, Any, Final, NoReturn, cast
+ 
+ from fastapi import APIRouter, Depends, HTTPException, Request
+ from pydantic import BaseModel, ConfigDict, Field
+@@ -35,6 +40,7 @@ from indus.learning.skills import bundled_sync
+ from indus.learning.skills.hub import install as hub
+ from indus.learning.skills.hub.lock import HubLock
+ from indus.learning.skills.hub.sources import HubError, SourceSet
++from indus.learning.skills.manage_tool import skill_manage
+ from indus.learning.skills.resolver import TIER_LOCAL, SkillRecord, load_catalog
+ from indus.learning.skills.usage import hub_names
+ from indus.tools import toolsets
+@@ -48,6 +54,7 @@ router = APIRouter()
+ ROUTE_LIST: Final[tuple[tuple[str, str, bool], ...]] = (
+     ("GET", "/api/skills", True),
+     ("POST", "/api/skills/toggle", True),
++    ("POST", "/api/skills/create", True),
+     ("GET", "/api/tools/toolsets", True),
+     ("GET", "/api/skills/hub/search", True),
+     ("GET", "/api/skills/hub/inspect", True),
+@@ -141,6 +148,34 @@ def toggle_skill(body: SkillToggle, scope: WriteScope) -> dict[str, Any]:
+     return {"ok": True, "name": body.name, "enabled": body.enabled}
+ 
+ 
++class SkillCreate(BaseModel):
++    model_config = ConfigDict(extra="forbid")
++    name: str = Field(min_length=1, max_length=64)
++    content: str = Field(min_length=1, max_length=256 * 1024)
++    category: str | None = Field(default=None, max_length=64)
++
++
++@router.post("/api/skills/create")
++def create_skill(body: SkillCreate, scope: WriteScope) -> dict[str, Any]:
++    live = _configured(scope)
++    args: dict[str, Any] = {"action": "create", "name": body.name, "content": body.content}
++    category = (body.category or "").strip()
++    if category:
++        args["category"] = category
++    raw: object = json.loads(skill_manage(args, scope=live))
++    answer = cast(dict[str, Any], raw) if isinstance(raw, dict) else {"error": None}
++    if "error" in answer:
++        reason = answer.get("error") or "The skill was not saved."
++        _fail(400, "skill_refused", redact_text(str(reason)))
++    staged = answer.get("staged") is True
++    return {
++        "ok": True,
++        "name": body.name.strip(),
++        "staged": staged,
++        "message": redact_text(str(answer.get("message") or "")),
++    }
++
++
+ # -- toolsets --------------------------------------------------------------------------------------
+ 
+ 
+diff --git a/tests/contract/web/test_config_env_routes.py b/tests/contract/web/test_config_env_routes.py
+index e21d1c0..acc0ee7 100644
+--- a/tests/contract/web/test_config_env_routes.py
++++ b/tests/contract/web/test_config_env_routes.py
+@@ -125,6 +125,115 @@ def test_unreadable_config_is_500_and_nothing_is_written(rest: RestApp, scope: S
+     assert (path.read_bytes(), path.stat().st_mtime_ns) == before
+ 
+ 
++# -- raw YAML --------------------------------------------------------------------------------------
++
++
++def _stamp(path: Path) -> tuple[bytes, int]:
++    return path.read_bytes(), path.stat().st_mtime_ns
++
++
++def test_raw_get_is_the_file_alone_with_credentials_hidden(rest: RestApp, scope: Scope) -> None:
++    _config_path(scope).write_text(
++        COMMENTED + f"providers:\n  other:\n    api_key: {OTHER_SECRET}\n", encoding="utf-8"
++    )
++    got = rest.client.get("/api/config/raw")
++    assert got.status_code == 200 and OTHER_SECRET not in got.text
++    tree = got.json()["config"]
++    assert tree["agent"] == {"max_turns": 40}
++    assert tree["providers"]["other"]["api_key"] == PLACEHOLDER
++    assert "_config_version" not in tree and "display" not in tree  # no defaults, no internals
++
++
++def test_raw_put_replaces_the_settings_and_keeps_comments_and_secrets(
++    rest: RestApp, scope: Scope
++) -> None:
++    path = _config_path(scope)
++    path.write_text(
++        "_config_version: 3\n"
++        + COMMENTED
++        + f"display:\n  bell: true\nproviders:\n  other:\n    api_key: {OTHER_SECRET}\n",
++        encoding="utf-8",
++    )
++    text = (
++        "agent:\n  max_turns: 55\nmodel:\n  default: fake-model\n"
++        f"providers:\n  other:\n    api_key: {PLACEHOLDER}\n"
++    )
++    saved = rest.client.put("/api/config/raw", params=WRITE, json={"yaml": text})
++    assert saved.status_code == 200, saved.text
++    assert saved.json()["ok"] is True
++    after = path.read_text(encoding="utf-8")
++    assert "max_turns: 55" in after and "# my own settings" in after
++    assert f"api_key: {OTHER_SECRET}" in after and PLACEHOLDER not in after
++    assert "bell" not in after  # removed from the text: removed from the file
++    assert "_config_version: 3" in after
++
++
++def test_raw_put_refuses_bad_yaml_and_schema_errors_and_writes_nothing(
++    rest: RestApp, scope: Scope
++) -> None:
++    path = _config_path(scope)
++    path.write_text(COMMENTED, encoding="utf-8")
++    before = _stamp(path)
++    broken = rest.client.put("/api/config/raw", params=WRITE, json={"yaml": "agent: [unclosed\n"})
++    assert broken.status_code == 422 and _code(broken) == "config_invalid"
++    assert broken.json()["detail"]["problems"][0].startswith("line ")
++    listed = rest.client.put("/api/config/raw", params=WRITE, json={"yaml": "- one\n- two\n"})
++    assert listed.status_code == 422 and _code(listed) == "config_invalid"
++    wrong = rest.client.put(
++        "/api/config/raw",
++        params=WRITE,
++        json={"yaml": "agent:\n  max_turns: lots\ndisplay:\n  bell: true\n"},
++    )
++    assert wrong.status_code == 422 and _code(wrong) == "config_invalid"
++    problems = wrong.json()["detail"]["problems"]
++    assert any(p.startswith("agent.max_turns") for p in problems)
++    internal = rest.client.put(
++        "/api/config/raw", params=WRITE, json={"yaml": "_config_version: 1\n"}
++    )
++    assert internal.status_code == 422
++    masked = rest.client.put(
++        "/api/config/raw",
++        params=WRITE,
++        json={"yaml": f"providers:\n  fresh:\n    api_key: {PLACEHOLDER}\n"},
++    )
++    assert masked.status_code == 422
++    assert masked.json()["detail"]["problems"] == [
++        "providers.fresh.api_key: a hidden value with nothing stored to keep"
++    ]
++    assert _stamp(path) == before
++
++
++def test_raw_put_keeps_references_and_unknown_keys(rest: RestApp, scope: Scope) -> None:
++    path = _config_path(scope)
++    path.write_text(COMMENTED, encoding="utf-8")
++    text = (
++        "agent:\n  max_turns: 40\nmodel:\n  default: fake-model\n"
++        "providers:\n  mine:\n    api_key: ${MY_ENDPOINT_KEY}\n"
++        "agent_notes:\n  mood: calm\n"
++    )
++    saved = rest.client.put("/api/config/raw", params=WRITE, json={"yaml": text})
++    assert saved.status_code == 200, saved.text
++    after = path.read_text(encoding="utf-8")
++    assert "${MY_ENDPOINT_KEY}" in after and SECRET not in after and "mood: calm" in after
++
++
++def test_raw_routes_refuse_an_unreadable_file_and_a_missing_session(scope: Scope) -> None:
++    path = _config_path(scope)
++    path.write_text("agent: [unclosed\n", encoding="utf-8")
++    config_loader.reset()
++    built = build_rest_app(scope)
++    try:
++        assert built.client.get("/api/config/raw").status_code == 500
++        put = built.client.put("/api/config/raw", params=WRITE, json={"yaml": "agent: {}\n"})
++        assert put.status_code == 500 and _code(put) == "config_unreadable"
++        assert path.read_text(encoding="utf-8") == "agent: [unclosed\n"
++        anonymous = built.anonymous().put("/api/config/raw", params=WRITE, json={"yaml": ""})
++        assert anonymous.status_code == 401
++    finally:
++        built.close()
++        config_loader.reset()
++
++
+ def test_put_needs_an_object(rest: RestApp) -> None:
+     assert rest.client.put("/api/config", params=WRITE, json={"config": [1]}).status_code == 422
+     assert rest.client.put("/api/config", params=WRITE, json={}).status_code == 422
+@@ -136,6 +245,8 @@ def test_managed_install_refuses_writes(scope: Scope) -> None:
+     try:
+         answer = rest.client.put("/api/config", params=WRITE, json={"config": {"agent": {}}})
+         assert answer.status_code == 403 and _code(answer) == "config_managed"
++        raw = rest.client.put("/api/config/raw", params=WRITE, json={"yaml": "agent: {}\n"})
++        assert raw.status_code == 403 and _code(raw) == "config_managed"
+         key = rest.client.put("/api/env", params=WRITE, json={"key": "X_TOKEN", "value": SECRET})
+         assert key.status_code == 403
+     finally:
+diff --git a/tests/contract/web/test_cron_skills_routes.py b/tests/contract/web/test_cron_skills_routes.py
+index f40d02f..4248abd 100644
+--- a/tests/contract/web/test_cron_skills_routes.py
++++ b/tests/contract/web/test_cron_skills_routes.py
+@@ -341,6 +341,61 @@ def test_skill_toggle_round_trips_through_config(rest: RestApp, scope: Scope) ->
+     assert missing.status_code == 404 and _code(missing) == "skill_not_found"
+ 
+ 
++SKILL_TEXT = (
++    "---\nname: release-notes\ndescription: Draft release notes.\n---\n\n# Notes\n\nStep.\n"
++)
++
++
++def test_skill_create_saves_through_the_skill_tool(rest: RestApp, scope: Scope) -> None:
++    made = rest.client.post(
++        "/api/skills/create",
++        json={"name": "release-notes", "content": SKILL_TEXT, "category": "writing"},
++    )
++    assert made.status_code == 200, made.text
++    assert made.json()["ok"] is True and made.json()["staged"] is False
++    path = scope.home / "skills" / "writing" / "release-notes" / "SKILL.md"
++    assert path.read_text(encoding="utf-8") == SKILL_TEXT
++    rows = {r["name"]: r for r in rest.client.get("/api/skills").json()["skills"]}
++    assert rows["release-notes"]["category"] == "writing"
++    again = rest.client.post(
++        "/api/skills/create", json={"name": "release-notes", "content": SKILL_TEXT}
++    )
++    assert again.status_code == 400 and _code(again) == "skill_refused"
++    assert "already exists" in again.json()["detail"]["message"]
++
++
++def test_skill_create_refuses_bad_names_and_text_and_writes_nothing(
++    rest: RestApp, scope: Scope
++) -> None:
++    bad_name = rest.client.post("/api/skills/create", json={"name": "../up", "content": SKILL_TEXT})
++    assert bad_name.status_code == 400 and _code(bad_name) == "skill_refused"
++    no_front = rest.client.post("/api/skills/create", json={"name": "plain", "content": "# hi\n"})
++    assert no_front.status_code == 400 and _code(no_front) == "skill_refused"
++    assert rest.client.post("/api/skills/create", json={"name": "x"}).status_code == 422
++    assert not (scope.home / "skills" / "plain").exists()
++    assert not (scope.home / "up").exists()
++
++
++def test_skill_create_is_held_when_write_approval_is_on(rest: RestApp, scope: Scope) -> None:
++    (scope.home / "config.yaml").write_text("skills:\n  write_approval: true\n", encoding="utf-8")
++    held = rest.client.post(
++        "/api/skills/create", json={"name": "release-notes", "content": SKILL_TEXT}
++    )
++    assert held.status_code == 200 and held.json()["staged"] is True
++    assert not (scope.home / "skills" / "release-notes").exists()
++
++
++def test_skill_create_needs_the_dashboard_session(rest: RestApp, scope: Scope) -> None:
++    anonymous = rest.anonymous()
++    refused = anonymous.post(
++        "/api/skills/create",
++        params=WRITE,
++        json={"name": "release-notes", "content": SKILL_TEXT},
++    )
++    assert refused.status_code == 401
++    assert not (scope.home / "skills" / "release-notes").exists()
++
++
+ def test_toolsets_list_plain_toolsets_with_tools(rest: RestApp) -> None:
+     rows = rest.client.get("/api/tools/toolsets").json()["toolsets"]
+     assert rows and all(
+diff --git a/tests/contract/web/test_profiles_models_routes.py b/tests/contract/web/test_profiles_models_routes.py
+index 95c7178..d4deca3 100644
+--- a/tests/contract/web/test_profiles_models_routes.py
++++ b/tests/contract/web/test_profiles_models_routes.py
+@@ -246,6 +246,10 @@ def test_model_set_info_and_options(rest: RestApp) -> None:
+     options = rest.client.get("/api/model/options", params=WRITE).json()
+     names = {p["name"] for p in options["providers"]}
+     assert {"openai", "openrouter"} <= names
++    rows = {p["name"]: p for p in options["providers"]}
++    # sign_in follows providers.auth.flows: OpenRouter documents a browser sign-in, OpenAI none.
++    assert rows["openrouter"]["sign_in"] is True and rows["openrouter"]["device_login"] is False
++    assert rows["openai"]["sign_in"] is False
+     assert options["current"] == {"provider": "openai", "model": "gpt-test-model"}
+     unknown = rest.client.post(
+         "/api/model/set", params=WRITE, json={"scope": "main", "provider": "nope", "model": "m"}
+diff --git a/tests/unit/packaging/test_dockerfile.py b/tests/unit/packaging/test_dockerfile.py
+index 332913d..8c243fb 100644
+--- a/tests/unit/packaging/test_dockerfile.py
++++ b/tests/unit/packaging/test_dockerfile.py
+@@ -184,6 +184,13 @@ def test_dockerignore_keeps_out(pattern: str) -> None:
+     assert pattern in dockerignore()
+ 
+ 
++def test_the_web_stage_gets_the_user_guides_it_bundles() -> None:
++    # The dashboard's Docs page imports docs/user and mkdocs.yml at build time (W58-J2-1).
++    assert "!docs/user" in dockerignore()
++    copies = [rest for word, rest in stages(PRODUCT)["web"] if word == "COPY"]
++    assert "docs/user/ docs/user/" in copies and "mkdocs.yml ./" in copies
++
++
+ def test_dockerignore_keeps_what_the_build_copies() -> None:
+     ignored = set(dockerignore())
+     for needed in (

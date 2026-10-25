@@ -7,3 +7,12 @@
 - Left out (no backing): Disable F12 DevTools, Always open links externally, Move to project.
 - Gate (builder): desktop vitest 184 / 1857; Electron 43 / 2 skipped; full pytest 18784 passed / 0 failed; pyright 0;
   ruff clean; tooling.checks ok.
+
+## w58j2.patch — web (J2), base d8cc714 — PARKED; full gate on main + J1 + J2 (land4) running
+- In-app /docs renders docs/user guides (bundled, safe markdown, mkdocs nav; Docker/Nix copy docs/user + mkdocs.yml);
+  `GET/PUT /api/config/raw` (masked read; validated replace through config.save, 422 lists problems, nothing partial;
+  write_scope + managed 403 + session gate); `POST /api/skills/create` through the skill_manage handler (write approval
+  honoured); `/api/model/options` rows carry `sign_in` (OpenRouter browser PKCE listed with its CLI command).
+- Gate (builder): web vitest 42 / 398; web Playwright 17/17; full pytest 18794 passed / 0 failed; ruff, pyright 0,
+  biome, tsc, tooling.checks ok; perf not run (lock queue).
+- Merge with H1 (DocsPage.tsx): J2's page kept (theme tokens throughout); H1's no-fixed-colour test adapted to it.
