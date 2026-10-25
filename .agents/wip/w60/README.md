@@ -17,3 +17,5 @@
   check-ipc, tooling.checks ok; targeted pytest (models, cron/skills, config/env routes, key_needs) 64 passed.
   L1 landed with D-16.1283 on its own web lanes (vitest 408, Playwright 18) + the above; the full pytest on the combined
   tree runs after landing as confirmation.
+
+- Confirmation after landing: full pytest on main + L1 + L2: 18801 passed / 0 failed / 134 skipped.
