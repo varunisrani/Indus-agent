@@ -99,6 +99,9 @@ on the owner's request. Third compare done at b0bc54d (scratchpad `compare3/`, P
 improved (7 fixed, 10 partial). Remaining gaps are mostly backend features (hosted catalogues, usage/credits, OAuth
 providers, voice modes, tool-gateway routing) or owner calls; the "~110 px pane" line is a misreading of the half-scale
 sheet (228 px measured in the app, W57-H1-2).
+IN FLIGHT: wave 60 L1 (web model list, Models MoA + per-model usage) + L2 (desktop tool keys, toolsets, palette, pets); wave 61
+M1 = OpenAI ChatGPT sign-in backend + CLI + dashboard REST (owner decision D-16.1282, reverses P2 for OpenAI only); a UI
+builder follows on M1's REST contract (web Keys card + desktop onboarding/providers).
 Owner calls: Clear Blue preset below AA (D-16.1276); MCP/connector hosted catalogue (none exists, D-16.1275).
 Older text below (wave 52 era) is history.
 
