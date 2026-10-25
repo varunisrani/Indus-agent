@@ -91,3 +91,4 @@ Only Agent 2 writes this file: one row per check, appended, never edited. Agent 
 | 2026-10-25 02:18 UTC | Agent 2 | Account 2 | 76% (reading 02:00) | 24% | 02:30 UTC | w55 F1 F2 F3 running; resume wake-up set 02:33 |
 | 2026-10-25 02:40 UTC | Agent 2 | Account 2 | 1% (reading 02:33, new window) | 99% | 07:30 UTC | window reset; F1 f97d8f7 + F3 be4bf77 landed; F2 gate + Indus re-capture running; resume wake-up 07:35 |
 | 2026-10-25 03:10 UTC | Agent 2 | Account 2 | 13% (reading 03:08) | 87% | 07:30 UTC | F2 gate: all JS/E2E green, pytest running; G1 G2 parked, combined JS gate queued; H1 running; compare2 PDFs done |
+| 2026-10-25 03:45 UTC | Agent 2 | Account 2 | 14% (reading 03:16) | 86% | 07:30 UTC | F2 pytest ~95%; combined F2+G1+G2 JS gate rerun (first run had no per-app node_modules: lead setup slip); H1 running |
