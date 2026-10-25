@@ -13,6 +13,7 @@ import {
   capVerbose,
   formatDuration,
   layoutToolTrail,
+  readableOutput,
   ToolTrail,
   TRAIL_LIMIT,
   type TrailRow,
@@ -71,15 +72,17 @@ describe("trail", () => {
     expect(trail).toHaveLength(TRAIL_LIMIT);
     expect(trail[0]?.id).toBe("t4");
     const lines = text(view({ trail: Array.from({ length: 11 }, (_, i) => done(i)) }));
-    expect(lines).toHaveLength(8);
-    expect(lines[0]).toBe("✓ tool_3 1.2s");
+    expect(lines).toHaveLength(9);
+    expect(lines[0]).toBe("▾ Tool calls (8)");
+    expect(lines[1]).toBe("├ ✓ tool_3 (1.2s)");
+    expect(lines[8]).toBe("└ ✓ tool_10 (1.2s)");
   });
 
   it("marks failures and cancellations", () => {
     const lines = text(
       view({ trail: [done(1, { status: "error" }), done(2, { status: "cancelled" })] }),
     );
-    expect(lines).toEqual(["✗ tool_1 1.2s", "⊘ tool_2 1.2s"]);
+    expect(lines).toEqual(["▾ Tool calls (2)", "├ ✗ tool_1 (1.2s)", "└ ⊘ tool_2 (1.2s)"]);
   });
 
   it("shows running tools with verb, argument preview and elapsed time", () => {
@@ -90,20 +93,33 @@ describe("trail", () => {
         ],
       }),
     );
-    expect(lines).toEqual(["◐ running terminal ls -la /tmp 2.5s"]);
+    expect(lines).toEqual(["▾ Tool calls (1)", "└ ◐ running terminal(ls -la /tmp) (2.5s)"]);
   });
 
   it("adds a drafting line for a tool the model is still writing", () => {
     expect(text(view({ pending: [{ id: "p", name: "write_file", status: "pending" }] }))).toEqual([
-      "✎ drafting write_file…",
+      "▾ Tool calls (1)",
+      "└ ✎ drafting write_file…",
+    ]);
+  });
+
+  it("draws a finished row waiting for its segment once, not as a drafting line", () => {
+    const finished = done(1);
+    expect(text(view({ trail: [finished], pending: [finished] }))).toEqual([
+      "▾ Tool calls (1)",
+      "└ ✓ tool_1 (1.2s)",
     ]);
   });
 
   it("indents subagent rows and hides them with their section", () => {
     const rows = [done(1), done(2, { depth: 1 })];
-    expect(text(view({ trail: rows }))).toEqual(["✓ tool_1 1.2s", "  ✓ tool_2 1.2s"]);
+    expect(text(view({ trail: rows }))).toEqual([
+      "▾ Tool calls (2)",
+      "├ ✓ tool_1 (1.2s)",
+      "└   ✓ tool_2 (1.2s)",
+    ]);
     const noSubs = resolveSections("expanded", { subagents: "hidden" }, true);
-    expect(text(view({ trail: rows }), noSubs)).toEqual(["✓ tool_1 1.2s"]);
+    expect(text(view({ trail: rows }), noSubs)).toEqual(["▾ Tool calls (1)", "└ ✓ tool_1 (1.2s)"]);
   });
 
   it("caps verbose output to 800 chars / 12 lines", () => {
@@ -115,9 +131,28 @@ describe("trail", () => {
     const wide = capVerbose("y".repeat(2000));
     expect(wide.length).toBeLessThanOrEqual(800 + 40);
     expect(capVerbose("small")).toBe("small");
-    const lines = text(view({ trail: [done(1, { output })] }));
-    expect(lines[1]).toBe("  ⎿ … 28 lines above not shown");
-    expect(lines).toHaveLength(14);
+    const lines = text(view({ trail: [done(1, { output, status: "error" })] }));
+    expect(lines[2]).toBe("    ⎿ … 28 lines above not shown");
+    expect(lines).toHaveLength(15);
+  });
+
+  it("shows a result only for a failed call, as its error words rather than raw JSON", () => {
+    const ok = JSON.stringify({ output: "a.txt\nb.txt", exit_code: 0, error: null });
+    expect(text(view({ trail: [done(1, { args: "ls", output: ok })] }))).toEqual([
+      "▾ Tool calls (1)",
+      "└ ✓ tool_1(ls) (1.2s)",
+    ]);
+    const bad = JSON.stringify({ output: "", exit_code: 2, error: "no such file" });
+    expect(text(view({ trail: [done(2, { status: "error", output: bad })] }))).toEqual([
+      "▾ Tool calls (1)",
+      "└ ✗ tool_2 (1.2s)",
+      "    ⎿ no such file",
+    ]);
+    expect(readableOutput(bad)).toBe("no such file");
+    expect(readableOutput(ok)).toBe("a.txt\nb.txt");
+    expect(readableOutput('{"exit_code": 0}')).toBe("");
+    expect(readableOutput("{not json")).toBe("{not json");
+    expect(readableOutput("plain words")).toBe("plain words");
   });
 
   it("collapses to a single summary line", () => {
@@ -129,7 +164,7 @@ describe("trail", () => {
       }),
       collapsed,
     );
-    expect(lines).toEqual(["▸ tools (2) · reading read_file 1.0s"]);
+    expect(lines).toEqual(["▸ Tool calls (2) · reading read_file 1.0s"]);
   });
 });
 
@@ -157,7 +192,10 @@ describe("detail sections", () => {
 
   it("lets a section override beat the global mode", () => {
     const sections = resolveSections("hidden", { tools: "expanded" }, true);
-    expect(text(view({ trail: [done(1)], activity }), sections)).toEqual(["✓ tool_1 1.2s"]);
+    expect(text(view({ trail: [done(1)], activity }), sections)).toEqual([
+      "▾ Tool calls (1)",
+      "└ ✓ tool_1 (1.2s)",
+    ]);
   });
 
   it("lists the last activity entries when the lane is open", () => {
@@ -180,7 +218,8 @@ describe("detail sections", () => {
         <ToolTrail width={60} />
       </ThemeProvider>,
     );
-    expect(out).toContain("✓ tool_7 1.2s");
+    expect(out).toContain("▾ Tool calls (1)");
+    expect(out).toContain("└ ✓ tool_7 (1.2s)");
     turnStore.getState().reset();
   });
 });

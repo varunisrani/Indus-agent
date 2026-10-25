@@ -2,11 +2,15 @@
 // in the sidebar's order — pinned first, then by last activity. A quick tap switches at once; held
 // past `REVEAL_MS` a small card at the top of the window shows the chats with the pick marked, and
 // letting go of Ctrl opens it. While the card shows: Tab / ↓ next, Shift+Tab / ↑ previous, Enter
-// opens, Escape cancels, a click opens that row. Needs two chats or more.
+// opens, Escape cancels, a click opens that row. Needs two chats or more. Each row carries the
+// sidebar's dot (W55-F1-2): waiting for the person, running (live turn events), unread, live (the
+// list's `is_active`: recently active, not answering) or idle.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useT } from "../i18n/index.tsx";
 import { switcherStep } from "../panes/shortcuts.ts";
+import { type SessionDot, sessionDot } from "../sidebar/Sidebar.tsx";
+import type { SessionRow } from "../sidebar/sessionList.ts";
 import { FloatingHud } from "../ui/components.tsx";
 
 export const REVEAL_MS = 220;
@@ -14,7 +18,35 @@ export const REVEAL_MS = 220;
 export interface SwitcherRow {
   readonly id: string;
   readonly title: string;
-  readonly state: "running" | "unread" | "idle";
+  /** The sidebar row's dot for this chat (`sessionDot`). */
+  readonly state: SessionDot;
+}
+
+/**
+ * The switcher's rows in the sidebar's order (pinned first) with the sidebar's dots. `running`
+ * holds session ids with a live turn (turn events), `attention` ids waiting for the person; a
+ * row's `active` (REST `is_active`) only ever makes it "live", never "running".
+ */
+export function switcherRowsFrom(
+  rows: readonly SessionRow[],
+  facts: {
+    running: ReadonlySet<string>;
+    attention: ReadonlySet<string>;
+    isUnread: (row: SessionRow) => boolean;
+    title: (row: SessionRow) => string;
+  },
+): SwitcherRow[] {
+  const ordered = [...rows.filter((row) => row.pinned), ...rows.filter((row) => !row.pinned)];
+  return ordered.map((row) => ({
+    id: row.id,
+    title: facts.title(row),
+    state: sessionDot({
+      attention: row.ids.some((id) => facts.attention.has(id)),
+      running: row.ids.some((id) => facts.running.has(id)),
+      unread: facts.isUnread(row),
+      live: row.active,
+    }),
+  }));
 }
 
 export interface SwitcherState {
@@ -141,6 +173,8 @@ export function SessionSwitcher(props: {
           >
             <span className="session-switcher-dot" data-state={row.state} aria-hidden="true" />
             <span className="session-switcher-title">{row.title}</span>
+            {row.state === "running" && <span className="sr-only">{t("sidebar.running")}</span>}
+            {row.state === "attention" && <span className="sr-only">{t("sidebar.attention")}</span>}
           </div>
         ))}
       </div>

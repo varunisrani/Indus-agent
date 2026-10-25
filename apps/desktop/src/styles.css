@@ -335,12 +335,23 @@ body {
   background: var(--desk-fg-4);
 }
 
+/* the sidebar row's dot colours (W55-F1-2) */
 .session-switcher-dot[data-state="running"] {
-  background: var(--desk-success);
+  background: var(--desk-accent);
 }
 
 .session-switcher-dot[data-state="unread"] {
-  background: var(--desk-accent);
+  background: var(--desk-success);
+}
+
+.session-switcher-dot[data-state="live"] {
+  box-sizing: border-box;
+  border: 1.5px solid var(--desk-success);
+  background: transparent;
+}
+
+.session-switcher-dot[data-state="attention"] {
+  background: var(--desk-warning);
 }
 
 .status-bar {

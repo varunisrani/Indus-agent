@@ -124,7 +124,8 @@ describe("virtual transcript", () => {
     });
     const out = draw(many(2), 80, 20).join("\n");
     expect(out).toContain("Looked around first.");
-    expect(out).toContain("reading read_file src/app.ts");
+    expect(out).toContain("▾ Tool calls (1)");
+    expect(out).toContain("reading read_file(src/app.ts)");
     expect(out).toMatch(/2\.\ds/);
     expect(out).toContain("Now writing the answer");
   });

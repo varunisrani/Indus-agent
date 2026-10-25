@@ -26,8 +26,10 @@ import {
   type KeyboardEvent,
   type PointerEvent,
   type ReactNode,
+  useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -270,6 +272,10 @@ interface ShellContext {
   tools: Pick<PaneShellProps, "workspace" | "mode" | "connection" | "openPreview" | "addToChat">;
   /** The zone whose header runs under the band's tool cluster (top right), if any. */
   bandEnd: string | null;
+  /** The cluster sits at the end of `bandEnd` rather than at the window's edge (W55-F1-3). */
+  bandInner: boolean;
+  /** The top-right zone when the cluster moved left of it: it keeps clear of the window controls. */
+  bandEdge: string | null;
   /** Zones whose top edge is the window's top (their header is part of the title band). */
   topZones: ReadonlySet<string>;
 }
@@ -294,6 +300,64 @@ export function bandEndZone(layout: PaneLayout, node: LayoutNode | null): string
   const shown = node.children.filter((child) => !nodeCollapsed(layout, child));
   const pick = node.orientation === "row" ? shown[shown.length - 1] : shown[0];
   return pick === undefined ? null : bandEndZone(layout, pick);
+}
+
+/** A top zone's box along the band, for placing the tool cluster. */
+export interface BandZoneBox {
+  readonly id: string;
+  readonly left: number;
+  readonly right: number;
+  /** Its tabs are not drawn (a self-labelled pane): the cluster may cover them. */
+  readonly selfLabelled: boolean;
+}
+
+export interface BandPlacement {
+  /** The zone the cluster sits at the end of. */
+  readonly zone: string;
+  /** How far left of its usual place (the window controls' edge) the cluster sits, in px. */
+  readonly shift: number;
+  /** The top-right zone, when it is not `zone`. */
+  readonly edge: string | null;
+}
+
+/** The room a zone's tabs keep beside the cluster before the cluster moves to a wider zone. */
+export const BAND_TAB_ROOM = 140;
+/** The gap the band keeps around the cluster (the CSS padding on the zone under it). */
+const BAND_GAP = 16;
+
+/**
+ * Where the band's tool cluster goes (W55-F1-3): at the end of the rightmost top zone whose drawn
+ * tabs keep `room` px beside it — a self-labelled zone draws none, so it always takes the
+ * cluster — else at the window's edge as before. A narrow column with real tabs (Preview at the
+ * window's right) used to lie wholly under the cluster: its tab could not be seen or clicked.
+ * `controlsLeft` is the left edge of the window controls (the window's right edge without them).
+ */
+export function placeBandTools(
+  boxes: readonly BandZoneBox[],
+  controlsLeft: number,
+  toolsWidth: number,
+  room = BAND_TAB_ROOM,
+): BandPlacement | null {
+  const shown = boxes
+    .filter((box) => box.right - box.left > 0)
+    .sort((a, b) => a.left - b.left || a.right - b.right);
+  const last = shown.at(-1);
+  if (last === undefined) return null;
+  for (let index = shown.length - 1; index >= 0; index--) {
+    const box = shown[index] as BandZoneBox;
+    const right = Math.min(box.right, controlsLeft);
+    const free = right - box.left - toolsWidth - BAND_GAP;
+    if (box.selfLabelled || free >= room) {
+      const shift = Math.max(0, Math.round(controlsLeft - right));
+      return { zone: box.id, shift, edge: box === last ? null : last.id };
+    }
+  }
+  return { zone: last.id, shift: 0, edge: null };
+}
+
+function samePlacement(a: BandPlacement | null, b: BandPlacement | null): boolean {
+  if (a === null || b === null) return a === b;
+  return a.zone === b.zone && a.shift === b.shift && a.edge === b.edge;
 }
 
 /** A zone takes no space when it is minimised or every pane in it is hidden. */
@@ -476,7 +540,8 @@ function ZoneView(props: { ctx: ShellContext; zone: ZoneNode }) {
     <section
       className="pane-zone"
       data-zone-id={z.id}
-      data-band-end={ctx.bandEnd === z.id ? "true" : undefined}
+      data-band-end={ctx.bandEnd === z.id ? (ctx.bandInner ? "inner" : "true") : undefined}
+      data-band-edge={ctx.bandEdge === z.id && ctx.bandEnd !== z.id ? "true" : undefined}
       data-focused={focused ? "true" : "false"}
       data-chrome={chrome}
       data-self-labelled={selfLabelled ? "true" : undefined}
@@ -852,11 +917,71 @@ export function PaneShell(props: PaneShellProps) {
       ...(props.openPreview === undefined ? {} : { openPreview: props.openPreview }),
       ...(props.addToChat === undefined ? {} : { addToChat: props.addToChat }),
     },
-    bandEnd: props.toolbar === false ? null : bandEndZone(layout, layout.root),
+    bandEnd: null,
+    bandInner: false,
+    bandEdge: null,
     topZones: topZoneIds(layout.root),
   };
+  const [band, setBand] = useState<BandPlacement | null>(null);
+  if (props.toolbar !== false) {
+    // the measured placement while its zones are still on the band; the tree's guess before
+    const measured =
+      band !== null &&
+      ctx.topZones.has(band.zone) &&
+      (band.edge === null || ctx.topZones.has(band.edge))
+        ? band
+        : null;
+    ctx.bandEnd = measured?.zone ?? bandEndZone(layout, layout.root);
+    ctx.bandInner = (measured?.shift ?? 0) > 0;
+    ctx.bandEdge = measured?.edge ?? null;
+  }
   const root = layout.root;
   const shellRef = useRef<HTMLDivElement>(null);
+  // place the band's tool cluster from the zones' real boxes (W55-F1-3), after every layout
+  // change and whenever the shell or the cluster resizes
+  const placeBand = useCallback(() => {
+    const host = shellRef.current;
+    const tools = host?.querySelector<HTMLElement>(":scope > .pane-toolbar") ?? null;
+    if (host === null || tools === null) return;
+    // the cluster's box less the shift applied now: its usual place, at the window controls
+    const applied = Number.parseFloat(host.style.getPropertyValue("--band-shift")) || 0;
+    const usual = tools.getBoundingClientRect();
+    const boxes: BandZoneBox[] = [
+      ...host.querySelectorAll<HTMLElement>(
+        ":scope > .pane-root .pane-zone[data-chrome='band']:not([hidden])",
+      ),
+    ].map((zone) => {
+      const box = zone.getBoundingClientRect();
+      return {
+        id: zone.dataset.zoneId ?? "",
+        left: box.left,
+        right: box.right,
+        selfLabelled: zone.dataset.selfLabelled === "true",
+      };
+    });
+    const controlsLeft = usual.right + applied + 8;
+    const next = usual.width > 0 ? placeBandTools(boxes, controlsLeft, tools.offsetWidth) : null;
+    const shift = next?.shift ?? 0;
+    if (shift !== applied) {
+      if (shift > 0) host.style.setProperty("--band-shift", `${shift}px`);
+      else host.style.removeProperty("--band-shift");
+    }
+    setBand((before) => (samePlacement(before, next) ? before : next));
+  }, []);
+  useLayoutEffect(() => {
+    if (props.toolbar === false || layout.root === null || typeof ResizeObserver === "undefined")
+      return;
+    placeBand();
+  }, [layout, placeBand, props.toolbar]);
+  useEffect(() => {
+    const host = shellRef.current;
+    const tools = host?.querySelector<HTMLElement>(":scope > .pane-toolbar") ?? null;
+    if (host === null || tools === null || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => placeBand());
+    observer.observe(host);
+    observer.observe(tools);
+    return () => observer.disconnect();
+  }, [placeBand]);
   // the band's tool cluster width, so the zone under it keeps its tabs clear (W51-b)
   useEffect(() => {
     const host = shellRef.current;

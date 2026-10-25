@@ -1,7 +1,14 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { IDLE, REVEAL_MS, SessionSwitcher, stepSwitcher } from "./SessionSwitcher.tsx";
+import type { SessionRow } from "../sidebar/sessionList.ts";
+import {
+  IDLE,
+  REVEAL_MS,
+  SessionSwitcher,
+  stepSwitcher,
+  switcherRowsFrom,
+} from "./SessionSwitcher.tsx";
 
 afterEach(() => {
   cleanup();
@@ -48,7 +55,11 @@ describe("session switcher (W52-h-2)", () => {
       vi.advanceTimersByTime(REVEAL_MS + 10);
     });
     const options = screen.getAllByRole("option");
-    expect(options.map((o) => o.textContent)).toEqual(["Alpha", "Beta", "Gamma"]);
+    // the running row adds a screen-reader note after its title
+    expect(options.map((o) => o.textContent)).toEqual(["Alpha", "Beta", "Gamma(working)"]);
+    expect(
+      options.map((o) => o.querySelector(".session-switcher-dot")?.getAttribute("data-state")),
+    ).toEqual(["idle", "unread", "running"]);
     expect(options[2]?.getAttribute("aria-selected")).toBe("true");
     act(() => up({ key: "Control" }));
     expect(onOpen).toHaveBeenCalledWith("c");
@@ -70,5 +81,50 @@ describe("session switcher (W52-h-2)", () => {
       up({ key: "Control" });
     });
     expect(onOpen).not.toHaveBeenCalled();
+  });
+});
+
+describe("switcher rows (W55-F1-2)", () => {
+  const row = (id: string, extra: Partial<SessionRow> = {}): SessionRow => ({
+    id,
+    durableId: id,
+    title: id,
+    preview: null,
+    source: null,
+    lastActive: 0,
+    startedAt: 0,
+    active: false,
+    pinned: false,
+    archived: false,
+    branch: false,
+    cwd: null,
+    gitBranch: null,
+    messageCount: 0,
+    ids: [id],
+    ...extra,
+  });
+
+  it("reads `is_active` as live, not running, and uses the sidebar's dots", () => {
+    const rows = [
+      row("quiet"),
+      row("recent", { active: true }),
+      row("answering", { active: true, ids: ["answering", "older"] }),
+      row("asking", { pinned: true }),
+      row("news"),
+    ];
+    const out = switcherRowsFrom(rows, {
+      running: new Set(["older"]),
+      attention: new Set(["asking"]),
+      isUnread: (r) => r.id === "news",
+      title: (r) => `T ${r.id}`,
+    });
+    expect(out.map((r) => [r.id, r.state])).toEqual([
+      ["asking", "attention"],
+      ["quiet", "idle"],
+      ["recent", "live"],
+      ["answering", "running"],
+      ["news", "unread"],
+    ]);
+    expect(out[0]?.title).toBe("T asking");
   });
 });

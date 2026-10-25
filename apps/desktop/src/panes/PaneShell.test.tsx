@@ -10,6 +10,7 @@ import {
   PaneRegistry,
   PaneRegistryProvider,
   PaneShell,
+  placeBandTools,
   slotLabel,
 } from "./PaneShell.tsx";
 import { allPanes, zoneOf } from "./paneTree.ts";
@@ -275,5 +276,46 @@ describe("layout editor (W52-l)", () => {
     expect(screen.getByRole("dialog", { name: "Layouts" })).toBeTruthy();
     fireEvent.keyDown(window, { key: "\\", code: "Backslash", ctrlKey: true, shiftKey: true });
     expect(screen.queryByRole("dialog", { name: "Layouts" })).toBeNull();
+  });
+});
+
+describe("band tool cluster placement (W55-F1-3)", () => {
+  // a 1280 px window: sidebar 260, window controls from 1167, a 230 px cluster
+  const chat = { id: "z1", left: 260, right: 918, selfLabelled: false };
+  const preview = { id: "z2", left: 918, right: 1280, selfLabelled: false };
+  const files = { id: "z3", left: 1076, right: 1280, selfLabelled: true };
+
+  it("keeps the cluster at the window controls over a wide or self-labelled top-right zone", () => {
+    expect(placeBandTools([{ ...chat, right: 1280 }], 1167, 230)).toEqual({
+      zone: "z1",
+      shift: 0,
+      edge: null,
+    });
+    expect(placeBandTools([{ ...chat, right: 1076 }, files], 1167, 230)).toEqual({
+      zone: "z3",
+      shift: 0,
+      edge: null,
+    });
+  });
+
+  it("moves the cluster to the chat's end when a narrow column with tabs is top right", () => {
+    // Preview's tab would lie under the cluster (and its Settings button) at the window's edge
+    expect(placeBandTools([preview, chat], 1167, 230)).toEqual({
+      zone: "z1",
+      shift: 249,
+      edge: "z2",
+    });
+  });
+
+  it("falls back to the window's edge when no zone has room, and ignores zones without width", () => {
+    const narrow = { id: "z1", left: 260, right: 500, selfLabelled: false };
+    const rest = { id: "z2", left: 500, right: 1280, selfLabelled: false };
+    expect(placeBandTools([narrow, { ...rest, left: 900 }], 1167, 600)).toEqual({
+      zone: "z2",
+      shift: 0,
+      edge: null,
+    });
+    expect(placeBandTools([{ ...chat, right: 260 }], 1167, 230)).toBeNull();
+    expect(placeBandTools([], 1167, 230)).toBeNull();
   });
 });

@@ -1,0 +1,930 @@
+diff --git a/apps/desktop/src/app/SessionSwitcher.test.tsx b/apps/desktop/src/app/SessionSwitcher.test.tsx
+index cc559de..add822f 100644
+--- a/apps/desktop/src/app/SessionSwitcher.test.tsx
++++ b/apps/desktop/src/app/SessionSwitcher.test.tsx
+@@ -1,7 +1,14 @@
+ // @vitest-environment jsdom
+ import { act, cleanup, render, screen } from "@testing-library/react";
+ import { afterEach, describe, expect, it, vi } from "vitest";
+-import { IDLE, REVEAL_MS, SessionSwitcher, stepSwitcher } from "./SessionSwitcher.tsx";
++import type { SessionRow } from "../sidebar/sessionList.ts";
++import {
++  IDLE,
++  REVEAL_MS,
++  SessionSwitcher,
++  stepSwitcher,
++  switcherRowsFrom,
++} from "./SessionSwitcher.tsx";
+ 
+ afterEach(() => {
+   cleanup();
+@@ -48,7 +55,11 @@ describe("session switcher (W52-h-2)", () => {
+       vi.advanceTimersByTime(REVEAL_MS + 10);
+     });
+     const options = screen.getAllByRole("option");
+-    expect(options.map((o) => o.textContent)).toEqual(["Alpha", "Beta", "Gamma"]);
++    // the running row adds a screen-reader note after its title
++    expect(options.map((o) => o.textContent)).toEqual(["Alpha", "Beta", "Gamma(working)"]);
++    expect(
++      options.map((o) => o.querySelector(".session-switcher-dot")?.getAttribute("data-state")),
++    ).toEqual(["idle", "unread", "running"]);
+     expect(options[2]?.getAttribute("aria-selected")).toBe("true");
+     act(() => up({ key: "Control" }));
+     expect(onOpen).toHaveBeenCalledWith("c");
+@@ -72,3 +83,48 @@ describe("session switcher (W52-h-2)", () => {
+     expect(onOpen).not.toHaveBeenCalled();
+   });
+ });
++
++describe("switcher rows (W55-F1-2)", () => {
++  const row = (id: string, extra: Partial<SessionRow> = {}): SessionRow => ({
++    id,
++    durableId: id,
++    title: id,
++    preview: null,
++    source: null,
++    lastActive: 0,
++    startedAt: 0,
++    active: false,
++    pinned: false,
++    archived: false,
++    branch: false,
++    cwd: null,
++    gitBranch: null,
++    messageCount: 0,
++    ids: [id],
++    ...extra,
++  });
++
++  it("reads `is_active` as live, not running, and uses the sidebar's dots", () => {
++    const rows = [
++      row("quiet"),
++      row("recent", { active: true }),
++      row("answering", { active: true, ids: ["answering", "older"] }),
++      row("asking", { pinned: true }),
++      row("news"),
++    ];
++    const out = switcherRowsFrom(rows, {
++      running: new Set(["older"]),
++      attention: new Set(["asking"]),
++      isUnread: (r) => r.id === "news",
++      title: (r) => `T ${r.id}`,
++    });
++    expect(out.map((r) => [r.id, r.state])).toEqual([
++      ["asking", "attention"],
++      ["quiet", "idle"],
++      ["recent", "live"],
++      ["answering", "running"],
++      ["news", "unread"],
++    ]);
++    expect(out[0]?.title).toBe("T asking");
++  });
++});
+diff --git a/apps/desktop/src/app/SessionSwitcher.tsx b/apps/desktop/src/app/SessionSwitcher.tsx
+index ea39b64..61392d1 100644
+--- a/apps/desktop/src/app/SessionSwitcher.tsx
++++ b/apps/desktop/src/app/SessionSwitcher.tsx
+@@ -2,11 +2,15 @@
+ // in the sidebar's order — pinned first, then by last activity. A quick tap switches at once; held
+ // past `REVEAL_MS` a small card at the top of the window shows the chats with the pick marked, and
+ // letting go of Ctrl opens it. While the card shows: Tab / ↓ next, Shift+Tab / ↑ previous, Enter
+-// opens, Escape cancels, a click opens that row. Needs two chats or more.
++// opens, Escape cancels, a click opens that row. Needs two chats or more. Each row carries the
++// sidebar's dot (W55-F1-2): waiting for the person, running (live turn events), unread, live (the
++// list's `is_active`: recently active, not answering) or idle.
+ 
+ import { useCallback, useEffect, useRef, useState } from "react";
+ import { useT } from "../i18n/index.tsx";
+ import { switcherStep } from "../panes/shortcuts.ts";
++import { type SessionDot, sessionDot } from "../sidebar/Sidebar.tsx";
++import type { SessionRow } from "../sidebar/sessionList.ts";
+ import { FloatingHud } from "../ui/components.tsx";
+ 
+ export const REVEAL_MS = 220;
+@@ -14,7 +18,35 @@ export const REVEAL_MS = 220;
+ export interface SwitcherRow {
+   readonly id: string;
+   readonly title: string;
+-  readonly state: "running" | "unread" | "idle";
++  /** The sidebar row's dot for this chat (`sessionDot`). */
++  readonly state: SessionDot;
++}
++
++/**
++ * The switcher's rows in the sidebar's order (pinned first) with the sidebar's dots. `running`
++ * holds session ids with a live turn (turn events), `attention` ids waiting for the person; a
++ * row's `active` (REST `is_active`) only ever makes it "live", never "running".
++ */
++export function switcherRowsFrom(
++  rows: readonly SessionRow[],
++  facts: {
++    running: ReadonlySet<string>;
++    attention: ReadonlySet<string>;
++    isUnread: (row: SessionRow) => boolean;
++    title: (row: SessionRow) => string;
++  },
++): SwitcherRow[] {
++  const ordered = [...rows.filter((row) => row.pinned), ...rows.filter((row) => !row.pinned)];
++  return ordered.map((row) => ({
++    id: row.id,
++    title: facts.title(row),
++    state: sessionDot({
++      attention: row.ids.some((id) => facts.attention.has(id)),
++      running: row.ids.some((id) => facts.running.has(id)),
++      unread: facts.isUnread(row),
++      live: row.active,
++    }),
++  }));
+ }
+ 
+ export interface SwitcherState {
+@@ -141,6 +173,8 @@ export function SessionSwitcher(props: {
+           >
+             <span className="session-switcher-dot" data-state={row.state} aria-hidden="true" />
+             <span className="session-switcher-title">{row.title}</span>
++            {row.state === "running" && <span className="sr-only">{t("sidebar.running")}</span>}
++            {row.state === "attention" && <span className="sr-only">{t("sidebar.attention")}</span>}
+           </div>
+         ))}
+       </div>
+diff --git a/apps/desktop/src/app/Shell.tsx b/apps/desktop/src/app/Shell.tsx
+index 7df6f00..9e895d2 100644
+--- a/apps/desktop/src/app/Shell.tsx
++++ b/apps/desktop/src/app/Shell.tsx
+@@ -77,7 +77,7 @@ import {
+   pagePath,
+   sessionPath,
+ } from "./routes.ts";
+-import { SessionSwitcher, type SwitcherRow } from "./SessionSwitcher.tsx";
++import { SessionSwitcher, type SwitcherRow, switcherRowsFrom } from "./SessionSwitcher.tsx";
+ import { dismissToast, notify, ToastRegion } from "./Toasts.tsx";
+ import { type ThemeMode, useTheme } from "./theme.tsx";
+ 
+@@ -628,22 +628,19 @@ export function Shell(props: {
+     (listener) => listStore.subscribe(listener),
+     () => listStore.getState(),
+   );
+-  const switcherRows = useMemo<SwitcherRow[]>(() => {
+-    const rows = [
+-      ...listRows.rows.filter((row) => row.pinned),
+-      ...listRows.rows.filter((row) => !row.pinned),
+-    ];
+-    return rows.map((row) => ({
+-      id: row.id,
+-      title: rowTitle(t, row),
+-      state:
+-        row.active || row.ids.some((id) => listRows.running.has(id))
+-          ? "running"
+-          : listStore.unread.isUnread(row, sessionId)
+-            ? "unread"
+-            : "idle",
+-    }));
+-  }, [listRows, listStore, sessionId, t]);
++  // the sidebar's dots (W55-F1-2): running from the live turn events only — a REST row's
++  // `is_active` means recently active ("live"), not answering
++  const waitingAnywhere = useOpenServerRequests(undefined);
++  const switcherRows = useMemo<SwitcherRow[]>(
++    () =>
++      switcherRowsFrom(listRows.rows, {
++        running: listRows.running,
++        attention: new Set(waitingAnywhere.map((open) => open.sessionId)),
++        isUnread: (row) => listStore.unread.isUnread(row, sessionId),
++        title: (row) => rowTitle(t, row),
++      }),
++    [listRows, listStore, sessionId, t, waitingAnywhere],
++  );
+   const activeRowId =
+     sessionId === null
+       ? null
+diff --git a/apps/desktop/src/panes/PaneShell.test.tsx b/apps/desktop/src/panes/PaneShell.test.tsx
+index f7028b7..5fc0aff 100644
+--- a/apps/desktop/src/panes/PaneShell.test.tsx
++++ b/apps/desktop/src/panes/PaneShell.test.tsx
+@@ -10,6 +10,7 @@ import {
+   PaneRegistry,
+   PaneRegistryProvider,
+   PaneShell,
++  placeBandTools,
+   slotLabel,
+ } from "./PaneShell.tsx";
+ import { allPanes, zoneOf } from "./paneTree.ts";
+@@ -277,3 +278,44 @@ describe("layout editor (W52-l)", () => {
+     expect(screen.queryByRole("dialog", { name: "Layouts" })).toBeNull();
+   });
+ });
++
++describe("band tool cluster placement (W55-F1-3)", () => {
++  // a 1280 px window: sidebar 260, window controls from 1167, a 230 px cluster
++  const chat = { id: "z1", left: 260, right: 918, selfLabelled: false };
++  const preview = { id: "z2", left: 918, right: 1280, selfLabelled: false };
++  const files = { id: "z3", left: 1076, right: 1280, selfLabelled: true };
++
++  it("keeps the cluster at the window controls over a wide or self-labelled top-right zone", () => {
++    expect(placeBandTools([{ ...chat, right: 1280 }], 1167, 230)).toEqual({
++      zone: "z1",
++      shift: 0,
++      edge: null,
++    });
++    expect(placeBandTools([{ ...chat, right: 1076 }, files], 1167, 230)).toEqual({
++      zone: "z3",
++      shift: 0,
++      edge: null,
++    });
++  });
++
++  it("moves the cluster to the chat's end when a narrow column with tabs is top right", () => {
++    // Preview's tab would lie under the cluster (and its Settings button) at the window's edge
++    expect(placeBandTools([preview, chat], 1167, 230)).toEqual({
++      zone: "z1",
++      shift: 249,
++      edge: "z2",
++    });
++  });
++
++  it("falls back to the window's edge when no zone has room, and ignores zones without width", () => {
++    const narrow = { id: "z1", left: 260, right: 500, selfLabelled: false };
++    const rest = { id: "z2", left: 500, right: 1280, selfLabelled: false };
++    expect(placeBandTools([narrow, { ...rest, left: 900 }], 1167, 600)).toEqual({
++      zone: "z2",
++      shift: 0,
++      edge: null,
++    });
++    expect(placeBandTools([{ ...chat, right: 260 }], 1167, 230)).toBeNull();
++    expect(placeBandTools([], 1167, 230)).toBeNull();
++  });
++});
+diff --git a/apps/desktop/src/panes/PaneShell.tsx b/apps/desktop/src/panes/PaneShell.tsx
+index f6507fa..7313485 100644
+--- a/apps/desktop/src/panes/PaneShell.tsx
++++ b/apps/desktop/src/panes/PaneShell.tsx
+@@ -26,8 +26,10 @@ import {
+   type KeyboardEvent,
+   type PointerEvent,
+   type ReactNode,
++  useCallback,
+   useContext,
+   useEffect,
++  useLayoutEffect,
+   useMemo,
+   useRef,
+   useState,
+@@ -270,6 +272,10 @@ interface ShellContext {
+   tools: Pick<PaneShellProps, "workspace" | "mode" | "connection" | "openPreview" | "addToChat">;
+   /** The zone whose header runs under the band's tool cluster (top right), if any. */
+   bandEnd: string | null;
++  /** The cluster sits at the end of `bandEnd` rather than at the window's edge (W55-F1-3). */
++  bandInner: boolean;
++  /** The top-right zone when the cluster moved left of it: it keeps clear of the window controls. */
++  bandEdge: string | null;
+   /** Zones whose top edge is the window's top (their header is part of the title band). */
+   topZones: ReadonlySet<string>;
+ }
+@@ -296,6 +302,64 @@ export function bandEndZone(layout: PaneLayout, node: LayoutNode | null): string
+   return pick === undefined ? null : bandEndZone(layout, pick);
+ }
+ 
++/** A top zone's box along the band, for placing the tool cluster. */
++export interface BandZoneBox {
++  readonly id: string;
++  readonly left: number;
++  readonly right: number;
++  /** Its tabs are not drawn (a self-labelled pane): the cluster may cover them. */
++  readonly selfLabelled: boolean;
++}
++
++export interface BandPlacement {
++  /** The zone the cluster sits at the end of. */
++  readonly zone: string;
++  /** How far left of its usual place (the window controls' edge) the cluster sits, in px. */
++  readonly shift: number;
++  /** The top-right zone, when it is not `zone`. */
++  readonly edge: string | null;
++}
++
++/** The room a zone's tabs keep beside the cluster before the cluster moves to a wider zone. */
++export const BAND_TAB_ROOM = 140;
++/** The gap the band keeps around the cluster (the CSS padding on the zone under it). */
++const BAND_GAP = 16;
++
++/**
++ * Where the band's tool cluster goes (W55-F1-3): at the end of the rightmost top zone whose drawn
++ * tabs keep `room` px beside it — a self-labelled zone draws none, so it always takes the
++ * cluster — else at the window's edge as before. A narrow column with real tabs (Preview at the
++ * window's right) used to lie wholly under the cluster: its tab could not be seen or clicked.
++ * `controlsLeft` is the left edge of the window controls (the window's right edge without them).
++ */
++export function placeBandTools(
++  boxes: readonly BandZoneBox[],
++  controlsLeft: number,
++  toolsWidth: number,
++  room = BAND_TAB_ROOM,
++): BandPlacement | null {
++  const shown = boxes
++    .filter((box) => box.right - box.left > 0)
++    .sort((a, b) => a.left - b.left || a.right - b.right);
++  const last = shown.at(-1);
++  if (last === undefined) return null;
++  for (let index = shown.length - 1; index >= 0; index--) {
++    const box = shown[index] as BandZoneBox;
++    const right = Math.min(box.right, controlsLeft);
++    const free = right - box.left - toolsWidth - BAND_GAP;
++    if (box.selfLabelled || free >= room) {
++      const shift = Math.max(0, Math.round(controlsLeft - right));
++      return { zone: box.id, shift, edge: box === last ? null : last.id };
++    }
++  }
++  return { zone: last.id, shift: 0, edge: null };
++}
++
++function samePlacement(a: BandPlacement | null, b: BandPlacement | null): boolean {
++  if (a === null || b === null) return a === b;
++  return a.zone === b.zone && a.shift === b.shift && a.edge === b.edge;
++}
++
+ /** A zone takes no space when it is minimised or every pane in it is hidden. */
+ function zoneCollapsed(layout: PaneLayout, z: ZoneNode): boolean {
+   return z.minimized || z.tabs.every((pane) => isHidden(layout, pane));
+@@ -476,7 +540,8 @@ function ZoneView(props: { ctx: ShellContext; zone: ZoneNode }) {
+     <section
+       className="pane-zone"
+       data-zone-id={z.id}
+-      data-band-end={ctx.bandEnd === z.id ? "true" : undefined}
++      data-band-end={ctx.bandEnd === z.id ? (ctx.bandInner ? "inner" : "true") : undefined}
++      data-band-edge={ctx.bandEdge === z.id && ctx.bandEnd !== z.id ? "true" : undefined}
+       data-focused={focused ? "true" : "false"}
+       data-chrome={chrome}
+       data-self-labelled={selfLabelled ? "true" : undefined}
+@@ -852,11 +917,71 @@ export function PaneShell(props: PaneShellProps) {
+       ...(props.openPreview === undefined ? {} : { openPreview: props.openPreview }),
+       ...(props.addToChat === undefined ? {} : { addToChat: props.addToChat }),
+     },
+-    bandEnd: props.toolbar === false ? null : bandEndZone(layout, layout.root),
++    bandEnd: null,
++    bandInner: false,
++    bandEdge: null,
+     topZones: topZoneIds(layout.root),
+   };
++  const [band, setBand] = useState<BandPlacement | null>(null);
++  if (props.toolbar !== false) {
++    // the measured placement while its zones are still on the band; the tree's guess before
++    const measured =
++      band !== null &&
++      ctx.topZones.has(band.zone) &&
++      (band.edge === null || ctx.topZones.has(band.edge))
++        ? band
++        : null;
++    ctx.bandEnd = measured?.zone ?? bandEndZone(layout, layout.root);
++    ctx.bandInner = (measured?.shift ?? 0) > 0;
++    ctx.bandEdge = measured?.edge ?? null;
++  }
+   const root = layout.root;
+   const shellRef = useRef<HTMLDivElement>(null);
++  // place the band's tool cluster from the zones' real boxes (W55-F1-3), after every layout
++  // change and whenever the shell or the cluster resizes
++  const placeBand = useCallback(() => {
++    const host = shellRef.current;
++    const tools = host?.querySelector<HTMLElement>(":scope > .pane-toolbar") ?? null;
++    if (host === null || tools === null) return;
++    // the cluster's box less the shift applied now: its usual place, at the window controls
++    const applied = Number.parseFloat(host.style.getPropertyValue("--band-shift")) || 0;
++    const usual = tools.getBoundingClientRect();
++    const boxes: BandZoneBox[] = [
++      ...host.querySelectorAll<HTMLElement>(
++        ":scope > .pane-root .pane-zone[data-chrome='band']:not([hidden])",
++      ),
++    ].map((zone) => {
++      const box = zone.getBoundingClientRect();
++      return {
++        id: zone.dataset.zoneId ?? "",
++        left: box.left,
++        right: box.right,
++        selfLabelled: zone.dataset.selfLabelled === "true",
++      };
++    });
++    const controlsLeft = usual.right + applied + 8;
++    const next = usual.width > 0 ? placeBandTools(boxes, controlsLeft, tools.offsetWidth) : null;
++    const shift = next?.shift ?? 0;
++    if (shift !== applied) {
++      if (shift > 0) host.style.setProperty("--band-shift", `${shift}px`);
++      else host.style.removeProperty("--band-shift");
++    }
++    setBand((before) => (samePlacement(before, next) ? before : next));
++  }, []);
++  useLayoutEffect(() => {
++    if (props.toolbar === false || layout.root === null || typeof ResizeObserver === "undefined")
++      return;
++    placeBand();
++  }, [layout, placeBand, props.toolbar]);
++  useEffect(() => {
++    const host = shellRef.current;
++    const tools = host?.querySelector<HTMLElement>(":scope > .pane-toolbar") ?? null;
++    if (host === null || tools === null || typeof ResizeObserver === "undefined") return;
++    const observer = new ResizeObserver(() => placeBand());
++    observer.observe(host);
++    observer.observe(tools);
++    return () => observer.disconnect();
++  }, [placeBand]);
+   // the band's tool cluster width, so the zone under it keeps its tabs clear (W51-b)
+   useEffect(() => {
+     const host = shellRef.current;
+diff --git a/apps/desktop/src/panes/panes.css b/apps/desktop/src/panes/panes.css
+index dcee9db..83c11f1 100644
+--- a/apps/desktop/src/panes/panes.css
++++ b/apps/desktop/src/panes/panes.css
+@@ -15,7 +15,9 @@
+ .pane-toolbar {
+   position: absolute;
+   top: 0;
+-  right: calc(var(--band-controls) + 8px);
++  /* --band-shift: moved left to the end of a wider zone when the top-right one is narrow and
++     draws its tabs (W55-F1-3) */
++  right: calc(var(--band-controls) + 8px + var(--band-shift, 0px));
+   z-index: 5;
+   display: flex;
+   align-items: center;
+@@ -168,6 +170,16 @@
+   padding-right: calc(var(--band-controls) + var(--band-tools-width, 220px) + 16px);
+ }
+ 
++/* the cluster sits at the end of an inner zone; the top-right zone keeps clear of the window
++   controls only (W55-F1-3) */
++.pane-zone[data-band-end="inner"] > .pane-zone-header {
++  padding-right: calc(var(--band-tools-width, 220px) + 16px);
++}
++
++.pane-zone[data-band-edge="true"] > .pane-zone-header {
++  padding-right: calc(var(--band-controls) + 8px);
++}
++
+ .pane-tabs {
+   display: flex;
+   flex: 1;
+diff --git a/apps/desktop/src/panes/presets.ts b/apps/desktop/src/panes/presets.ts
+index ffb2e1a..003359e 100644
+--- a/apps/desktop/src/panes/presets.ts
++++ b/apps/desktop/src/panes/presets.ts
+@@ -189,7 +189,9 @@ export function initialLayout(mode: InterfaceMode, available: Iterable<PaneId>):
+ // tool panes out on the right: one column per document pane in a row on top (Preview, Review,
+ // Files from left to right) and the Terminal under the whole row. A Files column is about 236px
+ // at the usual window width (a narrow right sidebar); Review gets a wider column so a diff line
+-// and the commit box fit (W54-D1-3). The chat keeps at least about 40% of the span.
++// and the commit box fit (W54-D1-3), and Preview one wide enough for a page (W55-F1-3: the band's
++// tool cluster now moves off a narrow column whose tab it covered). The chat keeps at least
++// about 40% of the span.
+ // The shapes other presets build are left alone.
+ 
+ /** The top row's panes, left to right. */
+@@ -198,6 +200,7 @@ const SIDE_TOP: readonly PaneId[] = ["preview", "review", "files"];
+ const SIDE_SPAN = 1180;
+ /** Each side column's usual width at that span (relative sizes, so they scale with the window). */
+ const SIDE_COLUMN: Readonly<Partial<Record<PaneId, number>>> = {
++  preview: 420,
+   review: 380,
+ };
+ const SIDE_COLUMN_DEFAULT = 236;
+diff --git a/apps/desktop/src/styles.css b/apps/desktop/src/styles.css
+index b7919db..1eb6ae7 100644
+--- a/apps/desktop/src/styles.css
++++ b/apps/desktop/src/styles.css
+@@ -335,12 +335,23 @@ body {
+   background: var(--desk-fg-4);
+ }
+ 
++/* the sidebar row's dot colours (W55-F1-2) */
+ .session-switcher-dot[data-state="running"] {
+-  background: var(--desk-success);
++  background: var(--desk-accent);
+ }
+ 
+ .session-switcher-dot[data-state="unread"] {
+-  background: var(--desk-accent);
++  background: var(--desk-success);
++}
++
++.session-switcher-dot[data-state="live"] {
++  box-sizing: border-box;
++  border: 1.5px solid var(--desk-success);
++  background: transparent;
++}
++
++.session-switcher-dot[data-state="attention"] {
++  background: var(--desk-warning);
+ }
+ 
+ .status-bar {
+diff --git a/apps/tui/e2e/demo2.e2e.test.ts b/apps/tui/e2e/demo2.e2e.test.ts
+index 27647a5..d7fe6a1 100644
+--- a/apps/tui/e2e/demo2.e2e.test.ts
++++ b/apps/tui/e2e/demo2.e2e.test.ts
+@@ -144,8 +144,8 @@ describe.skipIf(missing !== null)("Demo 2 end to end", () => {
+       await tui.waitFor("All done: count.sh printed counted.");
+       await tui.waitFor(/─ ready/);
+       await tui.quiet();
+-      expect(tui.screen()).toMatch(/✓ terminal printf/);
+-      expect(tui.screen()).toMatch(/✓ terminal chmod \+x count\.sh && \.\/count\.sh/);
++      expect(tui.screen()).toMatch(/✓ terminal\(printf/);
++      expect(tui.screen()).toMatch(/✓ terminal\(chmod \+x count\.sh && \.\/count\.sh\)/);
+       expect(readFileSync(join(home.work, "runs.log"), "utf8")).toBe("once\n");
+       expect(model.turns).toHaveLength(3);
+       matchGolden(`demo2-${cols}x40.txt`, masked(tui, home));
+diff --git a/apps/tui/e2e/goldens/demo2-120x40.txt b/apps/tui/e2e/goldens/demo2-120x40.txt
+index 9026559..bc076db 100644
+--- a/apps/tui/e2e/goldens/demo2-120x40.txt
++++ b/apps/tui/e2e/goldens/demo2-120x40.txt
+@@ -11,14 +11,13 @@ session  <session>
+ 
+ ◆ Writing count.sh for you.
+ 
+-◆ ✓ terminal printf '#!/bin/sh\necho once >> runs.log\necho counted\… <t>
+-    ⎿ {"output": "", "exit_code": 0, "error": null}
++◆ ▾ Tool calls (1)
++  └ ✓ terminal(printf '#!/bin/sh\necho once >> runs.log\necho counted\…) (<t>)
+ 
+   Running it now.
+ 
+-◆ ✓ terminal chmod +x count.sh && ./count.sh <t>
+-    ⎿ {"output": "counted", "exit_code": 0, "error": null, "approval": "This command needed approval (marks a file execu
+-      table and runs it straight away) and the user…
++◆ ▾ Tool calls (1)
++  └ ✓ terminal(chmod +x count.sh && ./count.sh) (<t>)
+ 
+   All done: count.sh printed counted.
+ 
+@@ -36,5 +35,6 @@ session  <session>
+ 
+ 
+ 
++
+ ─ ready │ fake-model │ 290/256k 0% │ ▱▱▱▱▱▱▱▱▱▱ │ cache 0% ── <work>
+ › Ask anything · / for commands · Ctrl+X sessions · Ctrl+O model
+diff --git a/apps/tui/e2e/goldens/demo2-80x40.txt b/apps/tui/e2e/goldens/demo2-80x40.txt
+index eb081c5..f8f644a 100644
+--- a/apps/tui/e2e/goldens/demo2-80x40.txt
++++ b/apps/tui/e2e/goldens/demo2-80x40.txt
+@@ -11,15 +11,13 @@ session  <session>
+ 
+ ◆ Writing count.sh for you.
+ 
+-◆ ✓ terminal printf '#!/bin/sh\necho once >> runs.log\necho counted\… <t>
+-    ⎿ {"output": "", "exit_code": 0, "error": null}
++◆ ▾ Tool calls (1)
++  └ ✓ terminal(printf '#!/bin/sh\necho once >> runs.log\necho counted\…) (<t>)
+ 
+   Running it now.
+ 
+-◆ ✓ terminal chmod +x count.sh && ./count.sh <t>
+-    ⎿ {"output": "counted", "exit_code": 0, "error": null, "approval": "This com
+-      mand needed approval (marks a file executable and runs it straight away) a
+-      nd the user…
++◆ ▾ Tool calls (1)
++  └ ✓ terminal(chmod +x count.sh && ./count.sh) (<t>)
+ 
+   All done: count.sh printed counted.
+ 
+@@ -36,5 +34,7 @@ session  <session>
+ 
+ 
+ 
++
++
+ ─ ready │ fake-model │ 290/256k 0% │ ▱▱▱▱▱▱▱▱▱▱ ── <work>
+ › Ask anything · / for commands · Ctrl+X sessions · Ctrl+O model
+diff --git a/apps/tui/src/components/ToolTrail.test.tsx b/apps/tui/src/components/ToolTrail.test.tsx
+index d17c732..1530bf9 100644
+--- a/apps/tui/src/components/ToolTrail.test.tsx
++++ b/apps/tui/src/components/ToolTrail.test.tsx
+@@ -13,6 +13,7 @@ import {
+   capVerbose,
+   formatDuration,
+   layoutToolTrail,
++  readableOutput,
+   ToolTrail,
+   TRAIL_LIMIT,
+   type TrailRow,
+@@ -71,15 +72,17 @@ describe("trail", () => {
+     expect(trail).toHaveLength(TRAIL_LIMIT);
+     expect(trail[0]?.id).toBe("t4");
+     const lines = text(view({ trail: Array.from({ length: 11 }, (_, i) => done(i)) }));
+-    expect(lines).toHaveLength(8);
+-    expect(lines[0]).toBe("✓ tool_3 1.2s");
++    expect(lines).toHaveLength(9);
++    expect(lines[0]).toBe("▾ Tool calls (8)");
++    expect(lines[1]).toBe("├ ✓ tool_3 (1.2s)");
++    expect(lines[8]).toBe("└ ✓ tool_10 (1.2s)");
+   });
+ 
+   it("marks failures and cancellations", () => {
+     const lines = text(
+       view({ trail: [done(1, { status: "error" }), done(2, { status: "cancelled" })] }),
+     );
+-    expect(lines).toEqual(["✗ tool_1 1.2s", "⊘ tool_2 1.2s"]);
++    expect(lines).toEqual(["▾ Tool calls (2)", "├ ✗ tool_1 (1.2s)", "└ ⊘ tool_2 (1.2s)"]);
+   });
+ 
+   it("shows running tools with verb, argument preview and elapsed time", () => {
+@@ -90,20 +93,33 @@ describe("trail", () => {
+         ],
+       }),
+     );
+-    expect(lines).toEqual(["◐ running terminal ls -la /tmp 2.5s"]);
++    expect(lines).toEqual(["▾ Tool calls (1)", "└ ◐ running terminal(ls -la /tmp) (2.5s)"]);
+   });
+ 
+   it("adds a drafting line for a tool the model is still writing", () => {
+     expect(text(view({ pending: [{ id: "p", name: "write_file", status: "pending" }] }))).toEqual([
+-      "✎ drafting write_file…",
++      "▾ Tool calls (1)",
++      "└ ✎ drafting write_file…",
++    ]);
++  });
++
++  it("draws a finished row waiting for its segment once, not as a drafting line", () => {
++    const finished = done(1);
++    expect(text(view({ trail: [finished], pending: [finished] }))).toEqual([
++      "▾ Tool calls (1)",
++      "└ ✓ tool_1 (1.2s)",
+     ]);
+   });
+ 
+   it("indents subagent rows and hides them with their section", () => {
+     const rows = [done(1), done(2, { depth: 1 })];
+-    expect(text(view({ trail: rows }))).toEqual(["✓ tool_1 1.2s", "  ✓ tool_2 1.2s"]);
++    expect(text(view({ trail: rows }))).toEqual([
++      "▾ Tool calls (2)",
++      "├ ✓ tool_1 (1.2s)",
++      "└   ✓ tool_2 (1.2s)",
++    ]);
+     const noSubs = resolveSections("expanded", { subagents: "hidden" }, true);
+-    expect(text(view({ trail: rows }), noSubs)).toEqual(["✓ tool_1 1.2s"]);
++    expect(text(view({ trail: rows }), noSubs)).toEqual(["▾ Tool calls (1)", "└ ✓ tool_1 (1.2s)"]);
+   });
+ 
+   it("caps verbose output to 800 chars / 12 lines", () => {
+@@ -115,9 +131,28 @@ describe("trail", () => {
+     const wide = capVerbose("y".repeat(2000));
+     expect(wide.length).toBeLessThanOrEqual(800 + 40);
+     expect(capVerbose("small")).toBe("small");
+-    const lines = text(view({ trail: [done(1, { output })] }));
+-    expect(lines[1]).toBe("  ⎿ … 28 lines above not shown");
+-    expect(lines).toHaveLength(14);
++    const lines = text(view({ trail: [done(1, { output, status: "error" })] }));
++    expect(lines[2]).toBe("    ⎿ … 28 lines above not shown");
++    expect(lines).toHaveLength(15);
++  });
++
++  it("shows a result only for a failed call, as its error words rather than raw JSON", () => {
++    const ok = JSON.stringify({ output: "a.txt\nb.txt", exit_code: 0, error: null });
++    expect(text(view({ trail: [done(1, { args: "ls", output: ok })] }))).toEqual([
++      "▾ Tool calls (1)",
++      "└ ✓ tool_1(ls) (1.2s)",
++    ]);
++    const bad = JSON.stringify({ output: "", exit_code: 2, error: "no such file" });
++    expect(text(view({ trail: [done(2, { status: "error", output: bad })] }))).toEqual([
++      "▾ Tool calls (1)",
++      "└ ✗ tool_2 (1.2s)",
++      "    ⎿ no such file",
++    ]);
++    expect(readableOutput(bad)).toBe("no such file");
++    expect(readableOutput(ok)).toBe("a.txt\nb.txt");
++    expect(readableOutput('{"exit_code": 0}')).toBe("");
++    expect(readableOutput("{not json")).toBe("{not json");
++    expect(readableOutput("plain words")).toBe("plain words");
+   });
+ 
+   it("collapses to a single summary line", () => {
+@@ -129,7 +164,7 @@ describe("trail", () => {
+       }),
+       collapsed,
+     );
+-    expect(lines).toEqual(["▸ tools (2) · reading read_file 1.0s"]);
++    expect(lines).toEqual(["▸ Tool calls (2) · reading read_file 1.0s"]);
+   });
+ });
+ 
+@@ -157,7 +192,10 @@ describe("detail sections", () => {
+ 
+   it("lets a section override beat the global mode", () => {
+     const sections = resolveSections("hidden", { tools: "expanded" }, true);
+-    expect(text(view({ trail: [done(1)], activity }), sections)).toEqual(["✓ tool_1 1.2s"]);
++    expect(text(view({ trail: [done(1)], activity }), sections)).toEqual([
++      "▾ Tool calls (1)",
++      "└ ✓ tool_1 (1.2s)",
++    ]);
+   });
+ 
+   it("lists the last activity entries when the lane is open", () => {
+@@ -180,7 +218,8 @@ describe("detail sections", () => {
+         <ToolTrail width={60} />
+       </ThemeProvider>,
+     );
+-    expect(out).toContain("✓ tool_7 1.2s");
++    expect(out).toContain("▾ Tool calls (1)");
++    expect(out).toContain("└ ✓ tool_7 (1.2s)");
+     turnStore.getState().reset();
+   });
+ });
+diff --git a/apps/tui/src/components/ToolTrail.tsx b/apps/tui/src/components/ToolTrail.tsx
+index b3cbb26..4b73867 100644
+--- a/apps/tui/src/components/ToolTrail.tsx
++++ b/apps/tui/src/components/ToolTrail.tsx
+@@ -1,8 +1,9 @@
+ /**
+- * The tool area of a turn: running tools (spinner, verb, argument preview, elapsed time), tools
+- * still being drafted by the model, finished tools as trail lines with their duration, and the
+- * activity lane. Each section obeys its detail mode; when every section is hidden, warnings and
+- * errors still show as a floating alert.
++ * The tool area of a turn: a "Tool calls (N)" heading over a tree of the turn's calls —
++ * finished ones as `name(args)` with their duration (a failure adds its error text), running ones
++ * with a spinner, verb and elapsed time, ones the model is still drafting — and the activity lane.
++ * Each section obeys its detail mode (collapsed: the heading alone); when every section is hidden,
++ * warnings and errors still show as a floating alert.
+  */
+ import { Box, useAnimation } from "ink";
+ import { useStore } from "zustand";
+@@ -23,6 +24,8 @@ export const ACTIVITY_SHOWN = 4;
+ export const VERBOSE_MAX_CHARS = 800;
+ export const VERBOSE_MAX_LINES = 12;
+ export const ALERTS_SHOWN = 2;
++/** The heading over a turn's tool calls (expanded as a tree, collapsed to one line). */
++export const TOOLS_TITLE = "Tool calls";
+ 
+ /** Tool rows may carry a nesting depth (subagent calls render indented under their parent). */
+ export type TrailRow = ToolRow & { depth?: number };
+@@ -54,15 +57,30 @@ export function capVerbose(text: string): string {
+   return `… ${what} above not shown\n${tail.text}`;
+ }
+ 
++/** `name(args)`: the call as one line, its argument preview cut to `max` cells. */
+ function toolLabel(row: TrailRow, max = 56): string {
+   const args = row.args ? oneLine(row.args, max) : "";
+-  return args ? `${row.name} ${args}` : row.name;
++  return args ? `${row.name}(${args})` : row.name;
+ }
+ 
+ function indentOf(row: TrailRow): string {
+   return "  ".repeat(Math.max(0, row.depth ?? 0));
+ }
+ 
++const BRANCH_MID = "├ ";
++const BRANCH_LAST = "└ ";
++const RAIL = "│ ";
++const BRANCH_WIDTH = 2;
++
++/** Hangs one row's lines off the tree: a branch glyph on its first line, a rail (or gap) after. */
++function inTree(lines: StyledLine[], last: boolean, theme: Theme): StyledLine[] {
++  const tone = colour(theme, "border");
++  return lines.map((line, i) => [
++    { ...tone, text: i === 0 ? (last ? BRANCH_LAST : BRANCH_MID) : last ? "  " : RAIL },
++    ...line,
++  ]);
++}
++
+ export interface TrailView {
+   active: readonly TrailRow[];
+   pending: readonly TrailRow[];
+@@ -74,7 +92,8 @@ export interface TrailView {
+ 
+ function activeLine(row: TrailRow, view: TrailView, theme: Theme, width: number): StyledLine[] {
+   const spinner = TOOL_FRAMES[view.frame % TOOL_FRAMES.length] as string;
+-  const elapsed = row.startedAt !== undefined ? ` ${formatDuration(view.now - row.startedAt)}` : "";
++  const elapsed =
++    row.startedAt !== undefined ? ` (${formatDuration(view.now - row.startedAt)})` : "";
+   const spans: Span[] = [
+     { text: indentOf(row) },
+     { ...colour(theme, "accent"), text: `${spinner} ` },
+@@ -96,7 +115,7 @@ function finishedLine(row: TrailRow, theme: Theme, width: number, verbose: boole
+       : colour(theme, "ok");
+   const took =
+     row.startedAt !== undefined && row.endedAt !== undefined
+-      ? ` ${formatDuration(row.endedAt - row.startedAt)}`
++      ? ` (${formatDuration(row.endedAt - row.startedAt)})`
+       : "";
+   const lead = indentOf(row);
+   const lines = wrapSpans(
+@@ -109,31 +128,45 @@ function finishedLine(row: TrailRow, theme: Theme, width: number, verbose: boole
+     width,
+     { rest: [{ text: `${lead}  ` }] },
+   );
+-  if (verbose && row.output?.trim()) {
+-    const body = capVerbose(row.output);
++  const shown = failed && verbose ? readableOutput(row.output ?? "") : "";
++  if (shown) {
++    const body = capVerbose(shown);
+     const first: StyledLine = [{ text: lead }, { ...colour(theme, "muted"), text: "  ⎿ " }];
+     const rest: StyledLine = [{ text: `${lead}    ` }];
+     lines.push(
+-      ...wrapSpans(
+-        [
+-          {
+-            ...(failed ? colour(theme, "error") : colour(theme, "muted")),
+-            dim: !failed,
+-            text: body,
+-          },
+-        ],
+-        width,
+-        {
+-          first,
+-          rest,
+-          mode: "char",
+-        },
+-      ),
++      ...wrapSpans([{ ...colour(theme, "error"), text: body }], width, {
++        first,
++        rest,
++        mode: "char",
++      }),
+     );
+   }
+   return lines;
+ }
+ 
++/**
++ * The words a result carries for a person: a JSON object's `error` (else `output`) text, any
++ * other result as it came. An empty string when there is nothing to say.
++ */
++export function readableOutput(raw: string): string {
++  const text = raw.trim();
++  if (!text.startsWith("{")) return text;
++  try {
++    const value: unknown = JSON.parse(text);
++    if (value && typeof value === "object" && !Array.isArray(value)) {
++      const record = value as Record<string, unknown>;
++      for (const key of ["error", "output"]) {
++        const field = record[key];
++        if (typeof field === "string" && field.trim()) return field.trim();
++      }
++      return "";
++    }
++  } catch {
++    // not JSON after all: show it as text
++  }
++  return text;
++}
++
+ function header(open: boolean, title: string, theme: Theme, extra = ""): StyledLine {
+   return [
+     { ...colour(theme, "accent"), text: open ? "▾ " : "▸ " },
+@@ -171,7 +204,9 @@ export function layoutToolTrail(
+   const keep = (row: TrailRow) => (row.depth ?? 0) === 0 || sections.subagents !== "hidden";
+   const finished = view.trail.slice(-TRAIL_LIMIT).filter(keep);
+   const running = view.active.filter(keep);
+-  const drafting = view.pending.filter(keep);
++  // `pending` may also hold finished rows waiting for a segment (the turn store's pendingTools);
++  // those already show in the trail, so only rows the model is still writing draw a drafting line.
++  const drafting = view.pending.filter((row) => row.status === "pending" && keep(row));
+   const out: StyledLine[] = [];
+   const count = finished.length + running.length + drafting.length;
+ 
+@@ -183,19 +218,26 @@ export function layoutToolTrail(
+             live.startedAt !== undefined ? ` ${formatDuration(view.now - live.startedAt)}` : ""
+           }`
+         : "";
+-      out.push(header(false, `tools (${count})`, theme, extra));
++      out.push(header(false, `${TOOLS_TITLE} (${count})`, theme, extra));
+     } else {
+-      for (const row of finished) {
+-        const sub = (row.depth ?? 0) > 0;
+-        out.push(...finishedLine(row, theme, width, !sub || sections.subagents === "expanded"));
+-      }
+-      for (const row of running) out.push(...activeLine(row, view, theme, width));
+-      for (const row of drafting) {
+-        out.push([
+-          { text: indentOf(row) },
+-          { ...colour(theme, "muted"), dim: true, text: `✎ drafting ${row.name}…` },
+-        ]);
+-      }
++      out.push(header(true, `${TOOLS_TITLE} (${count})`, theme));
++      const inner = Math.max(1, width - BRANCH_WIDTH);
++      const rows: StyledLine[][] = [
++        ...finished.map((row) => {
++          const sub = (row.depth ?? 0) > 0;
++          return finishedLine(row, theme, inner, !sub || sections.subagents === "expanded");
++        }),
++        ...running.map((row) => activeLine(row, view, theme, inner)),
++        ...drafting.map((row): StyledLine[] => [
++          [
++            { text: indentOf(row) },
++            { ...colour(theme, "muted"), dim: true, text: `✎ drafting ${row.name}…` },
++          ],
++        ]),
++      ];
++      rows.forEach((lines, i) => {
++        out.push(...inTree(lines, i === rows.length - 1, theme));
++      });
+     }
+   }
+ 
+diff --git a/apps/tui/src/components/Transcript.test.tsx b/apps/tui/src/components/Transcript.test.tsx
+index 623134f..b2e75ee 100644
+--- a/apps/tui/src/components/Transcript.test.tsx
++++ b/apps/tui/src/components/Transcript.test.tsx
+@@ -124,7 +124,8 @@ describe("virtual transcript", () => {
+     });
+     const out = draw(many(2), 80, 20).join("\n");
+     expect(out).toContain("Looked around first.");
+-    expect(out).toContain("reading read_file src/app.ts");
++    expect(out).toContain("▾ Tool calls (1)");
++    expect(out).toContain("reading read_file(src/app.ts)");
+     expect(out).toMatch(/2\.\ds/);
+     expect(out).toContain("Now writing the answer");
+   });

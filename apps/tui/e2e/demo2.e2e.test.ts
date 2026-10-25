@@ -144,8 +144,8 @@ describe.skipIf(missing !== null)("Demo 2 end to end", () => {
       await tui.waitFor("All done: count.sh printed counted.");
       await tui.waitFor(/─ ready/);
       await tui.quiet();
-      expect(tui.screen()).toMatch(/✓ terminal printf/);
-      expect(tui.screen()).toMatch(/✓ terminal chmod \+x count\.sh && \.\/count\.sh/);
+      expect(tui.screen()).toMatch(/✓ terminal\(printf/);
+      expect(tui.screen()).toMatch(/✓ terminal\(chmod \+x count\.sh && \.\/count\.sh\)/);
       expect(readFileSync(join(home.work, "runs.log"), "utf8")).toBe("once\n");
       expect(model.turns).toHaveLength(3);
       matchGolden(`demo2-${cols}x40.txt`, masked(tui, home));

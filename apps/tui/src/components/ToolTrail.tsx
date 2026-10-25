@@ -1,8 +1,9 @@
 /**
- * The tool area of a turn: running tools (spinner, verb, argument preview, elapsed time), tools
- * still being drafted by the model, finished tools as trail lines with their duration, and the
- * activity lane. Each section obeys its detail mode; when every section is hidden, warnings and
- * errors still show as a floating alert.
+ * The tool area of a turn: a "Tool calls (N)" heading over a tree of the turn's calls —
+ * finished ones as `name(args)` with their duration (a failure adds its error text), running ones
+ * with a spinner, verb and elapsed time, ones the model is still drafting — and the activity lane.
+ * Each section obeys its detail mode (collapsed: the heading alone); when every section is hidden,
+ * warnings and errors still show as a floating alert.
  */
 import { Box, useAnimation } from "ink";
 import { useStore } from "zustand";
@@ -23,6 +24,8 @@ export const ACTIVITY_SHOWN = 4;
 export const VERBOSE_MAX_CHARS = 800;
 export const VERBOSE_MAX_LINES = 12;
 export const ALERTS_SHOWN = 2;
+/** The heading over a turn's tool calls (expanded as a tree, collapsed to one line). */
+export const TOOLS_TITLE = "Tool calls";
 
 /** Tool rows may carry a nesting depth (subagent calls render indented under their parent). */
 export type TrailRow = ToolRow & { depth?: number };
@@ -54,13 +57,28 @@ export function capVerbose(text: string): string {
   return `… ${what} above not shown\n${tail.text}`;
 }
 
+/** `name(args)`: the call as one line, its argument preview cut to `max` cells. */
 function toolLabel(row: TrailRow, max = 56): string {
   const args = row.args ? oneLine(row.args, max) : "";
-  return args ? `${row.name} ${args}` : row.name;
+  return args ? `${row.name}(${args})` : row.name;
 }
 
 function indentOf(row: TrailRow): string {
   return "  ".repeat(Math.max(0, row.depth ?? 0));
+}
+
+const BRANCH_MID = "├ ";
+const BRANCH_LAST = "└ ";
+const RAIL = "│ ";
+const BRANCH_WIDTH = 2;
+
+/** Hangs one row's lines off the tree: a branch glyph on its first line, a rail (or gap) after. */
+function inTree(lines: StyledLine[], last: boolean, theme: Theme): StyledLine[] {
+  const tone = colour(theme, "border");
+  return lines.map((line, i) => [
+    { ...tone, text: i === 0 ? (last ? BRANCH_LAST : BRANCH_MID) : last ? "  " : RAIL },
+    ...line,
+  ]);
 }
 
 export interface TrailView {
@@ -74,7 +92,8 @@ export interface TrailView {
 
 function activeLine(row: TrailRow, view: TrailView, theme: Theme, width: number): StyledLine[] {
   const spinner = TOOL_FRAMES[view.frame % TOOL_FRAMES.length] as string;
-  const elapsed = row.startedAt !== undefined ? ` ${formatDuration(view.now - row.startedAt)}` : "";
+  const elapsed =
+    row.startedAt !== undefined ? ` (${formatDuration(view.now - row.startedAt)})` : "";
   const spans: Span[] = [
     { text: indentOf(row) },
     { ...colour(theme, "accent"), text: `${spinner} ` },
@@ -96,7 +115,7 @@ function finishedLine(row: TrailRow, theme: Theme, width: number, verbose: boole
       : colour(theme, "ok");
   const took =
     row.startedAt !== undefined && row.endedAt !== undefined
-      ? ` ${formatDuration(row.endedAt - row.startedAt)}`
+      ? ` (${formatDuration(row.endedAt - row.startedAt)})`
       : "";
   const lead = indentOf(row);
   const lines = wrapSpans(
@@ -109,29 +128,43 @@ function finishedLine(row: TrailRow, theme: Theme, width: number, verbose: boole
     width,
     { rest: [{ text: `${lead}  ` }] },
   );
-  if (verbose && row.output?.trim()) {
-    const body = capVerbose(row.output);
+  const shown = failed && verbose ? readableOutput(row.output ?? "") : "";
+  if (shown) {
+    const body = capVerbose(shown);
     const first: StyledLine = [{ text: lead }, { ...colour(theme, "muted"), text: "  ⎿ " }];
     const rest: StyledLine = [{ text: `${lead}    ` }];
     lines.push(
-      ...wrapSpans(
-        [
-          {
-            ...(failed ? colour(theme, "error") : colour(theme, "muted")),
-            dim: !failed,
-            text: body,
-          },
-        ],
-        width,
-        {
-          first,
-          rest,
-          mode: "char",
-        },
-      ),
+      ...wrapSpans([{ ...colour(theme, "error"), text: body }], width, {
+        first,
+        rest,
+        mode: "char",
+      }),
     );
   }
   return lines;
+}
+
+/**
+ * The words a result carries for a person: a JSON object's `error` (else `output`) text, any
+ * other result as it came. An empty string when there is nothing to say.
+ */
+export function readableOutput(raw: string): string {
+  const text = raw.trim();
+  if (!text.startsWith("{")) return text;
+  try {
+    const value: unknown = JSON.parse(text);
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      const record = value as Record<string, unknown>;
+      for (const key of ["error", "output"]) {
+        const field = record[key];
+        if (typeof field === "string" && field.trim()) return field.trim();
+      }
+      return "";
+    }
+  } catch {
+    // not JSON after all: show it as text
+  }
+  return text;
 }
 
 function header(open: boolean, title: string, theme: Theme, extra = ""): StyledLine {
@@ -171,7 +204,9 @@ export function layoutToolTrail(
   const keep = (row: TrailRow) => (row.depth ?? 0) === 0 || sections.subagents !== "hidden";
   const finished = view.trail.slice(-TRAIL_LIMIT).filter(keep);
   const running = view.active.filter(keep);
-  const drafting = view.pending.filter(keep);
+  // `pending` may also hold finished rows waiting for a segment (the turn store's pendingTools);
+  // those already show in the trail, so only rows the model is still writing draw a drafting line.
+  const drafting = view.pending.filter((row) => row.status === "pending" && keep(row));
   const out: StyledLine[] = [];
   const count = finished.length + running.length + drafting.length;
 
@@ -183,19 +218,26 @@ export function layoutToolTrail(
             live.startedAt !== undefined ? ` ${formatDuration(view.now - live.startedAt)}` : ""
           }`
         : "";
-      out.push(header(false, `tools (${count})`, theme, extra));
+      out.push(header(false, `${TOOLS_TITLE} (${count})`, theme, extra));
     } else {
-      for (const row of finished) {
-        const sub = (row.depth ?? 0) > 0;
-        out.push(...finishedLine(row, theme, width, !sub || sections.subagents === "expanded"));
-      }
-      for (const row of running) out.push(...activeLine(row, view, theme, width));
-      for (const row of drafting) {
-        out.push([
-          { text: indentOf(row) },
-          { ...colour(theme, "muted"), dim: true, text: `✎ drafting ${row.name}…` },
-        ]);
-      }
+      out.push(header(true, `${TOOLS_TITLE} (${count})`, theme));
+      const inner = Math.max(1, width - BRANCH_WIDTH);
+      const rows: StyledLine[][] = [
+        ...finished.map((row) => {
+          const sub = (row.depth ?? 0) > 0;
+          return finishedLine(row, theme, inner, !sub || sections.subagents === "expanded");
+        }),
+        ...running.map((row) => activeLine(row, view, theme, inner)),
+        ...drafting.map((row): StyledLine[] => [
+          [
+            { text: indentOf(row) },
+            { ...colour(theme, "muted"), dim: true, text: `✎ drafting ${row.name}…` },
+          ],
+        ]),
+      ];
+      rows.forEach((lines, i) => {
+        out.push(...inTree(lines, i === rows.length - 1, theme));
+      });
     }
   }
 

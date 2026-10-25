@@ -77,7 +77,7 @@ import {
   pagePath,
   sessionPath,
 } from "./routes.ts";
-import { SessionSwitcher, type SwitcherRow } from "./SessionSwitcher.tsx";
+import { SessionSwitcher, type SwitcherRow, switcherRowsFrom } from "./SessionSwitcher.tsx";
 import { dismissToast, notify, ToastRegion } from "./Toasts.tsx";
 import { type ThemeMode, useTheme } from "./theme.tsx";
 
@@ -628,22 +628,19 @@ export function Shell(props: {
     (listener) => listStore.subscribe(listener),
     () => listStore.getState(),
   );
-  const switcherRows = useMemo<SwitcherRow[]>(() => {
-    const rows = [
-      ...listRows.rows.filter((row) => row.pinned),
-      ...listRows.rows.filter((row) => !row.pinned),
-    ];
-    return rows.map((row) => ({
-      id: row.id,
-      title: rowTitle(t, row),
-      state:
-        row.active || row.ids.some((id) => listRows.running.has(id))
-          ? "running"
-          : listStore.unread.isUnread(row, sessionId)
-            ? "unread"
-            : "idle",
-    }));
-  }, [listRows, listStore, sessionId, t]);
+  // the sidebar's dots (W55-F1-2): running from the live turn events only — a REST row's
+  // `is_active` means recently active ("live"), not answering
+  const waitingAnywhere = useOpenServerRequests(undefined);
+  const switcherRows = useMemo<SwitcherRow[]>(
+    () =>
+      switcherRowsFrom(listRows.rows, {
+        running: listRows.running,
+        attention: new Set(waitingAnywhere.map((open) => open.sessionId)),
+        isUnread: (row) => listStore.unread.isUnread(row, sessionId),
+        title: (row) => rowTitle(t, row),
+      }),
+    [listRows, listStore, sessionId, t, waitingAnywhere],
+  );
   const activeRowId =
     sessionId === null
       ? null

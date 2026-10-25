@@ -15,7 +15,9 @@
 .pane-toolbar {
   position: absolute;
   top: 0;
-  right: calc(var(--band-controls) + 8px);
+  /* --band-shift: moved left to the end of a wider zone when the top-right one is narrow and
+     draws its tabs (W55-F1-3) */
+  right: calc(var(--band-controls) + 8px + var(--band-shift, 0px));
   z-index: 5;
   display: flex;
   align-items: center;
@@ -166,6 +168,16 @@
 /* the zone under the band's tool cluster keeps its tabs and actions clear of it */
 .pane-zone[data-band-end="true"] > .pane-zone-header {
   padding-right: calc(var(--band-controls) + var(--band-tools-width, 220px) + 16px);
+}
+
+/* the cluster sits at the end of an inner zone; the top-right zone keeps clear of the window
+   controls only (W55-F1-3) */
+.pane-zone[data-band-end="inner"] > .pane-zone-header {
+  padding-right: calc(var(--band-tools-width, 220px) + 16px);
+}
+
+.pane-zone[data-band-edge="true"] > .pane-zone-header {
+  padding-right: calc(var(--band-controls) + 8px);
 }
 
 .pane-tabs {

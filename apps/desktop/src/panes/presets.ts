@@ -189,7 +189,9 @@ export function initialLayout(mode: InterfaceMode, available: Iterable<PaneId>):
 // tool panes out on the right: one column per document pane in a row on top (Preview, Review,
 // Files from left to right) and the Terminal under the whole row. A Files column is about 236px
 // at the usual window width (a narrow right sidebar); Review gets a wider column so a diff line
-// and the commit box fit (W54-D1-3). The chat keeps at least about 40% of the span.
+// and the commit box fit (W54-D1-3), and Preview one wide enough for a page (W55-F1-3: the band's
+// tool cluster now moves off a narrow column whose tab it covered). The chat keeps at least
+// about 40% of the span.
 // The shapes other presets build are left alone.
 
 /** The top row's panes, left to right. */
@@ -198,6 +200,7 @@ const SIDE_TOP: readonly PaneId[] = ["preview", "review", "files"];
 const SIDE_SPAN = 1180;
 /** Each side column's usual width at that span (relative sizes, so they scale with the window). */
 const SIDE_COLUMN: Readonly<Partial<Record<PaneId, number>>> = {
+  preview: 420,
   review: 380,
 };
 const SIDE_COLUMN_DEFAULT = 236;
