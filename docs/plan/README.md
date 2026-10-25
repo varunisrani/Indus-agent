@@ -55,7 +55,7 @@ Each becomes an entry in `what-we-change.md` when that doc is written (Stage 3).
 | # | Decision | Source |
 |---|---|---|
 | P1 | Build the agent in-process first: classic CLI and TUI run the agent locally (the TUI talks to a child process over stdin/stdout). The shared per-profile gateway daemon comes in a later phase and becomes the parity path for every surface. | R04.1, R05.1, 09 Q1 |
-| P2 | No subscription OAuth route that impersonates another vendor's client. API keys and officially documented OAuth/device flows only. | R01.12 |
+| P2 | No subscription OAuth route that impersonates another vendor's client. API keys and officially documented OAuth/device flows only. | R01.12 **Reversed for OpenAI only by the owner, 2026-10-25 (D-16.1282):** ChatGPT sign-in through the Codex CLI's OAuth client, as the reference does; the owner accepts the provider-terms risk. Everything else in P2 stands (no Anthropic subscription route, no identity lines, no borrowed CLI logins). |
 | P3 | No first-party hosted portal provider; the free-tier, top-up and subscription commands are dropped. | 01 Q2, 04 Q8 |
 | P4 | Secrets default to the OS keychain, falling back to owner-only 0600 files. | 08 Q8 |
 | P5 | Distribution as in the reference: installer script, Docker, Nix (later Termux and MSIX). No PyPI. | 10 Q1 |
