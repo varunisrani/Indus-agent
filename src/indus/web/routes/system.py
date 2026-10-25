@@ -547,6 +547,8 @@ class PoolAddBody(BaseModel):
 @router.post("/api/credentials/pool", status_code=201)
 def add_pool(body: PoolAddBody, scope: WriteScope) -> dict[str, Any]:
     profile = provider_profile(scope, body.provider)
+    if profile.signs_in:
+        _fail(400, "sign_in_only", "This provider takes no API key; sign in instead.")
     value = body.api_key.strip()
     if is_placeholder(value):
         _fail(400, "placeholder_key", "That does not look like a real key; nothing was saved.")

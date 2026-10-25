@@ -10,6 +10,7 @@ The providers Indus Agent knows without any setup. `indus model` picks one.
 |---|---|---|---|---|---|
 | `openrouter` | OpenRouter | `or` | `OPENROUTER_API_KEY` |  | `https://openrouter.ai/api/v1` |
 | `openai` | OpenAI | `openai-api` | `OPENAI_API_KEY` |  | `https://api.openai.com/v1` |
+| `openai-codex` | OpenAI (ChatGPT sign-in) | `chatgpt` |  |  | `https://chatgpt.com/backend-api/codex` |
 | `anthropic` | Anthropic | `claude` | `ANTHROPIC_API_KEY` |  | `https://api.anthropic.com` |
 | `gemini` | Google Gemini | `google` | `GEMINI_API_KEY`, `GOOGLE_API_KEY` |  | `https://generativelanguage.googleapis.com/v1beta` |
 | `deepseek` | DeepSeek |  | `DEEPSEEK_API_KEY` |  | `https://api.deepseek.com/v1` |

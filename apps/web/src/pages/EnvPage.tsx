@@ -42,6 +42,7 @@ import {
 } from "../ui/controls.tsx";
 import { ConfirmDialog } from "../ui/Dialog.tsx";
 import { DeviceLogin } from "./ModelsPage.tsx";
+import { SignInAccounts, signInsKey, useSignIns } from "./SignInAccount.tsx";
 
 const KEYS_QUERY = ["env", "keys"] as const;
 const OPTIONS_QUERY = ["models", "options"] as const;
@@ -251,12 +252,21 @@ function KeyList({
 // -- OAuth sign-ins ------------------------------------------------------------------------------
 
 function OAuthRow({ provider }: { provider: ProviderOption }) {
+  const client = useQueryClient();
   const [open, setOpen] = useState(false);
   const command = `indus auth add ${provider.name} --type oauth`;
+  // A device-flow provider signs in here; its accounts and Sign out are read from the backend
+  // (W61-M2). Others only show the terminal command.
+  const signIns = useSignIns(provider.name, provider.device_login);
+  const signedIn = signIns.data ? signIns.data.signed_in : provider.configured;
+  const refresh = () => {
+    void client.invalidateQueries({ queryKey: signInsKey(provider.name) });
+    void client.invalidateQueries({ queryKey: OPTIONS_QUERY });
+  };
   return (
     <li data-testid={`oauth-${provider.name}`} className="border-t border-line first:border-t-0">
       <div className="flex items-center gap-3 px-4 py-4 sm:px-6">
-        {provider.configured ? (
+        {signedIn ? (
           <ShieldCheck aria-hidden="true" className="size-5 shrink-0 self-start text-success" />
         ) : (
           <ShieldOff aria-hidden="true" className="size-5 shrink-0 self-start text-ink-soft" />
@@ -267,10 +277,10 @@ function OAuthRow({ provider }: { provider: ProviderOption }) {
             <Badge>{provider.device_login ? "Device code" : "Browser sign-in"}</Badge>
           </div>
           <p className="m-0 text-[0.75rem] text-ink-muted">
-            {provider.configured
+            {signedIn
               ? "Connected."
               : provider.device_login
-                ? "Not connected. Log in here, or from a terminal."
+                ? "Not connected. Sign in here with a code, or from a terminal."
                 : "Not connected. Run the command in a terminal on this machine; it opens the provider's sign-in page."}
           </p>
           <div className="flex flex-wrap items-center gap-1">
@@ -282,7 +292,7 @@ function OAuthRow({ provider }: { provider: ProviderOption }) {
             />
           </div>
         </div>
-        {provider.device_login && !open ? (
+        {provider.device_login && !open && !signedIn ? (
           <Button
             tone="primary"
             size="sm"
@@ -290,13 +300,21 @@ function OAuthRow({ provider }: { provider: ProviderOption }) {
             icon={<LogIn />}
             onClick={() => setOpen(true)}
           >
-            Login
+            Sign in
           </Button>
         ) : null}
       </div>
-      {open ? (
-        <div className="px-4 pb-4 sm:px-6">
-          <DeviceLogin provider={provider} onDone={() => setOpen(false)} />
+      {provider.device_login && (open || signedIn) ? (
+        <div className="flex flex-col gap-3 px-4 pb-4 sm:px-6">
+          {open ? (
+            <DeviceLogin
+              provider={provider}
+              autoStart
+              onApproved={refresh}
+              onDone={() => setOpen(false)}
+            />
+          ) : null}
+          {signedIn ? <SignInAccounts provider={provider} /> : null}
         </div>
       ) : null}
     </li>
@@ -317,7 +335,7 @@ function OAuthCard() {
       <CardHeader
         icon={ShieldCheck}
         title="Provider logins (OAuth)"
-        below={`${connected} of ${list.length} connected. Log in here where the provider offers a device code; the command works from any terminal.`}
+        below={`${connected} of ${list.length} connected. Sign in here where the provider offers a device code; the command works from any terminal.`}
         aside={
           <IconButton
             label="Refresh sign-ins"

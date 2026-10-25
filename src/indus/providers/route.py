@@ -368,6 +368,11 @@ def resolve(
                     f"{name} was not sent to {draft.base_url}: that host belongs to another "
                     "provider; select that provider instead"
                 )
+        if key is None and profile.signs_in:
+            raise NoUsableProvider(
+                f"not signed in to {profile.label}",
+                hint=f"sign in with `indus auth add {profile.name}`",
+            )
         if key is None and profile.needs_key:
             raise NoUsableProvider(
                 f"no usable API key for {profile.label}",

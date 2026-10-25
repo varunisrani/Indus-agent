@@ -25,7 +25,8 @@ ACTIVE_API_MODES = frozenset(
     {"chat_completions", "anthropic_messages", "responses", "bedrock", "gemini"}
 )
 API_MODES = ACTIVE_API_MODES
-AUTH_TYPES = frozenset({"api_key", "api_key_optional", "none"})
+# ``oauth``: the credential is a sign-in's access token from the credential pool (no key variable).
+AUTH_TYPES = frozenset({"api_key", "api_key_optional", "oauth", "none"})
 MAX_TOKENS_PARAMS = frozenset({"max_tokens", "max_completion_tokens"})
 FAMILIES = frozenset({"vendor", "custom"})
 REASONING_LEVELS = ("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra")
@@ -40,6 +41,7 @@ _PRODUCT_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9._-])([A-Za-z][A-Za-z0-9._-]*)/\d
 BodyHook = Callable[[dict[str, Any], str], dict[str, Any]]
 ErrorHook = Callable[[object], object | None]
 ContextHook = Callable[[str], int | None]
+KeyHeadersHook = Callable[[str], Mapping[str, str]]
 
 
 def keep_body(body: dict[str, Any], model: str) -> dict[str, Any]:
@@ -55,6 +57,11 @@ def no_verdict(ctx: object) -> object | None:
 def no_context_length(model: str) -> int | None:
     """Default ``context_length``: unknown."""
     return None
+
+
+def no_key_headers(key: str) -> Mapping[str, str]:
+    """Default ``key_headers``: nothing beyond the authorization header."""
+    return {}
 
 
 def _frozen_map(value: Mapping[str, Any] | None) -> Mapping[str, Any]:
@@ -92,6 +99,8 @@ class ProviderProfile:
     fixed_temperature: float | None = None
     context_length_hint: int | None = None
     model_aliases: Mapping[str, str] = field(default_factory=dict, hash=False)
+    # Model ids offered when the live list cannot be read (a documented default list).
+    default_models: tuple[str, ...] = ()
     hidden: bool = False
     # ``vendor``: a named service with its own host. ``custom``: an endpoint the user chose
     # (bare ``custom``, named custom providers, local servers).
@@ -112,9 +121,14 @@ class ProviderProfile:
     fast_body: Mapping[str, Any] = field(default_factory=dict, hash=False)
     fast_headers: Mapping[str, str] = field(default_factory=dict, hash=False)
     fast_models: tuple[str, ...] = ()
+    # The endpoint answers only streamed requests (the driver never falls back to one JSON reply).
+    stream_only: bool = False
     prepare_body: BodyHook = keep_body
     classify_error: ErrorHook = no_verdict
     context_length: ContextHook = no_context_length
+    # Headers derived from the credential itself (an account id inside a sign-in's token), sent
+    # with every request that carries it: model calls and model lists.
+    key_headers: KeyHeadersHook = no_key_headers
 
     def __post_init__(self) -> None:
         name = self.name
@@ -146,7 +160,7 @@ class ProviderProfile:
         ):
             if number is not None and (not isinstance(number, int) or number <= 0):  # pyright: ignore[reportUnnecessaryIsInstance]
                 raise _bad(name, f"{what} must be a positive integer")
-        if self.auth_type == "api_key" and not self.base_url:
+        if self.auth_type in ("api_key", "oauth") and not self.base_url:
             raise _bad(name, "an api_key provider needs a base_url to send the key to")
         host = self._checked_hosts()
         object.__setattr__(self, "hostname", host)
@@ -157,6 +171,7 @@ class ProviderProfile:
         object.__setattr__(self, "fast_body", MappingProxyType(dict(self.fast_body)))
         object.__setattr__(self, "fast_headers", self._checked_fast_headers())
         object.__setattr__(self, "fast_models", tuple(self.fast_models))
+        object.__setattr__(self, "default_models", tuple(self.default_models))
 
     def _checked_hosts(self) -> str:
         derived = ""
@@ -217,7 +232,12 @@ class ProviderProfile:
 
     @property
     def needs_key(self) -> bool:
-        return self.auth_type == "api_key"
+        return self.auth_type in ("api_key", "oauth")
+
+    @property
+    def signs_in(self) -> bool:
+        """The credential comes from a sign-in (``indus auth add``), not a key variable."""
+        return self.auth_type == "oauth"
 
     @property
     def is_custom(self) -> bool:

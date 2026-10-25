@@ -161,7 +161,7 @@ describe("keys", () => {
     const row = within(await screen.findByTestId("oauth-openrouter"));
     expect(row.getByText("Browser sign-in")).toBeTruthy();
     expect(row.getByText("indus auth add openrouter --type oauth")).toBeTruthy();
-    expect(row.queryByRole("button", { name: "Login" })).toBeNull();
+    expect(row.queryByRole("button", { name: "Sign in" })).toBeNull();
     expect(screen.queryByTestId("oauth-fake")).toBeNull();
   });
 

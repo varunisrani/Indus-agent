@@ -23,7 +23,7 @@ import logging
 import threading
 from collections.abc import AsyncIterator, Iterable, Mapping
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
@@ -462,8 +462,9 @@ class ResponsesTransport:
             choice = convert_tool_choice(req.tool_choice)
             if choice is not None:
                 body["tool_choice"] = choice
+        stream = bool(req.stream) or bool(getattr(prof, "stream_only", False))
         body["store"] = False
-        body["stream"] = bool(req.stream)
+        body["stream"] = stream
         max_tokens = req.max_tokens or getattr(prof, "default_max_tokens", None)
         if max_tokens:
             body["max_output_tokens"] = int(max_tokens)
@@ -486,12 +487,16 @@ class ResponsesTransport:
 
         headers = {
             "content-type": "application/json",
-            "accept": "text/event-stream" if req.stream else "application/json",
+            "accept": "text/event-stream" if stream else "application/json",
         }
         headers.update(route_headers(route))
         secret = secret_text(route.api_key)
         if secret:
             headers["authorization"] = f"Bearer {secret}"
+            key_headers = getattr(prof, "key_headers", None)
+            if callable(key_headers):
+                extra = cast(Mapping[str, str], key_headers(secret))
+                headers.update({str(k): str(v) for k, v in extra.items()})
         content = json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         return httpx.Request(
             "POST", join_url(route.base_url, "responses"), headers=headers, content=content

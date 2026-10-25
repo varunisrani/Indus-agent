@@ -24,7 +24,7 @@ commands:
   auth reset: 2
   auth priority: 2
   auth refresh: 2
-  auth status: 2
+  auth status: 0          # every provider with credentials or a sign-in (none here)
   auth logout: 2
   status: 0
   doctor: 1               # a fresh profile has no settings file and no provider yet

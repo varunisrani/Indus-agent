@@ -20,6 +20,7 @@ import {
   TextField,
 } from "../primitives.tsx";
 import { patchFor, type RestLike, rest, valueAt } from "../settingsApi.ts";
+import { CHATGPT_PROVIDER, ChatGptAccount } from "./chatgptAccount.tsx";
 import { Note, SecretInput } from "./kit.tsx";
 
 export interface ProviderRow {
@@ -41,13 +42,15 @@ function useModelOptions() {
   const { api, profile } = useSettings();
   const [options, setOptions] = useState<ModelOptions | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: tick reads again
   useEffect(() => {
     void rest<ModelOptions>(api, "GET", "/api/model/options", { profile }).then((answer) => {
       if (answer.ok) setOptions(answer.data);
       else setError(answer.message);
     });
-  }, [api, profile]);
-  return { options, error };
+  }, [api, profile, tick]);
+  return { options, error, reload: () => setTick((n) => n + 1) };
 }
 
 /** `POST /api/model/set` for the main model (the call the model picker makes). */
@@ -102,10 +105,12 @@ function ChoiceCard(props: {
 export function AccountsPage() {
   const t = useT();
   const { openOnboarding, go, focusRow } = useSettings();
-  const { options, error } = useModelOptions();
+  const { options, error, reload } = useModelOptions();
   const [others, setOthers] = useState(false);
   const rows = options?.providers ?? [];
-  const device = rows.filter((row) => row.device_login);
+  // The ChatGPT sign-in has its own card with Sign in / Sign out (W61-M2).
+  const chatgpt = rows.some((row) => row.name === CHATGPT_PROVIDER);
+  const device = rows.filter((row) => row.device_login && row.name !== CHATGPT_PROVIDER);
   const rest_ = rows.filter((row) => !row.device_login);
   return (
     <PageBody>
@@ -124,6 +129,7 @@ export function AccountsPage() {
         />
         <p className="settings-intro">{t("settings.accounts2.intro")}</p>
         <div className="sb-cards">
+          {chatgpt && <ChatGptAccount onChanged={reload} />}
           {device.map((row) => (
             <ChoiceCard
               key={row.name}
@@ -134,7 +140,7 @@ export function AccountsPage() {
               onClick={openOnboarding}
             />
           ))}
-          {device.length === 0 && (
+          {device.length === 0 && !chatgpt && (
             <ChoiceCard
               highlighted
               title={t("settings.accounts.setup")}

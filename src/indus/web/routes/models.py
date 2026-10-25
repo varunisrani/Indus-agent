@@ -29,9 +29,11 @@
   /api/providers/login/{session_id}`` answers ``{status, message}`` with status ``pending``,
   ``approved``, ``denied``, ``expired``, ``failed`` or ``cancelled``; ``DELETE`` cancels. Approved
   tokens join the provider's credential pool the way ``indus auth add --type oauth`` stores them
-  (secret store + ``auth.json`` metadata); no answer ever carries a token. A provider without a
-  documented device flow is 400 ``no_device_flow`` (none has one today). Sessions live 15 minutes
-  past their end and are bound to the profile that started them.
+  (secret store + ``auth.json`` metadata); no answer ever carries a token. Both device-flow kinds
+  run here (``providers.auth.device_signin``): RFC 8628 and the ChatGPT sign-in of
+  ``openai-codex`` (D-16.1282). A provider without a device flow is 400 ``no_device_flow``.
+  Sessions live 15 minutes past their end and are bound to the profile that started them. Status
+  and sign-out of a provider's sign-ins are in ``routes.provider_accounts``.
 """
 
 from __future__ import annotations
@@ -54,7 +56,7 @@ from indus.foundation.config.schema import AuxiliarySection
 from indus.foundation.errors import ConfigError, IndusError
 from indus.foundation.redact import redact_text
 from indus.foundation.scope import Scope
-from indus.providers.auth import device_code
+from indus.providers.auth import device_code, device_signin
 from indus.providers.auth.flows import flows_for
 from indus.providers.auth.pool_model import PoolEntry, env_entries, load_pool, new_entry_id
 from indus.providers.auth.store import AuthStore
@@ -403,11 +405,11 @@ def _sessions(request: Request) -> LoginSessions:
     return cast(LoginSessions, extras.setdefault(_SESSIONS_KEY, LoginSessions()))
 
 
-def _device_spec(request: Request, provider: str) -> device_code.DeviceFlowSpec | None:
+def _device_spec(request: Request, provider: str) -> device_signin.DeviceSpec | None:
     """The provider's documented device endpoints (tests add their own under extras)."""
     extra = dashboard_state(request.app).extras.get(_FLOW_KEY)
     if isinstance(extra, dict) and provider in extra:
-        return cast(device_code.DeviceFlowSpec, cast(dict[str, Any], extra)[provider])
+        return cast(device_signin.DeviceSpec, cast(dict[str, Any], extra)[provider])
     return flows_for(provider).device
 
 
@@ -461,13 +463,13 @@ def login_start(body: LoginStart, request: Request, scope: WriteScope) -> dict[s
     async def flow() -> None:
         async with make_client() as client:
             try:
-                grant = await device_code.request_device_authorization(client, spec)
+                grant = await device_signin.start(client, spec, clock=scope.clock)
             except device_code.DeviceFlowError as exc:
                 started.set_exception(exc)
                 return
             started.set_result(grant)
             try:
-                tokens = await device_code.poll_for_token(client, spec, grant, clock=scope.clock)
+                tokens = await device_signin.finish(client, spec, grant, clock=scope.clock)
             except device_code.AccessDenied:
                 sessions.finish(session, "denied", "The sign-in was refused.")
                 return

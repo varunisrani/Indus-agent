@@ -412,9 +412,37 @@
   border: 1px solid var(--desk-stroke-3);
   border-radius: 6px;
   font-family: var(--indus-font-mono, ui-monospace, monospace);
-  font-size: 18px;
-  letter-spacing: 0.12em;
+  font-size: 22px;
+  letter-spacing: 0.14em;
   text-align: center;
+  user-select: all;
+}
+
+/* W61-M2: the verification page under the buttons, and the "Connected" tag of a sign-in row */
+.onboarding-url {
+  margin: 0;
+  color: var(--desk-fg-3);
+  font-family: var(--indus-font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.onboarding-option-title:has(.onboarding-tag) {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.onboarding-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  background: color-mix(in srgb, var(--desk-accent) 10%, transparent);
+  color: var(--desk-accent);
+  font-size: 11px;
+  font-weight: 500;
 }
 
 .onboarding-actions {

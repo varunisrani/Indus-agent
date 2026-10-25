@@ -90,6 +90,12 @@ class ReloginRequired(DeviceFlowError):
     default_code = "auth.relogin_required"
 
 
+class RefreshThrottled(DeviceFlowError):
+    """The token endpoint answered 429: the sign-in is still good, renewing must wait."""
+
+    default_code = "auth.refresh_throttled"
+
+
 # -- records -----------------------------------------------------------------------------------
 
 
@@ -368,6 +374,18 @@ async def poll_for_token(
     raise DeviceCodeExpired("the sign-in code expired before it was approved; start again")
 
 
+def oauth_error_of(payload: Mapping[str, Any] | None) -> tuple[str, str]:
+    """``(error code, description)`` from an RFC 6749 error (``{"error": "…"}``) or OpenAI's nested
+    shape (``{"error": {"code": "…", "message": "…"}}``); short codes only, never a body."""
+    raw = (payload or {}).get("error")
+    if isinstance(raw, dict):
+        nested = cast(dict[str, Any], raw)
+        code = nested.get("code") or nested.get("type") or ""
+        return str(code)[:80], str(nested.get("message") or "")[:200]
+    described = (payload or {}).get("error_description") or ""
+    return str(raw or "")[:80], str(described)[:200]
+
+
 async def refresh_tokens(
     client: httpx.AsyncClient, spec: DeviceFlowSpec, tokens: TokenSet, *, clock: Clock
 ) -> TokenSet:
@@ -388,9 +406,12 @@ async def refresh_tokens(
     payload = _json_object(response)
     if response.status_code == 200 and payload is not None:
         return TokenSet.from_response(payload, clock.now(), keep_refresh=tokens.refresh_token)
-    error = str((payload or {}).get("error") or "")
-    described = str((payload or {}).get("error_description") or "")
-    if error in DEAD_GRANT_ERRORS or "reuse" in described.lower():
+    error, described = oauth_error_of(payload)
+    if response.status_code == 429:
+        raise RefreshThrottled(
+            f"{spec.provider}'s token endpoint asked to wait (HTTP 429); the sign-in is still valid"
+        )
+    if error in DEAD_GRANT_ERRORS or "reuse" in described.lower() or response.status_code == 401:
         raise ReloginRequired(
             f"the {spec.provider} sign-in is no longer valid ({error or 'rejected'}); sign in again"
         )

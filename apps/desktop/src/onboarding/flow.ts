@@ -61,7 +61,13 @@ export type Step =
       readonly models: readonly string[];
       readonly baseUrl: string | null;
     }
-  | { readonly kind: "error"; readonly provider: ProviderOption | null; readonly message: string };
+  | {
+      readonly kind: "error";
+      readonly provider: ProviderOption | null;
+      readonly message: string;
+      /** How a device sign-in ended (`denied`, `expired`, …), when that is why. */
+      readonly status?: string;
+    };
 
 export interface FlowState {
   readonly step: Step;
@@ -137,9 +143,20 @@ export function endpointChosen(event: {
   return event.currentProvider === "custom" && (event.currentModel ?? "").trim() !== "";
 }
 
-/** Providers that sign in with a device code. */
+/**
+ * Device sign-ins listed under "Other providers" with a row of their own instead of among the
+ * always-visible device rows (W61-M2-1): `openai-codex` is "Sign in with ChatGPT".
+ */
+export const OTHER_SIGN_INS: ReadonlySet<string> = new Set(["openai-codex"]);
+
+/** Providers that sign in with a device code, shown at the top of the picker. */
 export function deviceProviders(providers: readonly ProviderOption[]): ProviderOption[] {
-  return providers.filter((p) => p.device_login);
+  return providers.filter((p) => p.device_login && !OTHER_SIGN_INS.has(p.name));
+}
+
+/** The device sign-ins of the "Other providers" disclosure (see OTHER_SIGN_INS). */
+export function otherSignIns(providers: readonly ProviderOption[]): ProviderOption[] {
+  return providers.filter((p) => p.device_login && OTHER_SIGN_INS.has(p.name));
 }
 
 /** Providers that take a pasted API key (local servers and custom endpoints have their own form). */
@@ -210,7 +227,12 @@ export function reduce(state: FlowState, event: FlowEvent): FlowState {
         });
       }
       if (DEVICE_FAILED.has(event.status)) {
-        return to(state, { kind: "error", provider: step.provider, message: event.message });
+        return to(state, {
+          kind: "error",
+          provider: step.provider,
+          message: event.message,
+          status: event.status,
+        });
       }
       return state;
     case "device-failed":

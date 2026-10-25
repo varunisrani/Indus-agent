@@ -19,6 +19,19 @@ export const ONBOARDING_STRINGS = {
   "onboarding.device.copied": "Copied",
   "onboarding.device.open": "Open the sign-in page",
   "onboarding.device.waiting": "Waiting for you to approve the sign-in",
+  "onboarding.device.denied": "The sign-in was refused.",
+  "onboarding.device.expired": "The code expired before it was approved. Try again for a new one.",
+  "onboarding.device.failed": "The sign-in did not finish.",
+  "onboarding.device.cancelled": "The sign-in was cancelled.",
+
+  // W61-M2: the ChatGPT sign-in (provider `openai-codex`, D-16.1282)
+  "onboarding.chatgpt.option": "Sign in with ChatGPT",
+  "onboarding.chatgpt.hint":
+    "Use your ChatGPT plan. You approve a short code on OpenAI's sign-in page.",
+  "onboarding.chatgpt.title": "Sign in with ChatGPT",
+  "onboarding.chatgpt.instructions":
+    "Open OpenAI's sign-in page, sign in with your ChatGPT account and enter this code. This window updates by itself.",
+  "onboarding.connected": "Connected",
 
   "onboarding.other.title": "Other ways",
   "onboarding.key.option": "Paste an API key",

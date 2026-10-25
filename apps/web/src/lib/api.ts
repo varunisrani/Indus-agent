@@ -61,6 +61,7 @@ import type {
   ProfileCreate,
   ProfileExportResponse,
   ProfilesResponse,
+  ProviderSignIns,
   PruneResponse,
   SessionInfo,
   SessionListResponse,
@@ -69,6 +70,7 @@ import type {
   SessionStats,
   ShellHookCreate,
   ShellHooksResponse,
+  SignOutResult,
   SkillCreated,
   SkillInfo,
   StatusResponse,
@@ -633,6 +635,14 @@ export const api = {
       request<LoginSessionInfo>(`/api/providers/login/${segment(sessionId)}`),
     cancel: (sessionId: string) =>
       request<LoginSessionInfo>(`/api/providers/login/${segment(sessionId)}`, {
+        method: "DELETE",
+      }),
+    /** The provider's signed-in accounts (metadata only, never a token). */
+    accounts: (provider: string) =>
+      request<ProviderSignIns>(`/api/providers/login/accounts/${segment(provider)}`),
+    /** Sign out: every signed-in credential of the provider and its stored tokens go. */
+    signOut: (provider: string) =>
+      request<SignOutResult>(`/api/providers/login/accounts/${segment(provider)}`, {
         method: "DELETE",
       }),
   },

@@ -38,6 +38,7 @@ import type {
   PlatformTestResult,
   PluginInfo,
   ProfilesResponse,
+  ProviderSignIns,
   SessionInfo,
   SessionMessage,
   SessionStats,
@@ -127,6 +128,11 @@ export interface MockState {
   deviceGrant: Omit<LoginStarted, "session_id" | "provider" | "status" | "message"> | null;
   /** Statuses successive polls of a sign-in answer (the last repeats). */
   loginPolls: LoginStatus[];
+  /** Provider → its signed-in accounts (`/api/providers/login/accounts/{provider}`, W61-M2); an
+   * approved device sign-in adds one, a sign-out clears them. Metadata only, like the backend. */
+  signIns: Record<string, ProviderSignIns>;
+  /** Providers whose sign-ins belong to the default profile: sign-out is 409 `inherited_pool`. */
+  inheritedSignIns: string[];
   hostStats: HostStats;
   update: UpdateInfo;
   memory: MemoryInfo;
@@ -164,6 +170,9 @@ export interface MockApi {
   /** Answer the next matching call with this reply instead of the route. */
   failNext(method: string, path: string | RegExp, reply: MockReply): void;
 }
+
+/** Providers that take a sign-in only: the pool refuses an API key for them (W61-M2 contract). */
+const SIGN_IN_ONLY: ReadonlySet<string> = new Set(["openai-codex"]);
 
 const ok = (body: unknown = { ok: true }): MockReply => ({ status: 200, body });
 const fail = (status: number, code: string, message: string): MockReply => ({
@@ -338,6 +347,8 @@ export function defaultMockState(): MockState {
     auxiliary: { tasks: [], main: { provider: "fake", model: "fake-model" } },
     deviceGrant: null,
     loginPolls: ["pending"],
+    signIns: {},
+    inheritedSignIns: [],
     hostStats: {
       cpu_count: 4,
       load: [0.5, 0.4, 0.3],
@@ -998,7 +1009,45 @@ function finishedRun(name: string): ActionStatus {
 function adminRoutes(state: MockState): Array<[string, RegExp, Handler]> {
   const polls: Record<string, number> = {};
   const logins: Record<string, number> = {};
+  const loginProvider: Record<string, string> = {};
+  const approved = new Set<string>();
   let nextLogin = 1;
+  let nextAccount = 1;
+
+  const providerRow = (name: string) => state.modelOptions.providers.find((p) => p.name === name);
+  const signInsOf = (name: string): ProviderSignIns =>
+    state.signIns[name] ?? {
+      provider: name,
+      label: providerRow(name)?.label ?? name,
+      signed_in: false,
+      signed_in_at: null,
+      flows: { browser: false, device: providerRow(name)?.device_login === true },
+      accounts: [],
+    };
+  // What an approved device sign-in leaves behind: one account (no token, as the backend answers).
+  const signedIn = (name: string) => {
+    const current = signInsOf(name);
+    const id = `acct-${nextAccount++}`;
+    state.signIns[name] = {
+      ...current,
+      signed_in: true,
+      signed_in_at: new Date().toISOString(),
+      accounts: [
+        ...current.accounts,
+        {
+          id,
+          label: `device_code-${current.accounts.length + 1}`,
+          source: "device_code",
+          status: "ok",
+          expires_at: new Date(Date.now() + 10 * 86_400_000).toISOString(),
+          expired: false,
+          plan: "plus",
+        },
+      ],
+    };
+    const row = providerRow(name);
+    if (row) row.configured = true;
+  };
   let nextPool = 1;
 
   const started = (name: string, extra: Record<string, unknown> = {}): MockReply => {
@@ -1407,11 +1456,13 @@ function adminRoutes(state: MockState): Array<[string, RegExp, Handler]> {
       /^\/api\/providers\/login\/start$/,
       (call) => {
         const provider = text(asRecord(call.body).provider);
+        if (!providerRow(provider)) return fail(404, "unknown_provider", "Unknown provider.");
         if (!state.deviceGrant) {
           return fail(400, "no_device_flow", "This provider documents no device sign-in.");
         }
         const id = `login-${nextLogin++}`;
         logins[id] = 0;
+        loginProvider[id] = provider;
         return ok({
           session_id: id,
           provider,
@@ -1428,10 +1479,15 @@ function adminRoutes(state: MockState): Array<[string, RegExp, Handler]> {
         const id = decodeURIComponent(m[1] ?? "");
         const at = logins[id];
         if (at === undefined) return fail(404, "no_such_session", "No such sign-in session.");
+        const provider = loginProvider[id] ?? "fake";
         logins[id] = at + 1;
         const status = state.loginPolls[Math.min(at, state.loginPolls.length - 1)] ?? "pending";
+        if (status === "approved" && !approved.has(id)) {
+          approved.add(id);
+          signedIn(provider);
+        }
         const message = status === "approved" ? "Signed in; the credential was added." : "";
-        return ok({ session_id: id, provider: "fake", status, message });
+        return ok({ session_id: id, provider, status, message });
       },
     ],
     [
@@ -1440,7 +1496,38 @@ function adminRoutes(state: MockState): Array<[string, RegExp, Handler]> {
       (_call, m) => {
         const id = decodeURIComponent(m[1] ?? "");
         if (logins[id] === undefined) return fail(404, "no_such_session", "No such session.");
-        return ok({ session_id: id, provider: "fake", status: "cancelled", message: "Cancelled." });
+        const provider = loginProvider[id] ?? "fake";
+        return ok({ session_id: id, provider, status: "cancelled", message: "Cancelled." });
+      },
+    ],
+    [
+      "GET",
+      /^\/api\/providers\/login\/accounts\/([^/]+)$/,
+      (_call, m) => {
+        const provider = decodeURIComponent(m[1] ?? "");
+        if (!providerRow(provider)) return fail(404, "provider_not_found", "Unknown provider.");
+        return ok(signInsOf(provider));
+      },
+    ],
+    [
+      "DELETE",
+      /^\/api\/providers\/login\/accounts\/([^/]+)$/,
+      (_call, m) => {
+        const provider = decodeURIComponent(m[1] ?? "");
+        if (!providerRow(provider)) return fail(404, "unknown_provider", "Unknown provider.");
+        const current = signInsOf(provider);
+        if (state.inheritedSignIns.includes(provider) && current.accounts.length > 0) {
+          return fail(409, "inherited_pool", "These sign-ins belong to the default profile.");
+        }
+        state.signIns[provider] = {
+          ...current,
+          signed_in: false,
+          signed_in_at: null,
+          accounts: [],
+        };
+        const row = providerRow(provider);
+        if (row) row.configured = false;
+        return ok({ provider, removed: current.accounts.length, signed_in: false });
       },
     ],
 
@@ -1475,6 +1562,9 @@ function adminRoutes(state: MockState): Array<[string, RegExp, Handler]> {
         const body = asRecord(call.body);
         const provider = text(body.provider);
         const key = text(body.api_key).trim();
+        if (SIGN_IN_ONLY.has(provider)) {
+          return fail(400, "sign_in_only", "This provider takes a sign-in, not an API key.");
+        }
         if (!key || key === "changeme") {
           return fail(400, "placeholder_key", "That does not look like a real key.");
         }

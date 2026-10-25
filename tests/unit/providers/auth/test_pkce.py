@@ -361,8 +361,9 @@ def test_tunnel_hint_text() -> None:
 
 
 def test_only_documented_flows_are_registered() -> None:
-    """R01.12: one flow, OpenRouter's key mint; it needs no client id and is not the default."""
-    assert set(FLOWS) == {"openrouter"}
+    """R01.12: OpenRouter's key mint (no client id, not the default), plus the owner's one
+    exception, the ChatGPT sign-in (D-16.1282)."""
+    assert set(FLOWS) == {"openrouter", "openai-codex"}
     flows = flows_for("openrouter")
     assert flows.pkce is not None and flows.pkce.client_id == "" and flows.device is None
     assert not flows.oauth_default

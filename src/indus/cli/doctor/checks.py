@@ -366,7 +366,65 @@ def check_auth(ctx: DoctorContext) -> list[Finding]:
         ]
     if not isinstance(data, dict):
         return [Finding("auth", "error", "auth.json is not a sign-in store", fix="move it aside")]
-    return [Finding("auth", "ok", "auth.json reads cleanly")]
+    return [Finding("auth", "ok", "auth.json reads cleanly"), *_sign_in_findings(ctx, data)]
+
+
+def _sign_in_findings(ctx: DoctorContext, doc: dict[str, Any]) -> list[Finding]:
+    """One row per signed-in credential: valid for how long, renewed on next use, or sign in
+    again. Reads the stored tokens; never shows them."""
+    from datetime import datetime
+
+    from indus.providers.auth.device_code import TokenSet
+    from indus.providers.auth.pool_model import secret_name
+
+    pools = doc.get("pool")
+    if not isinstance(pools, dict):
+        return []
+    secrets = ctx.scope.secrets
+    now: datetime = ctx.scope.clock.now()
+    found: list[Finding] = []
+    for provider, rows in cast(dict[str, Any], pools).items():
+        if not isinstance(rows, list):
+            continue
+        for row in cast(list[object], rows):
+            if not isinstance(row, dict) or cast(dict[str, Any], row).get("auth_type") != "oauth":
+                continue
+            entry = cast(dict[str, Any], row)
+            label = f'{provider} sign-in "{entry.get("label") or entry.get("id")}"'
+            relogin = f"indus auth add {provider}"
+            try:
+                stored = (
+                    secrets.get(secret_name(str(provider), str(entry.get("id"))))
+                    if secrets
+                    else None
+                )
+                tokens = TokenSet.from_secret(stored) if stored else None
+            except Exception:
+                tokens = None
+            if tokens is None:
+                found.append(
+                    Finding("auth", "warn", f"{label}: its stored tokens are missing", fix=relogin)
+                )
+            elif tokens.expires_at is not None and tokens.expires_at <= now:
+                if tokens.refresh_token:
+                    found.append(
+                        Finding("auth", "info", f"{label}: token expired; renewed on next use")
+                    )
+                else:
+                    found.append(
+                        Finding(
+                            "auth",
+                            "warn",
+                            f"{label}: token expired and cannot be renewed",
+                            fix=relogin,
+                        )
+                    )
+            elif tokens.expires_at is not None:
+                hours = (tokens.expires_at - now).total_seconds() / 3600
+                found.append(Finding("auth", "ok", f"{label}: token valid for {hours:.1f} h"))
+            else:
+                found.append(Finding("auth", "ok", f"{label}: stored"))
+    return found
 
 
 # -- providers ------------------------------------------------------------------------------------

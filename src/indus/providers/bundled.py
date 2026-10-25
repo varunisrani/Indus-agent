@@ -1,8 +1,9 @@
 """The provider profiles that ship with Indus Agent, in catalogue order.
 
-Catalogue order is the order ``auto`` uses to pick the first provider with a usable key. Only
-providers reachable with an API key are bundled (D-16.42); there is no portal provider (D-16.12)
-and no route that borrows another product's identity (D-16.11, R01.12).
+Catalogue order is the order ``auto`` uses to pick the first provider with a usable key. Providers
+are reachable with an API key (D-16.42), plus one sign-in route the owner chose: ``openai-codex``,
+a ChatGPT account through the Codex CLI's public client (D-16.1282). There is no portal provider
+(D-16.12) and no other route that signs in as another product (D-16.11, R01.12).
 
 Base URLs and key names are third-party facts. Each row cites the vendor page that states them
 (checked 2026-10-18); re-check a row against its page before changing it.
@@ -10,6 +11,8 @@ Base URLs and key names are third-party facts. Each row cites the vendor page th
 
 from __future__ import annotations
 
+from indus.providers.auth import chatgpt_facts
+from indus.providers.auth import chatgpt_wire as chatgpt
 from indus.providers.profile import ProviderProfile
 
 # fmt: off
@@ -39,6 +42,20 @@ PROFILES: tuple[ProviderProfile, ...] = (
             "gpt-5.1", "gpt-5", "gpt-5-mini", "gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-4o",
             "gpt-4o-2024-05-13", "gpt-4o-mini", "o3", "o4-mini",
         ),
+    ),
+    # D-16.1282 (owner, 2026-10-25): OpenAI models on a ChatGPT plan, signed in through the
+    # Codex CLI's public client; facts and their citations in providers/auth/chatgpt_facts.py.
+    # The token is only ever sent to chatgpt.com (a vendor row: exact host).
+    ProviderProfile(
+        name=chatgpt_facts.PROVIDER, aliases=("chatgpt",), display_name=chatgpt_facts.DISPLAY_NAME,
+        description="OpenAI models on your ChatGPT plan (indus auth add openai-codex)",
+        base_url=chatgpt_facts.BACKEND_BASE_URL, api_mode="responses", auth_type="oauth",
+        models_url=chatgpt.models_url(chatgpt_facts.BACKEND_BASE_URL),
+        default_headers={chatgpt_facts.ORIGINATOR_HEADER: chatgpt_facts.ORIGINATOR},
+        supports_vision=True, stream_only=True,
+        reasoning_efforts=("low", "medium", "high", "xhigh"),
+        reasoning_models=("gpt-5", "gpt-6", "codex"), default_models=chatgpt_facts.DEFAULT_MODELS,
+        prepare_body=chatgpt.prepare_body, key_headers=chatgpt.account_headers,
     ),
     # https://docs.anthropic.com/en/api/overview (2026-10-18)
     ProviderProfile(

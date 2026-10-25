@@ -1,4 +1,7 @@
-"""P03-03: the bundled catalogue validates and keeps keys on their own hosts (A55, D-16.42)."""
+"""P03-03: the bundled catalogue validates and keeps keys on their own hosts (A55, D-16.42).
+
+D-16.1282 (owner, 2026-10-25) adds exactly one sign-in route, ``openai-codex``; the pins below keep
+it the only one."""
 
 from __future__ import annotations
 
@@ -18,6 +21,7 @@ from tooling.checks.banned import load_patterns, scan_text
 EXPECTED_ORDER = [
     "openrouter",
     "openai",
+    "openai-codex",
     "anthropic",
     "gemini",
     "deepseek",
@@ -76,8 +80,12 @@ def test_vendor_profiles_need_keys_and_have_their_own_host() -> None:
     hosts = [p.hostname for p in vendors]
     assert len(hosts) == len(set(hosts))
     for profile in vendors:
-        assert profile.auth_type == "api_key" and profile.env_vars and profile.auto_detect
         assert not profile.base_url_env_var  # a vendor key never follows an env-chosen URL
+        assert profile.auto_detect
+        if profile.signs_in:
+            assert not profile.env_vars  # a sign-in comes from the pool, never a variable
+            continue
+        assert profile.auth_type == "api_key" and profile.env_vars
 
 
 def test_local_and_custom_not_auto_detected() -> None:
@@ -102,12 +110,17 @@ def test_wire_formats() -> None:
     assert by_name["huggingface"].env_vars == ("HF_TOKEN",)
 
 
-def test_no_oauth_or_portal_routes() -> None:
+def test_the_only_sign_in_route_is_the_owners_chatgpt_one() -> None:
+    """D-16.1282: ChatGPT sign-in only; no Anthropic subscription route, no portal (P2, R01.12)."""
+    signing_in = [p for p in bundled.PROFILES if p.auth_type == "oauth"]
+    assert [p.name for p in signing_in] == ["openai-codex"]
+    assert signing_in[0].hostname == "chatgpt.com"
     for profile in bundled.PROFILES:
-        assert profile.auth_type in ("api_key", "api_key_optional")
+        assert profile.auth_type in ("api_key", "api_key_optional", "oauth")
         assert "portal" not in profile.name
         for name in profile.env_vars:
             assert "OAUTH" not in name and name != "ANTHROPIC_TOKEN"
+    assert bundled.by_name()["anthropic"].auth_type == "api_key"
 
 
 def test_no_banned_names_in_any_field() -> None:
@@ -121,8 +134,13 @@ def test_no_banned_names_in_any_field() -> None:
         assert scan_text(text, patterns) == [], profile.name
 
 
-def test_default_headers_are_empty() -> None:
-    assert all(not p.default_headers for p in bundled.PROFILES)
+def test_default_headers_name_only_this_product() -> None:
+    """Only the ChatGPT route sends a header of its own: ``originator``, naming Indus Agent."""
+    for profile in bundled.PROFILES:
+        if profile.name == "openai-codex":
+            assert dict(profile.default_headers) == {"originator": "indus-agent"}
+        else:
+            assert not profile.default_headers
 
 
 def test_env_var_names_cover_every_profile() -> None:

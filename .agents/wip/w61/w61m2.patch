@@ -1,0 +1,2763 @@
+diff --git a/apps/desktop/e2e/core/surfaces.electron.test.ts b/apps/desktop/e2e/core/surfaces.electron.test.ts
+index 69db4be..e765ac6 100644
+--- a/apps/desktop/e2e/core/surfaces.electron.test.ts
++++ b/apps/desktop/e2e/core/surfaces.electron.test.ts
+@@ -1,8 +1,8 @@
+ // P20-40 ambient surfaces (fake backend): the sidebar's pop-out opens the HUD window with the
+ // conversation, the global shortcuts report their registration, the tray with and without a
+ // StatusNotifier host (a private D-Bus session bus and `testing/fakeTrayWatcher.py`), the update
+-// check against a loopback releases feed, and first-run onboarding with an API key that reaches
+-// the backend only (nothing in renderer storage).
++// check against a loopback releases feed, first-run onboarding with an API key that reaches
++// the backend only (nothing in renderer storage), and the ChatGPT device sign-in (W61-M2).
+ 
+ import { type ChildProcess, spawn } from "node:child_process";
+ import fs from "node:fs";
+@@ -326,5 +326,83 @@ describe.skipIf(skipReason !== "")(
+       await sleep(200);
+       expect(await app.stop()).toBe(true);
+     }, 120_000);
++
++    it("first-run onboarding: Sign in with ChatGPT runs the device flow over the REST proxy (W61-M2)", async () => {
++      const work = tempDir("indus-e2e-chatgpt-");
++      const scenario = structuredClone(HEALTHY) as {
++        rest: { routes: Record<string, unknown> };
++      };
++      const userCode = ["E2E7", "CODE"].join("-");
++      scenario.rest.routes["GET /api/model/options"] = {
++        status: 200,
++        body: {
++          providers: [
++            {
++              name: "openai-codex",
++              label: "OpenAI (ChatGPT sign-in)",
++              auth_type: "oauth",
++              configured: false,
++              device_login: true,
++              sign_in: true,
++            },
++          ],
++          current: { provider: null, model: null },
++        },
++      };
++      scenario.rest.routes["POST /api/providers/login/start"] = {
++        status: 200,
++        body: {
++          session_id: "login-e2e",
++          provider: "openai-codex",
++          status: "pending",
++          message: "",
++          user_code: userCode,
++          verification_url: "https://signin.example.invalid/codex/device",
++          expires_in: 900,
++          interval: 1,
++        },
++      };
++      scenario.rest.routes["GET /api/providers/login/login-e2e"] = {
++        status: 200,
++        body: {
++          session_id: "login-e2e",
++          provider: "openai-codex",
++          status: "approved",
++          message: "",
++        },
++      };
++      scenario.rest.routes["POST /api/model/set"] = { status: 200, body: { ok: true } };
++      const fake = fakeBackend(work, scenario);
++      const app = await launchApp({ work, home: fake.home, indus: fake.indus });
++      running.push(app);
++      await waitConnected(app.cdp);
++      await clickButton(app.cdp, "Other providers", 30_000);
++      await clickButtonStarting(app.cdp, "Sign in with ChatGPT");
++      await app.cdp.waitFor(
++        `document.querySelector('.onboarding-code')?.textContent === ${JSON.stringify(userCode)}`,
++        "the sign-in code",
++      );
++      await app.cdp.waitFor(hasButton("Start chatting"), "the model step after approval", 20_000);
++      await fillField(app.cdp, ".onboarding-form input[list]", "gpt-e2e");
++      await clickButton(app.cdp, "Start chatting");
++      await app.cdp.waitFor(`!(${hasButton("Start chatting")})`, "the overlay to close");
++      const calls = await fake.restCalls();
++      const start = calls.filter(
++        (c) => c.method === "POST" && c.path.startsWith("/api/providers/login/start"),
++      );
++      expect(start.length).toBe(1);
++      expect(
++        calls.some(
++          (c) => c.method === "GET" && c.path.startsWith("/api/providers/login/login-e2e"),
++        ),
++      ).toBe(true);
++      // the session ended approved: nothing left to cancel
++      expect(calls.some((c) => c.method === "DELETE")).toBe(false);
++      expect(calls.some((c) => c.method === "POST" && c.path.startsWith("/api/model/set"))).toBe(
++        true,
++      );
++      await sleep(200);
++      expect(await app.stop()).toBe(true);
++    }, 120_000);
+   },
+ );
+diff --git a/apps/desktop/src/onboarding/Onboarding.test.tsx b/apps/desktop/src/onboarding/Onboarding.test.tsx
+index 2a6bf71..0209db9 100644
+--- a/apps/desktop/src/onboarding/Onboarding.test.tsx
++++ b/apps/desktop/src/onboarding/Onboarding.test.tsx
+@@ -387,4 +387,152 @@ describe("onboarding look (W52-m)", () => {
+     await settle();
+     expect(screen.getByText(/failed at the provider/)).toBeTruthy();
+   });
++
++  describe("Sign in with ChatGPT (W61-M2)", () => {
++    const CHATGPT = {
++      name: "openai-codex",
++      label: "OpenAI (ChatGPT sign-in)",
++      auth_type: "oauth",
++      configured: false,
++      device_login: true,
++      family: "openai",
++    };
++    const withChatgpt = (configured: boolean) => {
++      const options = OPTIONS(false);
++      return { ...options, providers: [...options.providers, { ...CHATGPT, configured }] };
++    };
++    // A code like the sign-in page's, built at runtime.
++    const code = () => ["K4TR", "77QZ"].join("-");
++
++    it("lives under Other providers, not among the visible sign-ins", async () => {
++      const api = fakeRest();
++      api.route("GET", "/api/model/options", withChatgpt(false));
++      render(<Onboarding ready api={api} saveKey={null} />);
++      await settle();
++      expect(screen.queryByRole("button", { name: /Sign in with ChatGPT/ })).toBeNull();
++      expect(screen.queryByRole("button", { name: /OpenAI \(ChatGPT sign-in\)/ })).toBeNull();
++      expect(screen.getByRole("button", { name: /Acme Cloud/ })).toBeTruthy();
++      fireEvent.click(screen.getByRole("button", { name: "Other providers" }));
++      const row = screen.getByRole("button", { name: /Sign in with ChatGPT/ });
++      expect(row.getAttribute("data-ui")).toBe("onboarding-signin-openai-codex");
++      expect(row.textContent).toContain("ChatGPT plan");
++      expect(row.textContent).not.toContain("Connected");
++    });
++
++    it("shows Connected on the row once signed in", async () => {
++      const api = fakeRest();
++      api.route("GET", "/api/model/options", withChatgpt(true));
++      render(<Onboarding ready api={api} saveKey={null} />);
++      await settle();
++      await act(async () => {
++        requestOnboarding({ reason: "manual" });
++      });
++      await settle();
++      fireEvent.click(screen.getByRole("button", { name: "Other providers" }));
++      expect(screen.getByRole("button", { name: /Sign in with ChatGPT/ }).textContent).toContain(
++        "Connected",
++      );
++    });
++
++    it("runs the device flow in the card: code, copy, page, polls at the interval, then the model step", async () => {
++      const api = fakeRest();
++      const clock = manualTimers();
++      api.route("GET", "/api/model/options", withChatgpt(false));
++      api.route("POST", "/api/providers/login/start", {
++        session_id: "login-c",
++        provider: "openai-codex",
++        status: "pending",
++        message: "",
++        user_code: code(),
++        verification_url: "https://signin.example.org/codex/device",
++        expires_in: 900,
++        interval: 6,
++      });
++      let status = "pending";
++      api.route("GET", "/api/providers/login/login-c", () => ({
++        status: 200,
++        body: { session_id: "login-c", provider: "openai-codex", status, message: "" },
++      }));
++      const copy = vi.fn(async () => undefined);
++      const openExternal = vi.fn();
++      const delays: number[] = [];
++      const timers: Timers = {
++        setTimeout: (fn, ms) => {
++          delays.push(ms);
++          return clock.timers.setTimeout(fn, ms);
++        },
++        clearTimeout: clock.timers.clearTimeout,
++      };
++      render(
++        <Onboarding
++          ready
++          api={api}
++          saveKey={null}
++          copy={copy}
++          openExternal={openExternal}
++          timers={timers}
++        />,
++      );
++      await settle();
++      fireEvent.click(screen.getByRole("button", { name: "Other providers" }));
++      await act(async () => {
++        fireEvent.click(screen.getByRole("button", { name: /Sign in with ChatGPT/ }));
++      });
++      await settle();
++      const start = api.calls.find((c) => c.path === "/api/providers/login/start");
++      expect(start?.body).toEqual({ provider: "openai-codex" });
++      expect(screen.getByRole("heading", { name: "Sign in with ChatGPT" })).toBeTruthy();
++      expect(screen.getByText(code())).toBeTruthy();
++      expect(screen.getByText("https://signin.example.org/codex/device")).toBeTruthy();
++      await act(async () => {
++        fireEvent.click(screen.getByRole("button", { name: "Copy the code" }));
++      });
++      expect(copy).toHaveBeenCalledWith(code());
++      fireEvent.click(screen.getByRole("button", { name: "Open the sign-in page" }));
++      expect(openExternal).toHaveBeenCalledWith("https://signin.example.org/codex/device");
++      expect(delays).toEqual([6_000]);
++      await clock.flush();
++      expect(screen.getByText(code())).toBeTruthy();
++      status = "approved";
++      await clock.flush();
++      expect(delays).toEqual([6_000, 6_000]);
++      expect(screen.getByRole("button", { name: "Start chatting" })).toBeTruthy();
++    });
++
++    it.each([
++      ["denied", "The sign-in was refused."],
++      ["expired", "The code expired before it was approved."],
++    ])("a %s sign-in says so and offers Try again", async (end, words) => {
++      const api = fakeRest();
++      const clock = manualTimers();
++      api.route("GET", "/api/model/options", withChatgpt(false));
++      api.route("POST", "/api/providers/login/start", {
++        session_id: "login-d",
++        user_code: code(),
++        verification_url: "https://signin.example.org/codex/device",
++        interval: 5,
++      });
++      api.route("GET", "/api/providers/login/login-d", {
++        session_id: "login-d",
++        provider: "openai-codex",
++        status: end,
++        message: "",
++      });
++      render(<Onboarding ready api={api} saveKey={null} timers={clock.timers} />);
++      await settle();
++      fireEvent.click(screen.getByRole("button", { name: "Other providers" }));
++      await act(async () => {
++        fireEvent.click(screen.getByRole("button", { name: /Sign in with ChatGPT/ }));
++      });
++      await settle();
++      await clock.flush();
++      expect(screen.getByRole("alert").textContent).toContain(words);
++      await act(async () => {
++        fireEvent.click(screen.getByRole("button", { name: "Try again" }));
++      });
++      await settle();
++      expect(api.calls.filter((c) => c.path === "/api/providers/login/start")).toHaveLength(2);
++      expect(screen.getByText(code())).toBeTruthy();
++    });
++  });
+ });
+diff --git a/apps/desktop/src/onboarding/Onboarding.tsx b/apps/desktop/src/onboarding/Onboarding.tsx
+index ca8ada9..b393738 100644
+--- a/apps/desktop/src/onboarding/Onboarding.tsx
++++ b/apps/desktop/src/onboarding/Onboarding.tsx
+@@ -29,7 +29,7 @@ import {
+ import { desktopBridge } from "../app/bridge.ts";
+ import { Loader } from "../app/Loader.tsx";
+ import { classifyFailure } from "../chat/failure.ts";
+-import { useT } from "../i18n/index.tsx";
++import { type MessageKey, useT } from "../i18n/index.tsx";
+ import type { SaveKey } from "../settings/context.tsx";
+ import { SecretInput } from "../settings/customPages.tsx";
+ import { bridgeRest, type RestLike, rest } from "../settings/settingsApi.ts";
+@@ -40,12 +40,26 @@ import {
+   INITIAL_FLOW,
+   isShown,
+   keyProviders,
++  otherSignIns,
+   type ProviderOption,
+   reduce,
+ } from "./flow.ts";
+ import { onOnboardingRequest } from "./requests.ts";
+ import "./onboarding.css";
+ 
++/** Titles of the "Other providers" sign-in rows, by provider slug (W61-M2). */
++const SIGN_IN_TITLES: Readonly<Record<string, MessageKey>> = {
++  "openai-codex": "onboarding.chatgpt.option",
++};
++
++/** What the error step says when a device sign-in ended without a message of its own. */
++const DEVICE_END: Readonly<Record<string, MessageKey>> = {
++  denied: "onboarding.device.denied",
++  expired: "onboarding.device.expired",
++  failed: "onboarding.device.failed",
++  cancelled: "onboarding.device.cancelled",
++};
++
+ /** Loopback URL the local-runtime form starts with (a common local server port). */
+ export const LOCAL_ENDPOINT_HINT = "http://127.0.0.1:11434/v1";
+ /** Retry the provider check while the backend is still starting. */
+@@ -385,7 +399,13 @@ export function Onboarding(props: OnboardingProps) {
+         <div className="onboarding-error" role="alert">
+           <p className="onboarding-error-line">
+             <CircleAlert aria-hidden="true" size={14} />
+-            <span>{step.message || t("onboarding.error.default")}</span>
++            <span>
++              {step.message ||
++                t(
++                  (step.status === undefined ? undefined : DEVICE_END[step.status]) ??
++                    "onboarding.error.default",
++                )}
++            </span>
+           </p>
+           <div className="onboarding-actions">
+             <button
+@@ -490,6 +510,8 @@ function ProviderRow(props: {
+   title: string;
+   hint: string;
+   featured?: boolean;
++  /** A short tag after the title ("Connected"). */
++  tag?: string;
+   /** Test hook, spelled as the attribute so the parity scenarios find it in the source. */
+   "data-ui"?: string;
+   onClick: () => void;
+@@ -504,7 +526,15 @@ function ProviderRow(props: {
+         onClick={props.onClick}
+       >
+         <span className="onboarding-option-text">
+-          <span className="onboarding-option-title">{props.title}</span>
++          <span className="onboarding-option-title">
++            {props.title}
++            {props.tag !== undefined && (
++              <span className="onboarding-tag">
++                <Check aria-hidden="true" size={11} />
++                {props.tag}
++              </span>
++            )}
++          </span>
+           {props.hint !== "" && <span className="onboarding-option-hint">{props.hint}</span>}
+         </span>
+         <ChevronRight aria-hidden="true" size={16} className="onboarding-option-chevron" />
+@@ -524,6 +554,7 @@ function Picker(props: {
+   const t = useT();
+   const [more, setMore] = useState(false);
+   const device = deviceProviders(props.providers);
++  const signIns = otherSignIns(props.providers);
+   const keys = keyProviders(props.providers);
+   const hintOf = (provider: ProviderOption, fallback: string) =>
+     provider.description !== undefined && provider.description !== ""
+@@ -546,6 +577,24 @@ function Picker(props: {
+           hint={t("onboarding.local.optionHint")}
+           onClick={() => props.onEndpoint("local")}
+         />
++        {more &&
++          signIns.map((provider) => {
++            const title = SIGN_IN_TITLES[provider.name];
++            return (
++              <ProviderRow
++                key={provider.name}
++                title={title === undefined ? provider.label : t(title)}
++                hint={
++                  provider.name === "openai-codex"
++                    ? t("onboarding.chatgpt.hint")
++                    : hintOf(provider, t("onboarding.device.hint"))
++                }
++                data-ui={`onboarding-signin-${provider.name}`}
++                {...(provider.configured ? { tag: t("onboarding.connected") } : {})}
++                onClick={() => props.onDevice(provider)}
++              />
++            );
++          })}
+         {more &&
+           keys.map((provider) => (
+             <ProviderRow
+@@ -604,11 +653,16 @@ function DeviceCode(props: {
+ }) {
+   const t = useT();
+   const [copied, setCopied] = useState(false);
++  const chatgpt = props.provider.name === "openai-codex";
+   return (
+-    <div className="onboarding-device">
+-      <h3 className="onboarding-step-title">{t("onboarding.device.title")}</h3>
++    <div className="onboarding-device" data-provider={props.provider.name}>
++      <h3 className="onboarding-step-title">
++        {chatgpt ? t("onboarding.chatgpt.title") : t("onboarding.device.title")}
++      </h3>
+       <p className="onboarding-muted">
+-        {t("onboarding.device.instructions", { provider: props.provider.label })}
++        {chatgpt
++          ? t("onboarding.chatgpt.instructions")
++          : t("onboarding.device.instructions", { provider: props.provider.label })}
+       </p>
+       <output className="onboarding-code" aria-label={t("onboarding.device.code")}>
+         {props.code}
+@@ -642,6 +696,7 @@ function DeviceCode(props: {
+           {t("onboarding.device.open")}
+         </button>
+       </div>
++      <p className="onboarding-url">{props.url}</p>
+       <p className="onboarding-status" role="status">
+         <LoaderCircle aria-hidden="true" size={12} className="onboarding-spin" />
+         <span>{t("onboarding.device.waiting")}</span>
+diff --git a/apps/desktop/src/onboarding/flow.test.ts b/apps/desktop/src/onboarding/flow.test.ts
+index 20aefab..3bb3022 100644
+--- a/apps/desktop/src/onboarding/flow.test.ts
++++ b/apps/desktop/src/onboarding/flow.test.ts
+@@ -1,10 +1,12 @@
+ import { describe, expect, it } from "vitest";
+ import {
++  deviceProviders,
+   type FlowEvent,
+   type FlowState,
+   INITIAL_FLOW,
+   isShown,
+   keyProviders,
++  otherSignIns,
+   type ProviderOption,
+   reduce,
+ } from "./flow.ts";
+@@ -288,3 +290,40 @@ describe("onboarding flow", () => {
+     expect(keyProviders([KEYED, DEVICE, LOCAL]).map((p) => p.name)).toEqual(["openrouter"]);
+   });
+ });
++
++describe("the ChatGPT sign-in row (W61-M2)", () => {
++  const CHATGPT: ProviderOption = {
++    ...DEVICE,
++    name: "openai-codex",
++    label: "OpenAI (ChatGPT sign-in)",
++  };
++
++  it("is listed under Other providers, not among the visible device rows", () => {
++    expect(deviceProviders([DEVICE, CHATGPT, KEYED]).map((p) => p.name)).toEqual(["acme"]);
++    expect(otherSignIns([DEVICE, CHATGPT, KEYED]).map((p) => p.name)).toEqual(["openai-codex"]);
++    expect(otherSignIns([{ ...CHATGPT, device_login: false }])).toEqual([]);
++  });
++
++  it("an ended sign-in keeps its status for the error step", () => {
++    let state: FlowState = INITIAL_FLOW;
++    const events: FlowEvent[] = [
++      { type: "options-loaded", providers: [CHATGPT], currentModel: null },
++      { type: "pick-device", provider: CHATGPT },
++      {
++        type: "device-started",
++        sessionId: "s",
++        userCode: "c",
++        verificationUrl: "u",
++        intervalS: 5,
++      },
++      { type: "device-status", status: "expired", message: "" },
++    ];
++    for (const event of events) state = reduce(state, event);
++    expect(state.step).toEqual({
++      kind: "error",
++      provider: CHATGPT,
++      message: "",
++      status: "expired",
++    });
++  });
++});
+diff --git a/apps/desktop/src/onboarding/flow.ts b/apps/desktop/src/onboarding/flow.ts
+index 499a04d..3cb116a 100644
+--- a/apps/desktop/src/onboarding/flow.ts
++++ b/apps/desktop/src/onboarding/flow.ts
+@@ -61,7 +61,13 @@ export type Step =
+       readonly models: readonly string[];
+       readonly baseUrl: string | null;
+     }
+-  | { readonly kind: "error"; readonly provider: ProviderOption | null; readonly message: string };
++  | {
++      readonly kind: "error";
++      readonly provider: ProviderOption | null;
++      readonly message: string;
++      /** How a device sign-in ended (`denied`, `expired`, …), when that is why. */
++      readonly status?: string;
++    };
+ 
+ export interface FlowState {
+   readonly step: Step;
+@@ -137,9 +143,20 @@ export function endpointChosen(event: {
+   return event.currentProvider === "custom" && (event.currentModel ?? "").trim() !== "";
+ }
+ 
+-/** Providers that sign in with a device code. */
++/**
++ * Device sign-ins listed under "Other providers" with a row of their own instead of among the
++ * always-visible device rows (W61-M2-1): `openai-codex` is "Sign in with ChatGPT".
++ */
++export const OTHER_SIGN_INS: ReadonlySet<string> = new Set(["openai-codex"]);
++
++/** Providers that sign in with a device code, shown at the top of the picker. */
+ export function deviceProviders(providers: readonly ProviderOption[]): ProviderOption[] {
+-  return providers.filter((p) => p.device_login);
++  return providers.filter((p) => p.device_login && !OTHER_SIGN_INS.has(p.name));
++}
++
++/** The device sign-ins of the "Other providers" disclosure (see OTHER_SIGN_INS). */
++export function otherSignIns(providers: readonly ProviderOption[]): ProviderOption[] {
++  return providers.filter((p) => p.device_login && OTHER_SIGN_INS.has(p.name));
+ }
+ 
+ /** Providers that take a pasted API key (local servers and custom endpoints have their own form). */
+@@ -210,7 +227,12 @@ export function reduce(state: FlowState, event: FlowEvent): FlowState {
+         });
+       }
+       if (DEVICE_FAILED.has(event.status)) {
+-        return to(state, { kind: "error", provider: step.provider, message: event.message });
++        return to(state, {
++          kind: "error",
++          provider: step.provider,
++          message: event.message,
++          status: event.status,
++        });
+       }
+       return state;
+     case "device-failed":
+diff --git a/apps/desktop/src/onboarding/onboarding.css b/apps/desktop/src/onboarding/onboarding.css
+index d3683e8..86d2b3f 100644
+--- a/apps/desktop/src/onboarding/onboarding.css
++++ b/apps/desktop/src/onboarding/onboarding.css
+@@ -412,9 +412,37 @@
+   border: 1px solid var(--desk-stroke-3);
+   border-radius: 6px;
+   font-family: var(--indus-font-mono, ui-monospace, monospace);
+-  font-size: 18px;
+-  letter-spacing: 0.12em;
++  font-size: 22px;
++  letter-spacing: 0.14em;
+   text-align: center;
++  user-select: all;
++}
++
++/* W61-M2: the verification page under the buttons, and the "Connected" tag of a sign-in row */
++.onboarding-url {
++  margin: 0;
++  color: var(--desk-fg-3);
++  font-family: var(--indus-font-mono, ui-monospace, monospace);
++  font-size: 11px;
++  text-align: center;
++  overflow-wrap: anywhere;
++}
++
++.onboarding-option-title:has(.onboarding-tag) {
++  display: inline-flex;
++  align-items: center;
++  gap: 8px;
++}
++
++.onboarding-tag {
++  display: inline-flex;
++  align-items: center;
++  gap: 4px;
++  padding: 1px 6px;
++  background: color-mix(in srgb, var(--desk-accent) 10%, transparent);
++  color: var(--desk-accent);
++  font-size: 11px;
++  font-weight: 500;
+ }
+ 
+ .onboarding-actions {
+diff --git a/apps/desktop/src/onboarding/strings.en.ts b/apps/desktop/src/onboarding/strings.en.ts
+index c97c598..aac845b 100644
+--- a/apps/desktop/src/onboarding/strings.en.ts
++++ b/apps/desktop/src/onboarding/strings.en.ts
+@@ -19,6 +19,19 @@ export const ONBOARDING_STRINGS = {
+   "onboarding.device.copied": "Copied",
+   "onboarding.device.open": "Open the sign-in page",
+   "onboarding.device.waiting": "Waiting for you to approve the sign-in",
++  "onboarding.device.denied": "The sign-in was refused.",
++  "onboarding.device.expired": "The code expired before it was approved. Try again for a new one.",
++  "onboarding.device.failed": "The sign-in did not finish.",
++  "onboarding.device.cancelled": "The sign-in was cancelled.",
++
++  // W61-M2: the ChatGPT sign-in (provider `openai-codex`, D-16.1282)
++  "onboarding.chatgpt.option": "Sign in with ChatGPT",
++  "onboarding.chatgpt.hint":
++    "Use your ChatGPT plan. You approve a short code on OpenAI's sign-in page.",
++  "onboarding.chatgpt.title": "Sign in with ChatGPT",
++  "onboarding.chatgpt.instructions":
++    "Open OpenAI's sign-in page, sign in with your ChatGPT account and enter this code. This window updates by itself.",
++  "onboarding.connected": "Connected",
+ 
+   "onboarding.other.title": "Other ways",
+   "onboarding.key.option": "Paste an API key",
+diff --git a/apps/desktop/src/settings/pagesB/chatgptAccount.test.tsx b/apps/desktop/src/settings/pagesB/chatgptAccount.test.tsx
+new file mode 100644
+index 0000000..20f3205
+--- /dev/null
++++ b/apps/desktop/src/settings/pagesB/chatgptAccount.test.tsx
+@@ -0,0 +1,440 @@
++// @vitest-environment jsdom
++// Settings › Providers › Accounts: the ChatGPT sign-in card (W61-M2) against a fake of main's REST
++// proxy speaking M1's contract — sign in with the device flow inside the card, the account with
++// plan and expiry, sign out after asking; never anything but metadata over the bridge.
++
++import { act, fireEvent, render, screen, within } from "@testing-library/react";
++import { describe, expect, it, vi } from "vitest";
++import { SettingsContext, type SettingsContextValue } from "../context.tsx";
++import { type FakeRest, fakeRest } from "../fakeRest.ts";
++import { ChatGptAccount, MAX_POLL_FAILURES, type Timers } from "./chatgptAccount.tsx";
++import { AccountsPage } from "./providers.tsx";
++
++const ACCOUNTS = "/api/providers/login/accounts/openai-codex";
++const code = () => ["M3VB", "2XQW"].join("-");
++
++function manualTimers() {
++  const queue: Array<{ fn: () => void; id: number; ms: number }> = [];
++  let next = 1;
++  const timers: Timers = {
++    setTimeout: (fn, ms) => {
++      const id = next++;
++      queue.push({ fn, id, ms });
++      return id;
++    },
++    clearTimeout: (handle) => {
++      const index = queue.findIndex((item) => item.id === handle);
++      if (index >= 0) queue.splice(index, 1);
++    },
++  };
++  return {
++    timers,
++    pending: () => queue.map((item) => item.ms),
++    async flush() {
++      const items = queue.splice(0);
++      await act(async () => {
++        for (const item of items) item.fn();
++        await new Promise((resolve) => setTimeout(resolve, 0));
++      });
++    },
++  };
++}
++
++async function settle() {
++  await act(async () => {
++    await new Promise((resolve) => setTimeout(resolve, 0));
++  });
++}
++
++function signIns(signedIn: boolean, extra: Record<string, unknown> = {}) {
++  return {
++    provider: "openai-codex",
++    label: "OpenAI (ChatGPT sign-in)",
++    signed_in: signedIn,
++    signed_in_at: signedIn ? "2026-10-25T09:00:00+00:00" : null,
++    flows: { browser: true, device: true },
++    accounts: signedIn
++      ? [
++          {
++            id: "acct-1",
++            label: "device_code-1",
++            source: "device_code",
++            status: "ok",
++            expires_at: new Date(Date.now() + 3 * 86_400_000).toISOString(),
++            expired: false,
++            plan: "plus",
++            ...extra,
++          },
++        ]
++      : [],
++  };
++}
++
++function context(
++  api: FakeRest,
++  overrides: Partial<SettingsContextValue> = {},
++): SettingsContextValue {
++  return {
++    api,
++    bridge: null,
++    profile: "work",
++    activeProfile: "work",
++    saveKey: null,
++    openOnboarding: () => undefined,
++    config: null,
++    reloadConfig: () => undefined,
++    focusRow: null,
++    ...overrides,
++  };
++}
++
++function backend(signedIn: boolean) {
++  const api = fakeRest();
++  let state = signIns(signedIn);
++  api.route("GET", ACCOUNTS, () => ({ status: 200, body: state }));
++  api.route("DELETE", ACCOUNTS, () => {
++    const removed = state.accounts.length;
++    state = signIns(false);
++    return { status: 200, body: { provider: "openai-codex", removed, signed_in: false } };
++  });
++  api.route("POST", "/api/providers/login/start", {
++    session_id: "login-1",
++    provider: "openai-codex",
++    status: "pending",
++    message: "",
++    user_code: code(),
++    verification_url: "https://signin.example.org/codex/device",
++    expires_in: 900,
++    interval: 8,
++  });
++  let status = "pending";
++  api.route("GET", "/api/providers/login/login-1", () => {
++    if (status === "approved") state = signIns(true);
++    return {
++      status: 200,
++      body: { session_id: "login-1", provider: "openai-codex", status, message: "" },
++    };
++  });
++  api.route("DELETE", "/api/providers/login/login-1", {
++    session_id: "login-1",
++    provider: "openai-codex",
++    status: "cancelled",
++    message: "",
++  });
++  return {
++    api,
++    setStatus: (next: string) => {
++      status = next;
++    },
++  };
++}
++
++function card() {
++  return within(screen.getByRole("region", { name: "ChatGPT" }));
++}
++
++describe("ChatGPT account card", () => {
++  it("signs in inside the card: code, copy, page, polls at the interval, then the account", async () => {
++    const { api, setStatus } = backend(false);
++    const clock = manualTimers();
++    const copy = vi.fn(async () => undefined);
++    const openExternal = vi.fn();
++    const changed = vi.fn();
++    render(
++      <SettingsContext.Provider value={context(api)}>
++        <ChatGptAccount
++          timers={clock.timers}
++          copy={copy}
++          openExternal={openExternal}
++          onChanged={changed}
++        />
++      </SettingsContext.Provider>,
++    );
++    await settle();
++    expect(api.calls[0]).toMatchObject({ method: "GET", path: ACCOUNTS, profile: "work" });
++    await act(async () => {
++      fireEvent.click(card().getByRole("button", { name: "Sign in" }));
++    });
++    await settle();
++    const start = api.calls.find((c) => c.path === "/api/providers/login/start");
++    expect(start).toMatchObject({
++      method: "POST",
++      body: { provider: "openai-codex" },
++      profile: "work",
++    });
++    expect(card().getByTitle("Sign-in code").textContent).toBe(code());
++    await act(async () => {
++      fireEvent.click(card().getByRole("button", { name: "Copy the code" }));
++    });
++    expect(copy).toHaveBeenCalledWith(code());
++    expect(card().getByRole("button", { name: "Copied" })).toBeTruthy();
++    fireEvent.click(card().getByRole("button", { name: "Open the sign-in page" }));
++    expect(openExternal).toHaveBeenCalledWith("https://signin.example.org/codex/device");
++    expect(clock.pending()).toEqual([8_000]);
++    expect(card().getByRole("status").textContent).toContain("Waiting");
++
++    await clock.flush();
++    expect(clock.pending()).toEqual([8_000]);
++    setStatus("approved");
++    await clock.flush();
++    await settle();
++    expect(clock.pending()).toEqual([]);
++    expect(card().getByRole("status").textContent).toContain("Signed in");
++    expect(changed).toHaveBeenCalledTimes(1);
++    const account = card().getByRole("listitem");
++    expect(account.textContent).toContain("device_code-1");
++    expect(account.textContent).toContain("Plus");
++    expect(account.textContent).toMatch(/expires in (3 days|7\d h)/);
++    expect(
++      api.calls.filter((c) => c.method === "GET" && c.path === "/api/providers/login/login-1"),
++    ).toHaveLength(2);
++    expect(api.calls.some((c) => c.method === "DELETE")).toBe(false);
++  });
++
++  it("Cancel ends the session on the backend and stops polling", async () => {
++    const { api } = backend(false);
++    const clock = manualTimers();
++    render(
++      <SettingsContext.Provider value={context(api)}>
++        <ChatGptAccount timers={clock.timers} />
++      </SettingsContext.Provider>,
++    );
++    await settle();
++    await act(async () => {
++      fireEvent.click(card().getByRole("button", { name: "Sign in" }));
++    });
++    await settle();
++    await act(async () => {
++      fireEvent.click(card().getByRole("button", { name: "Cancel" }));
++    });
++    await settle();
++    expect(clock.pending()).toEqual([]);
++    expect(api.calls.filter((c) => c.method === "DELETE").map((c) => c.path)).toEqual([
++      "/api/providers/login/login-1",
++    ]);
++    expect(card().getByRole("status").textContent).toContain("cancelled");
++    fireEvent.click(card().getByRole("button", { name: "Close" }));
++    expect(card().getByRole("button", { name: "Sign in" })).toBeTruthy();
++  });
++
++  it.each([
++    ["denied", "refused"],
++    ["expired", "expired"],
++    ["failed", "did not finish"],
++  ])("a %s sign-in is said plainly, with Try again", async (end, words) => {
++    const { api, setStatus } = backend(false);
++    const clock = manualTimers();
++    render(
++      <SettingsContext.Provider value={context(api)}>
++        <ChatGptAccount timers={clock.timers} />
++      </SettingsContext.Provider>,
++    );
++    await settle();
++    await act(async () => {
++      fireEvent.click(card().getByRole("button", { name: "Sign in" }));
++    });
++    await settle();
++    setStatus(end);
++    await clock.flush();
++    const status = card().getByRole("status");
++    expect(status.getAttribute("data-status")).toBe(end);
++    expect(status.textContent).toContain(words);
++    expect(clock.pending()).toEqual([]);
++    await act(async () => {
++      fireEvent.click(card().getByRole("button", { name: "Try again" }));
++    });
++    await settle();
++    expect(api.calls.filter((c) => c.path === "/api/providers/login/start")).toHaveLength(2);
++  });
++
++  it("keeps polling through a few failed polls, then gives up", async () => {
++    const { api } = backend(false);
++    const clock = manualTimers();
++    render(
++      <SettingsContext.Provider value={context(api)}>
++        <ChatGptAccount timers={clock.timers} />
++      </SettingsContext.Provider>,
++    );
++    await settle();
++    await act(async () => {
++      fireEvent.click(card().getByRole("button", { name: "Sign in" }));
++    });
++    await settle();
++    api.route("GET", "/api/providers/login/login-1", () => ({
++      status: 503,
++      body: { detail: "down" },
++    }));
++    for (let n = 1; n < MAX_POLL_FAILURES; n += 1) {
++      await clock.flush();
++      expect(clock.pending()).toEqual([8_000]);
++    }
++    await clock.flush();
++    expect(clock.pending()).toEqual([]);
++    expect(card().getByRole("status").getAttribute("data-status")).toBe("failed");
++  });
++
++  it("shows why a code could not be had", async () => {
++    const { api } = backend(false);
++    api.route("POST", "/api/providers/login/start", () => ({
++      status: 502,
++      body: {
++        detail: { code: "sign_in_unavailable", message: "The sign-in service did not answer." },
++      },
++    }));
++    render(
++      <SettingsContext.Provider value={context(api)}>
++        <ChatGptAccount timers={manualTimers().timers} />
++      </SettingsContext.Provider>,
++    );
++    await settle();
++    await act(async () => {
++      fireEvent.click(card().getByRole("button", { name: "Sign in" }));
++    });
++    await settle();
++    expect(card().getByText("The sign-in service did not answer.")).toBeTruthy();
++    expect(card().getByRole("button", { name: "Sign in" })).toBeTruthy();
++  });
++
++  it("lists the signed-in account and signs out only after asking", async () => {
++    const { api } = backend(true);
++    const changed = vi.fn();
++    render(
++      <SettingsContext.Provider value={context(api)}>
++        <ChatGptAccount timers={manualTimers().timers} onChanged={changed} />
++      </SettingsContext.Provider>,
++    );
++    await settle();
++    expect(card().getByText("Signed in")).toBeTruthy();
++    expect(card().queryByRole("button", { name: "Sign in" })).toBeNull();
++    fireEvent.click(card().getByRole("button", { name: "Sign out" }));
++    const confirm = within(card().getByRole("alertdialog", { name: "Sign out of ChatGPT" }));
++    fireEvent.click(confirm.getByRole("button", { name: "Stay signed in" }));
++    expect(card().queryByRole("alertdialog")).toBeNull();
++    expect(api.calls.some((c) => c.method === "DELETE")).toBe(false);
++
++    fireEvent.click(card().getByRole("button", { name: "Sign out" }));
++    await act(async () => {
++      fireEvent.click(
++        within(card().getByRole("alertdialog")).getByRole("button", { name: "Sign out" }),
++      );
++    });
++    await settle();
++    expect(api.calls.filter((c) => c.method === "DELETE")).toMatchObject([
++      { path: ACCOUNTS, profile: "work" },
++    ]);
++    expect(changed).toHaveBeenCalledTimes(1);
++    expect(card().getByRole("button", { name: "Sign in" })).toBeTruthy();
++    expect(card().queryByRole("listitem")).toBeNull();
++  });
++
++  it("says when the sign-in belongs to the default profile", async () => {
++    const { api } = backend(true);
++    api.route("DELETE", ACCOUNTS, () => ({
++      status: 409,
++      body: {
++        detail: {
++          code: "inherited_pool",
++          message: "These sign-ins belong to the default profile.",
++        },
++      },
++    }));
++    render(
++      <SettingsContext.Provider value={context(api)}>
++        <ChatGptAccount timers={manualTimers().timers} />
++      </SettingsContext.Provider>,
++    );
++    await settle();
++    fireEvent.click(card().getByRole("button", { name: "Sign out" }));
++    await act(async () => {
++      fireEvent.click(
++        within(card().getByRole("alertdialog")).getByRole("button", { name: "Sign out" }),
++      );
++    });
++    await settle();
++    expect(card().getByText("These sign-ins belong to the default profile.")).toBeTruthy();
++    expect(card().getByRole("listitem")).toBeTruthy();
++  });
++
++  it("an expired access says it is renewed on the next use", async () => {
++    const api = fakeRest();
++    api.route(
++      "GET",
++      ACCOUNTS,
++      signIns(true, {
++        expired: true,
++        plan: null,
++        expires_at: new Date(Date.now() - 2 * 3_600_000).toISOString(),
++      }),
++    );
++    render(
++      <SettingsContext.Provider value={context(api)}>
++        <ChatGptAccount timers={manualTimers().timers} />
++      </SettingsContext.Provider>,
++    );
++    await settle();
++    const account = card().getByRole("listitem");
++    expect(account.textContent).toContain("Expired");
++    expect(account.textContent).toContain("2 h ago");
++    expect(account.textContent).toContain("renewed on the next use");
++    expect(account.textContent).not.toContain("Plus");
++  });
++});
++
++describe("Providers › Accounts", () => {
++  it("lists the ChatGPT card instead of a generic sign-in row for it", async () => {
++    const { api } = backend(false);
++    api.route("GET", "/api/model/options", {
++      providers: [
++        {
++          name: "openai-codex",
++          label: "OpenAI (ChatGPT sign-in)",
++          auth_type: "oauth",
++          configured: false,
++          device_login: true,
++        },
++        {
++          name: "acme",
++          label: "Acme Cloud",
++          auth_type: "oauth",
++          configured: false,
++          device_login: true,
++        },
++      ],
++      current: { provider: null, model: null },
++    });
++    render(
++      <SettingsContext.Provider value={context(api)}>
++        <AccountsPage />
++      </SettingsContext.Provider>,
++    );
++    await settle();
++    await settle();
++    expect(screen.getByRole("region", { name: "ChatGPT" })).toBeTruthy();
++    expect(screen.getByRole("button", { name: "Acme Cloud" })).toBeTruthy();
++    expect(screen.queryByRole("button", { name: "OpenAI (ChatGPT sign-in)" })).toBeNull();
++  });
++
++  it("has no ChatGPT card when the backend does not offer the provider", async () => {
++    const api = fakeRest();
++    api.route("GET", "/api/model/options", {
++      providers: [
++        {
++          name: "openrouter",
++          label: "OpenRouter",
++          auth_type: "api_key",
++          configured: false,
++          device_login: false,
++        },
++      ],
++      current: { provider: null, model: null },
++    });
++    render(
++      <SettingsContext.Provider value={context(api)}>
++        <AccountsPage />
++      </SettingsContext.Provider>,
++    );
++    await settle();
++    expect(screen.queryByRole("region", { name: "ChatGPT" })).toBeNull();
++    expect(api.calls.some((c) => c.path === ACCOUNTS)).toBe(false);
++  });
++});
+diff --git a/apps/desktop/src/settings/pagesB/chatgptAccount.tsx b/apps/desktop/src/settings/pagesB/chatgptAccount.tsx
+new file mode 100644
+index 0000000..8d374b2
+--- /dev/null
++++ b/apps/desktop/src/settings/pagesB/chatgptAccount.tsx
+@@ -0,0 +1,383 @@
++// Settings › Providers › Accounts: the ChatGPT sign-in card (W61-M2, D-16.1282; provider
++// `openai-codex`). It reads the signed-in accounts from the backend, signs in with the device flow
++// inside the card (a code to approve on OpenAI's page, the session polled at the backend's
++// interval) and signs out after asking. Everything goes through main's REST proxy; the renderer
++// only ever sees the user code, the page link, statuses and account metadata — never a token.
++
++import { Check, CircleAlert, Copy, ExternalLink, LoaderCircle, LogOut } from "lucide-react";
++import { useCallback, useEffect, useRef, useState } from "react";
++import { desktopBridge } from "../../app/bridge.ts";
++import { type MessageKey, useT } from "../../i18n/index.tsx";
++import { attempt, useSettings } from "../context.tsx";
++import { OutlineButton, Pill, PrimaryButton, TextButton } from "../primitives.tsx";
++import { rest } from "../settingsApi.ts";
++import { Note, relativeTime } from "./kit.tsx";
++
++export const CHATGPT_PROVIDER = "openai-codex";
++
++/** Never poll faster than this, whatever the backend says. */
++export const MIN_POLL_S = 1;
++/** Polls that fail on the wire in a row before the card gives up (the backend keeps the session). */
++export const MAX_POLL_FAILURES = 10;
++
++export interface Timers {
++  setTimeout(fn: () => void, ms: number): unknown;
++  clearTimeout(handle: unknown): void;
++}
++
++const realTimers: Timers = {
++  setTimeout: (fn, ms) => setTimeout(fn, ms),
++  clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
++};
++
++interface Account {
++  readonly id: string;
++  readonly label: string;
++  readonly source: string;
++  readonly status: string;
++  readonly expires_at: string | null;
++  readonly expired: boolean;
++  readonly plan: string | null;
++}
++
++interface SignIns {
++  readonly provider: string;
++  readonly label: string;
++  readonly signed_in: boolean;
++  readonly accounts: readonly Account[];
++}
++
++interface Started {
++  readonly session_id: string;
++  readonly user_code: string;
++  readonly verification_url: string;
++  readonly interval?: number;
++}
++
++type Phase =
++  | { readonly kind: "idle" }
++  | { readonly kind: "starting" }
++  | {
++      readonly kind: "waiting";
++      readonly sessionId: string;
++      readonly code: string;
++      readonly url: string;
++      readonly intervalS: number;
++    }
++  | { readonly kind: "ended"; readonly status: string; readonly message: string }
++  | { readonly kind: "confirm" }
++  | { readonly kind: "signing-out" };
++
++const END_TEXT: Readonly<Record<string, MessageKey>> = {
++  approved: "settings.chatgpt.approved",
++  denied: "settings.chatgpt.denied",
++  expired: "settings.chatgpt.expired",
++  failed: "settings.chatgpt.failed",
++  cancelled: "settings.chatgpt.cancelled",
++};
++
++const ACCOUNTS_PATH = `/api/providers/login/accounts/${CHATGPT_PROVIDER}`;
++
++function planName(plan: string): string {
++  return plan.charAt(0).toUpperCase() + plan.slice(1);
++}
++
++export function ChatGptAccount(props: {
++  timers?: Timers;
++  copy?: (text: string) => Promise<void>;
++  openExternal?: (url: string) => void;
++  /** Called after a sign-in or sign-out so the page can re-read its provider list. */
++  onChanged?: () => void;
++}) {
++  const t = useT();
++  const { api, profile, bridge } = useSettings();
++  const timers = props.timers ?? realTimers;
++  const [signIns, setSignIns] = useState<SignIns | null>(null);
++  const [loadError, setLoadError] = useState<string | null>(null);
++  const [phase, setPhase] = useState<Phase>({ kind: "idle" });
++  const [problem, setProblem] = useState<string | null>(null);
++  const [copied, setCopied] = useState(false);
++  const live = useRef(true);
++  useEffect(() => {
++    live.current = true;
++    return () => {
++      live.current = false;
++    };
++  }, []);
++
++  const load = useCallback(async () => {
++    const answer = await rest<SignIns>(api, "GET", ACCOUNTS_PATH, { profile });
++    if (!live.current) return;
++    if (answer.ok) {
++      setSignIns(answer.data);
++      setLoadError(null);
++    } else setLoadError(answer.message);
++  }, [api, profile]);
++  useEffect(() => {
++    void load();
++  }, [load]);
++
++  const start = async () => {
++    setProblem(null);
++    setCopied(false);
++    setPhase({ kind: "starting" });
++    const answer = await rest<Started>(api, "POST", "/api/providers/login/start", {
++      body: { provider: CHATGPT_PROVIDER },
++      profile,
++    });
++    if (!live.current) return;
++    if (answer.ok) {
++      setPhase({
++        kind: "waiting",
++        sessionId: answer.data.session_id,
++        code: answer.data.user_code,
++        url: answer.data.verification_url,
++        intervalS: Math.max(MIN_POLL_S, answer.data.interval ?? 5),
++      });
++    } else {
++      setPhase({ kind: "idle" });
++      setProblem(answer.message || t("settings.chatgpt.failed"));
++    }
++  };
++
++  // Poll the sign-in session at the backend's pace; leaving it unfinished cancels it.
++  const pollingId = phase.kind === "waiting" ? phase.sessionId : null;
++  const pollingInterval = phase.kind === "waiting" ? phase.intervalS : MIN_POLL_S;
++  // biome-ignore lint/correctness/useExhaustiveDependencies: one poll loop per session
++  useEffect(() => {
++    if (pollingId === null) return;
++    const path = `/api/providers/login/${encodeURIComponent(pollingId)}`;
++    let handle: unknown = null;
++    let finished = false;
++    let failures = 0;
++    const tick = () => {
++      handle = timers.setTimeout(async () => {
++        const answer = await rest<{ status: string; message: string }>(api, "GET", path, {
++          profile,
++        });
++        if (finished || !live.current) return;
++        if (answer.ok && answer.data.status === "pending") {
++          failures = 0;
++          tick();
++          return;
++        }
++        // A failed poll is not an answer; only a run of them (or a gone session) ends the card.
++        failures = answer.ok ? 0 : failures + 1;
++        if (!answer.ok && answer.status !== 404 && failures < MAX_POLL_FAILURES) {
++          tick();
++          return;
++        }
++        finished = true;
++        const status = answer.ok ? answer.data.status : "failed";
++        setPhase({ kind: "ended", status, message: answer.ok ? answer.data.message : "" });
++        if (status === "approved") {
++          void load();
++          props.onChanged?.();
++        }
++      }, pollingInterval * 1000);
++    };
++    tick();
++    return () => {
++      if (handle !== null) timers.clearTimeout(handle);
++      if (!finished) {
++        finished = true;
++        void rest(api, "DELETE", path, { profile });
++      }
++    };
++  }, [pollingId, pollingInterval, api, profile, timers]);
++
++  const signOut = async () => {
++    setProblem(null);
++    setPhase({ kind: "signing-out" });
++    const answer = await rest(api, "DELETE", ACCOUNTS_PATH, { profile });
++    if (!live.current) return;
++    setPhase({ kind: "idle" });
++    if (!answer.ok) {
++      setProblem(answer.message || t("settings.chatgpt.signOutFailed"));
++      return;
++    }
++    await load();
++    props.onChanged?.();
++  };
++
++  const copy = async (code: string) => {
++    try {
++      await (props.copy ?? ((text) => navigator.clipboard.writeText(text)))(code);
++      setCopied(true);
++    } catch {
++      setCopied(false);
++    }
++  };
++  const open = (url: string) => {
++    if (props.openExternal) props.openExternal(url);
++    else {
++      const external = bridge?.external ?? desktopBridge()?.external;
++      if (external) void attempt(() => external.open({ url }));
++    }
++  };
++
++  const signedIn = signIns?.signed_in === true && signIns.accounts.length > 0;
++  const now = Date.now();
++  return (
++    <section
++      className="sb-signin"
++      data-ui="settings-chatgpt-card"
++      data-signed-in={signedIn ? "true" : "false"}
++      aria-label={t("settings.chatgpt.title")}
++    >
++      <div className="sb-signin-head">
++        <span className="sb-signin-text">
++          <span className="sb-choice-title">
++            {t("settings.chatgpt.title")}
++            {signedIn && <Pill tone="accent">{t("settings.accounts.signedIn")}</Pill>}
++          </span>
++          <span className="sb-choice-body">{t("settings.chatgpt.body")}</span>
++        </span>
++        {!signedIn && (phase.kind === "idle" || phase.kind === "starting") && (
++          <PrimaryButton
++            disabled={phase.kind === "starting" || signIns === null}
++            onClick={() => void start()}
++          >
++            {phase.kind === "starting"
++              ? t("settings.chatgpt.starting")
++              : t("settings.chatgpt.signIn")}
++          </PrimaryButton>
++        )}
++      </div>
++
++      {signedIn && (
++        <ul className="sb-signin-accounts">
++          {signIns.accounts.map((account) => {
++            const when = relativeTime(t, account.expires_at, now);
++            const until =
++              account.expires_at === null
++                ? null
++                : account.expired
++                  ? t("settings.chatgpt.expiredAt", { when: when ?? "" })
++                  : t("settings.chatgpt.expiresAt", {
++                      when: futureTime(t, account.expires_at, now) ?? "",
++                    });
++            return (
++              <li key={account.id} data-account={account.id} className="sb-signin-account">
++                <span className="sb-signin-label">{account.label}</span>
++                {account.plan !== null && <Pill>{planName(account.plan)}</Pill>}
++                {account.expired && <Pill tone="danger">{t("settings.chatgpt.expiredPill")}</Pill>}
++                {until !== null && <span className="sb-signin-muted">{until}</span>}
++              </li>
++            );
++          })}
++        </ul>
++      )}
++
++      {signedIn && phase.kind === "idle" && (
++        <div className="sb-signin-actions">
++          <OutlineButton
++            icon={<LogOut aria-hidden="true" size={13} />}
++            onClick={() => setPhase({ kind: "confirm" })}
++          >
++            {t("settings.chatgpt.signOut")}
++          </OutlineButton>
++        </div>
++      )}
++
++      {(phase.kind === "confirm" || phase.kind === "signing-out") && (
++        <div
++          className="sb-signin-confirm"
++          role="alertdialog"
++          aria-label={t("settings.chatgpt.confirmTitle")}
++        >
++          <p className="sb-signin-muted">{t("settings.chatgpt.confirmBody")}</p>
++          <div className="sb-signin-actions">
++            <TextButton
++              onClick={() => setPhase({ kind: "idle" })}
++              disabled={phase.kind === "signing-out"}
++            >
++              {t("settings.chatgpt.keep")}
++            </TextButton>
++            <PrimaryButton onClick={() => void signOut()} disabled={phase.kind === "signing-out"}>
++              {t("settings.chatgpt.signOutConfirm")}
++            </PrimaryButton>
++          </div>
++        </div>
++      )}
++
++      {phase.kind === "waiting" && (
++        <div className="sb-signin-flow">
++          <p className="sb-signin-muted">{t("settings.chatgpt.instructions")}</p>
++          <div className="sb-signin-codebox">
++            <code className="sb-signin-code" title={t("settings.chatgpt.code")}>
++              {phase.code}
++            </code>
++            <OutlineButton
++              icon={<Copy aria-hidden="true" size={13} />}
++              onClick={() => void copy(phase.code)}
++            >
++              {copied ? t("settings.chatgpt.copied") : t("settings.chatgpt.copy")}
++            </OutlineButton>
++          </div>
++          <div className="sb-signin-actions">
++            <TextButton
++              onClick={() => setPhase({ kind: "ended", status: "cancelled", message: "" })}
++            >
++              {t("settings.chatgpt.cancel")}
++            </TextButton>
++            <PrimaryButton
++              icon={<ExternalLink aria-hidden="true" size={13} />}
++              onClick={() => open(phase.url)}
++            >
++              {t("settings.chatgpt.open")}
++            </PrimaryButton>
++          </div>
++          <p className="sb-signin-status" role="status" data-status="pending">
++            <LoaderCircle aria-hidden="true" size={12} className="sb-signin-spin" />
++            <span>{t("settings.chatgpt.waiting")}</span>
++          </p>
++        </div>
++      )}
++
++      {phase.kind === "ended" && (
++        <div className="sb-signin-flow">
++          <p
++            className="sb-signin-status"
++            role="status"
++            data-status={phase.status}
++            data-tone={
++              phase.status === "approved" ? "ok" : phase.status === "cancelled" ? "quiet" : "error"
++            }
++          >
++            {phase.status === "approved" ? (
++              <Check aria-hidden="true" size={13} />
++            ) : phase.status === "cancelled" ? null : (
++              <CircleAlert aria-hidden="true" size={13} />
++            )}
++            <span>{phase.message || t(END_TEXT[phase.status] ?? "settings.chatgpt.failed")}</span>
++          </p>
++          <div className="sb-signin-actions">
++            <TextButton onClick={() => setPhase({ kind: "idle" })}>
++              {t("settings.chatgpt.close")}
++            </TextButton>
++            {phase.status !== "approved" && (
++              <PrimaryButton onClick={() => void start()}>
++                {t("settings.chatgpt.retry")}
++              </PrimaryButton>
++            )}
++          </div>
++        </div>
++      )}
++
++      <Note text={problem} error />
++      <Note text={loadError} error />
++    </section>
++  );
++}
++
++/** "in 9 days" style text for a time still ahead (null when unreadable). */
++function futureTime(t: ReturnType<typeof useT>, when: string, now: number): string | null {
++  const then = Date.parse(when);
++  if (Number.isNaN(then)) return null;
++  const minutes = Math.max(0, Math.round((then - now) / 60_000));
++  if (minutes < 60) return t("settings.chatgpt.inMinutes", { count: minutes });
++  const hours = Math.round(minutes / 60);
++  if (hours < 48) return t("settings.chatgpt.inHours", { count: hours });
++  return t("settings.chatgpt.inDays", { count: Math.round(hours / 24) });
++}
+diff --git a/apps/desktop/src/settings/pagesB/pagesB.css b/apps/desktop/src/settings/pagesB/pagesB.css
+index d181305..63018f2 100644
+--- a/apps/desktop/src/settings/pagesB/pagesB.css
++++ b/apps/desktop/src/settings/pagesB/pagesB.css
+@@ -867,3 +867,120 @@
+ .sb-field > .desk-segmented {
+   align-self: flex-start;
+ }
++
++/* W61-M2: the ChatGPT sign-in card of Providers › Accounts */
++.sb-signin {
++  display: grid;
++  gap: 12px;
++  padding: 12px 16px;
++  border: 1px solid var(--desk-stroke-1);
++  border-radius: var(--desk-radius-card);
++  background: var(--desk-accent-tint);
++  box-shadow: inset 0 -2px 0 var(--desk-accent-soft);
++  color: var(--desk-fg-1);
++}
++
++.sb-signin[data-signed-in="true"] {
++  background: var(--desk-bg-canvas);
++  box-shadow: none;
++}
++
++.sb-signin-head {
++  display: flex;
++  align-items: center;
++  gap: 12px;
++}
++
++.sb-signin-text {
++  display: flex;
++  flex: 1;
++  flex-direction: column;
++  gap: 3px;
++  min-width: 0;
++}
++
++.sb-signin-accounts {
++  display: grid;
++  gap: 6px;
++  margin: 0;
++  padding: 0;
++  list-style: none;
++}
++
++.sb-signin-account {
++  display: flex;
++  flex-wrap: wrap;
++  align-items: center;
++  gap: 8px;
++  font-size: var(--desk-text-small);
++}
++
++.sb-signin-label {
++  font-weight: 600;
++}
++
++.sb-signin-muted {
++  margin: 0;
++  color: var(--desk-fg-3);
++  font-size: var(--desk-text-small);
++}
++
++.sb-signin-flow,
++.sb-signin-confirm {
++  display: grid;
++  gap: 10px;
++  padding-top: 10px;
++  border-top: 1px solid var(--desk-stroke-1);
++}
++
++.sb-signin-codebox {
++  display: flex;
++  align-items: center;
++  justify-content: space-between;
++  gap: 12px;
++  padding: 10px 12px;
++  border: 1px solid var(--desk-stroke-3);
++  border-radius: 6px;
++  background: var(--desk-bg-canvas);
++}
++
++.sb-signin-code {
++  font-family: var(--indus-font-mono, ui-monospace, monospace);
++  font-size: 22px;
++  letter-spacing: 0.14em;
++  user-select: all;
++}
++
++.sb-signin-actions {
++  display: flex;
++  flex-wrap: wrap;
++  justify-content: flex-end;
++  gap: 8px;
++}
++
++.sb-signin-status {
++  display: flex;
++  align-items: center;
++  gap: 8px;
++  margin: 0;
++  color: var(--desk-fg-3);
++  font-size: var(--desk-text-small);
++}
++
++.sb-signin-status[data-tone="ok"] {
++  color: var(--desk-success);
++}
++
++.sb-signin-status[data-tone="error"] {
++  color: var(--desk-danger);
++}
++
++.sb-signin-spin {
++  animation: sb-signin-spin 0.9s linear infinite;
++}
++
++@keyframes sb-signin-spin {
++  to {
++    transform: rotate(360deg);
++  }
++}
+diff --git a/apps/desktop/src/settings/pagesB/providers.tsx b/apps/desktop/src/settings/pagesB/providers.tsx
+index b95054a..64ba0c0 100644
+--- a/apps/desktop/src/settings/pagesB/providers.tsx
++++ b/apps/desktop/src/settings/pagesB/providers.tsx
+@@ -20,6 +20,7 @@ import {
+   TextField,
+ } from "../primitives.tsx";
+ import { patchFor, type RestLike, rest, valueAt } from "../settingsApi.ts";
++import { CHATGPT_PROVIDER, ChatGptAccount } from "./chatgptAccount.tsx";
+ import { Note, SecretInput } from "./kit.tsx";
+ 
+ export interface ProviderRow {
+@@ -41,13 +42,15 @@ function useModelOptions() {
+   const { api, profile } = useSettings();
+   const [options, setOptions] = useState<ModelOptions | null>(null);
+   const [error, setError] = useState<string | null>(null);
++  const [tick, setTick] = useState(0);
++  // biome-ignore lint/correctness/useExhaustiveDependencies: tick reads again
+   useEffect(() => {
+     void rest<ModelOptions>(api, "GET", "/api/model/options", { profile }).then((answer) => {
+       if (answer.ok) setOptions(answer.data);
+       else setError(answer.message);
+     });
+-  }, [api, profile]);
+-  return { options, error };
++  }, [api, profile, tick]);
++  return { options, error, reload: () => setTick((n) => n + 1) };
+ }
+ 
+ /** `POST /api/model/set` for the main model (the call the model picker makes). */
+@@ -102,10 +105,12 @@ function ChoiceCard(props: {
+ export function AccountsPage() {
+   const t = useT();
+   const { openOnboarding, go, focusRow } = useSettings();
+-  const { options, error } = useModelOptions();
++  const { options, error, reload } = useModelOptions();
+   const [others, setOthers] = useState(false);
+   const rows = options?.providers ?? [];
+-  const device = rows.filter((row) => row.device_login);
++  // The ChatGPT sign-in has its own card with Sign in / Sign out (W61-M2).
++  const chatgpt = rows.some((row) => row.name === CHATGPT_PROVIDER);
++  const device = rows.filter((row) => row.device_login && row.name !== CHATGPT_PROVIDER);
+   const rest_ = rows.filter((row) => !row.device_login);
+   return (
+     <PageBody>
+@@ -124,6 +129,7 @@ export function AccountsPage() {
+         />
+         <p className="settings-intro">{t("settings.accounts2.intro")}</p>
+         <div className="sb-cards">
++          {chatgpt && <ChatGptAccount onChanged={reload} />}
+           {device.map((row) => (
+             <ChoiceCard
+               key={row.name}
+@@ -134,7 +140,7 @@ export function AccountsPage() {
+               onClick={openOnboarding}
+             />
+           ))}
+-          {device.length === 0 && (
++          {device.length === 0 && !chatgpt && (
+             <ChoiceCard
+               highlighted
+               title={t("settings.accounts.setup")}
+diff --git a/apps/desktop/src/settings/stringsB.en.ts b/apps/desktop/src/settings/stringsB.en.ts
+index 89f656f..628eaf7 100644
+--- a/apps/desktop/src/settings/stringsB.en.ts
++++ b/apps/desktop/src/settings/stringsB.en.ts
+@@ -76,6 +76,40 @@ export const SETTINGS_B_STRINGS = {
+   "settings.accounts2.localBody": "No account needed; use a model server on this computer.",
+   "settings.accounts2.others": "Other providers",
+   "settings.accounts2.keySaved": "Key saved",
++  // W61-M2: the ChatGPT sign-in card (provider `openai-codex`, D-16.1282)
++  "settings.chatgpt.title": "ChatGPT",
++  "settings.chatgpt.body":
++    "Run Indus on your ChatGPT plan. You approve a short code on OpenAI's sign-in page.",
++  "settings.chatgpt.signIn": "Sign in",
++  "settings.chatgpt.starting": "Asking for a code…",
++  "settings.chatgpt.instructions":
++    "Open OpenAI's sign-in page, sign in with your ChatGPT account and enter this code. This card updates by itself.",
++  "settings.chatgpt.code": "Sign-in code",
++  "settings.chatgpt.copy": "Copy the code",
++  "settings.chatgpt.copied": "Copied",
++  "settings.chatgpt.open": "Open the sign-in page",
++  "settings.chatgpt.waiting": "Waiting for you to approve the sign-in",
++  "settings.chatgpt.cancel": "Cancel",
++  "settings.chatgpt.close": "Close",
++  "settings.chatgpt.retry": "Try again",
++  "settings.chatgpt.approved": "Signed in. Pick a ChatGPT model in the model picker.",
++  "settings.chatgpt.denied": "The sign-in was refused.",
++  "settings.chatgpt.expired": "The code expired before it was approved. Try again for a new one.",
++  "settings.chatgpt.failed": "The sign-in did not finish.",
++  "settings.chatgpt.cancelled": "The sign-in was cancelled.",
++  "settings.chatgpt.signOut": "Sign out",
++  "settings.chatgpt.confirmTitle": "Sign out of ChatGPT",
++  "settings.chatgpt.confirmBody":
++    "Sign out of ChatGPT on this profile? Indus forgets the sign-in; API keys stay. You can sign in again any time.",
++  "settings.chatgpt.keep": "Stay signed in",
++  "settings.chatgpt.signOutConfirm": "Sign out",
++  "settings.chatgpt.signOutFailed": "Could not sign out.",
++  "settings.chatgpt.expiredPill": "Expired",
++  "settings.chatgpt.expiresAt": "Access renews by itself · expires {when}",
++  "settings.chatgpt.expiredAt": "Access expired {when}; it is renewed on the next use",
++  "settings.chatgpt.inMinutes": "in {count} min",
++  "settings.chatgpt.inHours": "in {count} h",
++  "settings.chatgpt.inDays": "in {count} days",
+   "settings.keys2.endpointRow": "Local or custom endpoint",
+   "settings.keys2.endpointRowBody": "Any OpenAI-compatible server (llama.cpp, vLLM, Ollama…).",
+   "settings.keys2.search": "Search providers…",
+diff --git a/apps/web/src/lib/api.ts b/apps/web/src/lib/api.ts
+index e4d494c..01ad0c6 100644
+--- a/apps/web/src/lib/api.ts
++++ b/apps/web/src/lib/api.ts
+@@ -61,6 +61,7 @@ import type {
+   ProfileCreate,
+   ProfileExportResponse,
+   ProfilesResponse,
++  ProviderSignIns,
+   PruneResponse,
+   SessionInfo,
+   SessionListResponse,
+@@ -69,6 +70,7 @@ import type {
+   SessionStats,
+   ShellHookCreate,
+   ShellHooksResponse,
++  SignOutResult,
+   SkillCreated,
+   SkillInfo,
+   StatusResponse,
+@@ -635,6 +637,14 @@ export const api = {
+       request<LoginSessionInfo>(`/api/providers/login/${segment(sessionId)}`, {
+         method: "DELETE",
+       }),
++    /** The provider's signed-in accounts (metadata only, never a token). */
++    accounts: (provider: string) =>
++      request<ProviderSignIns>(`/api/providers/login/accounts/${segment(provider)}`),
++    /** Sign out: every signed-in credential of the provider and its stored tokens go. */
++    signOut: (provider: string) =>
++      request<SignOutResult>(`/api/providers/login/accounts/${segment(provider)}`, {
++        method: "DELETE",
++      }),
+   },
+ 
+   system: {
+diff --git a/apps/web/src/lib/restTypes.ts b/apps/web/src/lib/restTypes.ts
+index 2f7b28e..3c0fb38 100644
+--- a/apps/web/src/lib/restTypes.ts
++++ b/apps/web/src/lib/restTypes.ts
+@@ -294,6 +294,36 @@ export interface LoginStarted extends LoginSessionInfo {
+   interval: number;
+ }
+ 
++/** One signed-in credential of a provider (`GET /api/providers/login/accounts/{provider}`).
++ * Metadata only: no answer ever carries a token. */
++export interface SignInAccount {
++  id: string;
++  label: string;
++  source: string;
++  status: string;
++  /** ISO time the access token runs out (it is renewed on the next use), or null. */
++  expires_at: string | null;
++  expired: boolean;
++  /** The subscription plan named in the sign-in (e.g. "plus"), or null. */
++  plan: string | null;
++}
++
++export interface ProviderSignIns {
++  provider: string;
++  label: string;
++  signed_in: boolean;
++  signed_in_at: string | null;
++  flows: { browser: boolean; device: boolean };
++  accounts: SignInAccount[];
++}
++
++/** `DELETE /api/providers/login/accounts/{provider}` (sign out). */
++export interface SignOutResult {
++  provider: string;
++  removed: number;
++  signed_in: false;
++}
++
+ // -- system -----------------------------------------------------------------------------------
+ 
+ export interface HostStats {
+diff --git a/apps/web/src/pages/EnvPage.test.tsx b/apps/web/src/pages/EnvPage.test.tsx
+index f11c69a..7a79054 100644
+--- a/apps/web/src/pages/EnvPage.test.tsx
++++ b/apps/web/src/pages/EnvPage.test.tsx
+@@ -161,7 +161,7 @@ describe("keys", () => {
+     const row = within(await screen.findByTestId("oauth-openrouter"));
+     expect(row.getByText("Browser sign-in")).toBeTruthy();
+     expect(row.getByText("indus auth add openrouter --type oauth")).toBeTruthy();
+-    expect(row.queryByRole("button", { name: "Login" })).toBeNull();
++    expect(row.queryByRole("button", { name: "Sign in" })).toBeNull();
+     expect(screen.queryByTestId("oauth-fake")).toBeNull();
+   });
+ 
+diff --git a/apps/web/src/pages/EnvPage.tsx b/apps/web/src/pages/EnvPage.tsx
+index bf3e966..a27ba21 100644
+--- a/apps/web/src/pages/EnvPage.tsx
++++ b/apps/web/src/pages/EnvPage.tsx
+@@ -42,6 +42,7 @@ import {
+ } from "../ui/controls.tsx";
+ import { ConfirmDialog } from "../ui/Dialog.tsx";
+ import { DeviceLogin } from "./ModelsPage.tsx";
++import { SignInAccounts, signInsKey, useSignIns } from "./SignInAccount.tsx";
+ 
+ const KEYS_QUERY = ["env", "keys"] as const;
+ const OPTIONS_QUERY = ["models", "options"] as const;
+@@ -251,12 +252,21 @@ function KeyList({
+ // -- OAuth sign-ins ------------------------------------------------------------------------------
+ 
+ function OAuthRow({ provider }: { provider: ProviderOption }) {
++  const client = useQueryClient();
+   const [open, setOpen] = useState(false);
+   const command = `indus auth add ${provider.name} --type oauth`;
++  // A device-flow provider signs in here; its accounts and Sign out are read from the backend
++  // (W61-M2). Others only show the terminal command.
++  const signIns = useSignIns(provider.name, provider.device_login);
++  const signedIn = signIns.data ? signIns.data.signed_in : provider.configured;
++  const refresh = () => {
++    void client.invalidateQueries({ queryKey: signInsKey(provider.name) });
++    void client.invalidateQueries({ queryKey: OPTIONS_QUERY });
++  };
+   return (
+     <li data-testid={`oauth-${provider.name}`} className="border-t border-line first:border-t-0">
+       <div className="flex items-center gap-3 px-4 py-4 sm:px-6">
+-        {provider.configured ? (
++        {signedIn ? (
+           <ShieldCheck aria-hidden="true" className="size-5 shrink-0 self-start text-success" />
+         ) : (
+           <ShieldOff aria-hidden="true" className="size-5 shrink-0 self-start text-ink-soft" />
+@@ -267,10 +277,10 @@ function OAuthRow({ provider }: { provider: ProviderOption }) {
+             <Badge>{provider.device_login ? "Device code" : "Browser sign-in"}</Badge>
+           </div>
+           <p className="m-0 text-[0.75rem] text-ink-muted">
+-            {provider.configured
++            {signedIn
+               ? "Connected."
+               : provider.device_login
+-                ? "Not connected. Log in here, or from a terminal."
++                ? "Not connected. Sign in here with a code, or from a terminal."
+                 : "Not connected. Run the command in a terminal on this machine; it opens the provider's sign-in page."}
+           </p>
+           <div className="flex flex-wrap items-center gap-1">
+@@ -282,7 +292,7 @@ function OAuthRow({ provider }: { provider: ProviderOption }) {
+             />
+           </div>
+         </div>
+-        {provider.device_login && !open ? (
++        {provider.device_login && !open && !signedIn ? (
+           <Button
+             tone="primary"
+             size="sm"
+@@ -290,13 +300,21 @@ function OAuthRow({ provider }: { provider: ProviderOption }) {
+             icon={<LogIn />}
+             onClick={() => setOpen(true)}
+           >
+-            Login
++            Sign in
+           </Button>
+         ) : null}
+       </div>
+-      {open ? (
+-        <div className="px-4 pb-4 sm:px-6">
+-          <DeviceLogin provider={provider} onDone={() => setOpen(false)} />
++      {provider.device_login && (open || signedIn) ? (
++        <div className="flex flex-col gap-3 px-4 pb-4 sm:px-6">
++          {open ? (
++            <DeviceLogin
++              provider={provider}
++              autoStart
++              onApproved={refresh}
++              onDone={() => setOpen(false)}
++            />
++          ) : null}
++          {signedIn ? <SignInAccounts provider={provider} /> : null}
+         </div>
+       ) : null}
+     </li>
+@@ -317,7 +335,7 @@ function OAuthCard() {
+       <CardHeader
+         icon={ShieldCheck}
+         title="Provider logins (OAuth)"
+-        below={`${connected} of ${list.length} connected. Log in here where the provider offers a device code; the command works from any terminal.`}
++        below={`${connected} of ${list.length} connected. Sign in here where the provider offers a device code; the command works from any terminal.`}
+         aside={
+           <IconButton
+             label="Refresh sign-ins"
+diff --git a/apps/web/src/pages/ModelsPage.tsx b/apps/web/src/pages/ModelsPage.tsx
+index d3ba4ad..1c97234 100644
+--- a/apps/web/src/pages/ModelsPage.tsx
++++ b/apps/web/src/pages/ModelsPage.tsx
+@@ -5,7 +5,15 @@
+ // approved, refused, expired or cancelled. No token ever reaches the browser.
+ 
+ import { useIsFetching, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+-import { Cpu, SlidersHorizontal, Star } from "lucide-react";
++import {
++  Check,
++  CircleAlert,
++  Cpu,
++  ExternalLink,
++  LoaderCircle,
++  SlidersHorizontal,
++  Star,
++} from "lucide-react";
+ import { type ComponentType, type ReactNode, useEffect, useId, useRef, useState } from "react";
+ import { Link } from "react-router";
+ import { api } from "../lib/api.ts";
+@@ -14,6 +22,7 @@ import type { AuxiliaryTask, LoginStarted, LoginStatus, ProviderOption } from ".
+ import { useTokenAnalyticsFlag } from "../lib/useTokenAnalyticsFlag.ts";
+ import { HeaderAfterTitle } from "../shell/PageHeader.tsx";
+ import { errorText, useToast } from "../shell/Toasts.tsx";
++import { CopyButton } from "../ui/CopyButton.tsx";
+ import {
+   Badge,
+   Button,
+@@ -52,13 +61,32 @@ function useModelsChanged() {
+   return () => void client.invalidateQueries({ queryKey: ["models"] });
+ }
+ 
+-/** Device-code sign-in panel; also used by the Keys page's OAuth card (W52-d-2). */
++const LOGIN_TONE: Record<LoginStatus, string> = {
++  pending: "text-ink-muted",
++  approved: "text-success",
++  denied: "text-danger",
++  expired: "text-danger",
++  failed: "text-danger",
++  cancelled: "text-ink-muted",
++};
++
++/**
++ * Device-code sign-in panel; also used by the Keys page's OAuth card (W52-d-2, W61-M2). With
++ * `autoStart` it asks for a code as soon as it opens (the Keys row's Sign in), else it offers
++ * "Get a sign-in code" first. The code is shown large with a copy button, the verification page
++ * opens in a new tab, and the session is polled at the interval the backend gave, never faster
++ * than MIN_POLL_S, until it ends; a failed poll is not an answer.
++ */
+ export function DeviceLogin({
+   provider,
+   onDone,
++  onApproved,
++  autoStart = false,
+ }: {
+   provider: ProviderOption;
+   onDone: () => void;
++  onApproved?: () => void;
++  autoStart?: boolean;
+ }) {
+   const client = useQueryClient();
+   const [grant, setGrant] = useState<LoginStarted | null>(null);
+@@ -66,6 +94,7 @@ export function DeviceLogin({
+   const [message, setMessage] = useState("");
+   const [problem, setProblem] = useState("");
+   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
++  const asked = useRef(false);
+ 
+   const stop = () => {
+     if (timer.current !== null) clearInterval(timer.current);
+@@ -82,17 +111,22 @@ export function DeviceLogin({
+     stop();
+     setStatus(next);
+     setMessage(text);
+-    if (next === "approved") void client.invalidateQueries({ queryKey: ["models"] });
++    if (next === "approved") {
++      void client.invalidateQueries({ queryKey: ["models"] });
++      onApproved?.();
++    }
+   };
+ 
+   const start = useMutation({
+     mutationFn: () => api.providerLogin.start(provider.name),
++    onMutate: () => {
++      stop();
++      setProblem("");
++    },
+     onSuccess: (started) => {
+       setGrant(started);
+       setStatus("pending");
+       setMessage("");
+-      setProblem("");
+-      stop();
+       const every = Math.max(started.interval || MIN_POLL_S, MIN_POLL_S) * 1000;
+       timer.current = setInterval(() => {
+         api.providerLogin.poll(started.session_id).then(
+@@ -114,37 +148,79 @@ export function DeviceLogin({
+     onSettled: () => finish("cancelled", ""),
+   });
+ 
++  // biome-ignore lint/correctness/useExhaustiveDependencies: asks once, when the panel opens
++  useEffect(() => {
++    if (!autoStart || asked.current) return;
++    asked.current = true;
++    start.mutate();
++  }, [autoStart]);
++
++  const ended = grant !== null && status !== "pending";
++  const failed = status === "denied" || status === "expired" || status === "failed";
++
+   return (
+     <section
+       aria-label={`Sign in to ${provider.label}`}
+-      className="flex flex-col gap-2 border border-line p-3"
++      className="flex flex-col gap-3 border border-line p-3"
+     >
+       {!grant ? (
+-        <div className="flex gap-2">
+-          <Button tone="primary" onClick={() => start.mutate()} disabled={start.isPending}>
+-            {start.isPending ? "Asking for a code…" : "Get a sign-in code"}
+-          </Button>
+-          <Button onClick={onDone}>Close</Button>
+-        </div>
++        autoStart && !problem ? (
++          <p role="status" className="m-0 flex items-center gap-2 text-[0.8125rem] text-ink-muted">
++            <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin" />
++            Asking for a sign-in code…
++          </p>
++        ) : (
++          <div className="flex gap-2">
++            <Button tone="primary" onClick={() => start.mutate()} disabled={start.isPending}>
++              {start.isPending ? "Asking for a code…" : "Get a sign-in code"}
++            </Button>
++            <Button onClick={onDone}>Close</Button>
++          </div>
++        )
+       ) : (
+         <>
+-          <p className="m-0 text-[0.8125rem]">
+-            Open{" "}
+-            <a
+-              href={grant.verification_url}
+-              target="_blank"
+-              rel="noopener noreferrer"
+-              className="break-all text-ink underline"
+-            >
+-              {grant.verification_url}
+-            </a>{" "}
+-            and enter this code:
+-          </p>
+-          <code data-testid="device-code" className="font-mono text-lg tracking-widest text-ink">
+-            {grant.user_code}
+-          </code>
+-          <p role="status" className="m-0 text-[0.8125rem] text-ink-muted">
+-            {message || LOGIN_TEXT[status]}
++          {status === "pending" ? (
++            <>
++              <p className="m-0 text-[0.8125rem] text-ink-muted">
++                Open the sign-in page, enter this code and approve. This updates by itself.
++              </p>
++              <div className="flex flex-wrap items-center justify-between gap-2 border border-line bg-selected/40 px-4 py-3">
++                <code
++                  data-testid="device-code"
++                  className="font-mono text-2xl tracking-widest text-ink select-all"
++                >
++                  {grant.user_code}
++                </code>
++                <CopyButton value={grant.user_code} label="Copy the code" />
++              </div>
++              <a
++                href={grant.verification_url}
++                target="_blank"
++                rel="noopener noreferrer"
++                className="inline-flex items-center gap-1 self-start break-all text-[0.8125rem] text-ink underline"
++              >
++                <ExternalLink aria-hidden="true" className="size-3.5 shrink-0" />
++                {grant.verification_url}
++              </a>
++            </>
++          ) : null}
++          <p
++            role="status"
++            data-status={status}
++            className={cx(
++              "m-0 flex items-center gap-2 text-[0.8125rem]",
++              LOGIN_TONE[status],
++              status === "pending" && "border-t border-line pt-3",
++            )}
++          >
++            {status === "pending" ? (
++              <LoaderCircle aria-hidden="true" className="size-3.5 shrink-0 animate-spin" />
++            ) : status === "approved" ? (
++              <Check aria-hidden="true" className="size-4 shrink-0" />
++            ) : failed ? (
++              <CircleAlert aria-hidden="true" className="size-4 shrink-0" />
++            ) : null}
++            <span>{message || LOGIN_TEXT[status]}</span>
+           </p>
+           <div className="flex gap-2">
+             {status === "pending" ? (
+@@ -156,12 +232,31 @@ export function DeviceLogin({
+                 Cancel
+               </Button>
+             ) : (
+-              <Button onClick={onDone}>Close</Button>
++              <>
++                {ended && status !== "approved" ? (
++                  <Button tone="primary" onClick={() => start.mutate()} disabled={start.isPending}>
++                    Try again
++                  </Button>
++                ) : null}
++                <Button onClick={onDone}>Close</Button>
++              </>
+             )}
+           </div>
+         </>
+       )}
+-      {problem ? <Notice tone="danger">{problem}</Notice> : null}
++      {problem ? (
++        <>
++          <Notice tone="danger">{problem}</Notice>
++          {autoStart && !grant ? (
++            <div className="flex gap-2">
++              <Button tone="primary" onClick={() => start.mutate()} disabled={start.isPending}>
++                Try again
++              </Button>
++              <Button onClick={onDone}>Close</Button>
++            </div>
++          ) : null}
++        </>
++      ) : null}
+     </section>
+   );
+ }
+diff --git a/apps/web/src/pages/SignInAccount.test.tsx b/apps/web/src/pages/SignInAccount.test.tsx
+new file mode 100644
+index 0000000..35551c6
+--- /dev/null
++++ b/apps/web/src/pages/SignInAccount.test.tsx
+@@ -0,0 +1,269 @@
++// The ChatGPT sign-in on Keys › Provider logins (W61-M2), against the mock of M1's REST contract:
++// Sign in starts the device flow at once, the code is shown large with a copy button and the
++// verification link, the session is polled at the backend's interval and never faster, each end
++// is said plainly, and a signed-in account is listed with Sign out (asks first).
++
++import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
++import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
++import { api } from "../lib/api.ts";
++import type { ProviderOption } from "../lib/restTypes.ts";
++import { createMockApi, type MockApi } from "../testing/mockApi.ts";
++import { renderPage } from "../testing/render.tsx";
++import { EnvPage } from "./EnvPage.tsx";
++
++let mock: MockApi;
++let restore: () => void;
++const writeText = vi.fn(async (_text: string) => undefined);
++
++const CHATGPT: ProviderOption = {
++  name: "openai-codex",
++  label: "OpenAI (ChatGPT sign-in)",
++  description: "",
++  family: "openai",
++  auth_type: "oauth",
++  configured: false,
++  device_login: true,
++  sign_in: true,
++  supports_model_listing: true,
++};
++
++// A code shaped like the ones the sign-in page asks for, built at runtime.
++const userCode = () => ["QX7M", "9PLD"].join("-");
++
++beforeEach(() => {
++  mock = createMockApi();
++  mock.state.modelOptions.providers.push({ ...CHATGPT });
++  mock.state.deviceGrant = {
++    user_code: userCode(),
++    verification_url: "https://signin.example.org/codex/device",
++    expires_in: 900,
++    interval: 7,
++  };
++  restore = mock.install();
++  writeText.mockClear();
++  Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
++  vi.spyOn(console, "warn").mockImplementation(() => {});
++});
++
++afterEach(() => {
++  restore();
++  vi.useRealTimers();
++});
++
++function tick(ms: number) {
++  act(() => {
++    vi.advanceTimersByTime(ms);
++  });
++}
++
++const polls = () => mock.callsTo("GET", "/api/providers/login/login-1");
++
++async function chatgptRow() {
++  return within(await screen.findByTestId("oauth-openai-codex"));
++}
++
++async function signIn() {
++  const row = await chatgptRow();
++  fireEvent.click(await row.findByRole("button", { name: "Sign in" }));
++  expect((await row.findByTestId("device-code")).textContent).toBe(userCode());
++  return row;
++}
++
++describe("ChatGPT sign-in on the Keys page", () => {
++  it("starts at once, shows the code with copy and link, polls at the interval, then lists the account", async () => {
++    mock.state.loginPolls = ["pending", "approved"];
++    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
++    renderPage(<EnvPage />, "/env");
++    const row = await signIn();
++    expect(mock.callsTo("POST", "/api/providers/login/start")[0]?.body).toEqual({
++      provider: "openai-codex",
++    });
++    expect(row.queryByRole("button", { name: "Get a sign-in code" })).toBeNull();
++
++    const link = row.getByRole("link", { name: "https://signin.example.org/codex/device" });
++    expect(link.getAttribute("target")).toBe("_blank");
++    expect(link.getAttribute("rel")).toContain("noopener");
++    fireEvent.click(row.getByRole("button", { name: "Copy the code" }));
++    await waitFor(() => expect(writeText).toHaveBeenCalledWith(userCode()));
++
++    tick(6_999);
++    expect(polls()).toHaveLength(0);
++    tick(1);
++    await waitFor(() => expect(polls()).toHaveLength(1));
++    expect(row.getByRole("status").textContent).toContain("Waiting");
++    tick(7_000);
++    await waitFor(() => expect(row.getByRole("status").textContent).toContain("Signed in"));
++    tick(60_000);
++    expect(polls()).toHaveLength(2);
++
++    const account = await row.findByTestId("sign-in-account-acct-1");
++    expect(account.textContent).toContain("device_code-1");
++    expect(account.textContent).toContain("Plus");
++    expect(account.textContent).toContain("expires in");
++    expect(row.getByRole("button", { name: "Sign out" })).toBeTruthy();
++    expect(row.queryByRole("button", { name: "Sign in" })).toBeNull();
++    expect(row.getByText("Connected.")).toBeTruthy();
++  });
++
++  it("never polls faster than once a second, whatever the interval says", async () => {
++    mock.state.deviceGrant = {
++      ...(mock.state.deviceGrant as NonNullable<typeof mock.state.deviceGrant>),
++      interval: 0,
++    };
++    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
++    renderPage(<EnvPage />, "/env");
++    await signIn();
++    tick(999);
++    expect(polls()).toHaveLength(0);
++    tick(1);
++    await waitFor(() => expect(polls()).toHaveLength(1));
++  });
++
++  it.each([
++    ["denied", "refused"],
++    ["expired", "expired"],
++    ["failed", "failed"],
++  ] as const)("says %s plainly and offers Try again", async (end, words) => {
++    mock.state.loginPolls = [end];
++    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
++    renderPage(<EnvPage />, "/env");
++    const row = await signIn();
++    tick(7_000);
++    await waitFor(() => expect(row.getByRole("status").getAttribute("data-status")).toBe(end));
++    expect(row.getByRole("status").textContent).toContain(words);
++    expect(row.queryByTestId("device-code")).toBeNull();
++    tick(30_000);
++    expect(polls()).toHaveLength(1);
++    fireEvent.click(row.getByRole("button", { name: "Try again" }));
++    await waitFor(() => expect(mock.callsTo("POST", "/api/providers/login/start")).toHaveLength(2));
++  });
++
++  it("Cancel ends the session on the backend and stops polling", async () => {
++    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
++    renderPage(<EnvPage />, "/env");
++    const row = await signIn();
++    tick(7_000);
++    await waitFor(() => expect(polls()).toHaveLength(1));
++    fireEvent.click(row.getByRole("button", { name: "Cancel" }));
++    await waitFor(() => expect(row.getByRole("status").textContent).toContain("cancelled"));
++    expect(mock.callsTo("DELETE", "/api/providers/login/login-1")).toHaveLength(1);
++    tick(30_000);
++    expect(polls()).toHaveLength(1);
++    fireEvent.click(row.getByRole("button", { name: "Close" }));
++    expect(await row.findByRole("button", { name: "Sign in" })).toBeTruthy();
++  });
++
++  it("shows why OpenAI could not be asked for a code", async () => {
++    mock.failNext("POST", "/api/providers/login/start", {
++      status: 502,
++      body: {
++        detail: { code: "sign_in_unavailable", message: "The sign-in service did not answer." },
++      },
++    });
++    renderPage(<EnvPage />, "/env");
++    const row = await chatgptRow();
++    fireEvent.click(await row.findByRole("button", { name: "Sign in" }));
++    expect((await row.findByRole("alert")).textContent).toContain("did not answer");
++    expect(polls()).toHaveLength(0);
++    fireEvent.click(row.getByRole("button", { name: "Try again" }));
++    expect((await row.findByTestId("device-code")).textContent).toBe(userCode());
++  });
++
++  it("lists a signed-in account and signs out after asking", async () => {
++    mock.state.modelOptions.providers = mock.state.modelOptions.providers.map((p) =>
++      p.name === "openai-codex" ? { ...p, configured: true } : p,
++    );
++    mock.state.signIns["openai-codex"] = {
++      provider: "openai-codex",
++      label: CHATGPT.label,
++      signed_in: true,
++      signed_in_at: "2026-10-25T09:00:00+00:00",
++      flows: { browser: true, device: true },
++      accounts: [
++        {
++          id: "acct-a",
++          label: "work",
++          source: "pkce",
++          status: "ok",
++          expires_at: "2026-10-20T09:00:00+00:00",
++          expired: true,
++          plan: "pro",
++        },
++      ],
++    };
++    renderPage(<EnvPage />, "/env");
++    const row = await chatgptRow();
++    const account = await row.findByTestId("sign-in-account-acct-a");
++    expect(account.textContent).toContain("Pro");
++    expect(account.textContent).toContain("expired");
++    expect(account.textContent).toContain("renewed on the next use");
++
++    fireEvent.click(row.getByRole("button", { name: "Sign out" }));
++    const dialog = within(await screen.findByRole("dialog"));
++    fireEvent.click(dialog.getByRole("button", { name: "Cancel" }));
++    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
++    expect(mock.callsTo("DELETE", "/api/providers/login/accounts/openai-codex")).toHaveLength(0);
++
++    fireEvent.click(row.getByRole("button", { name: "Sign out" }));
++    const again = within(await screen.findByRole("dialog"));
++    fireEvent.click(again.getByRole("button", { name: "Sign out" }));
++    await waitFor(() =>
++      expect(mock.callsTo("DELETE", "/api/providers/login/accounts/openai-codex")).toHaveLength(1),
++    );
++    expect(await row.findByRole("button", { name: "Sign in" })).toBeTruthy();
++    expect(row.queryByTestId("sign-in-account-acct-a")).toBeNull();
++    expect(mock.state.signIns["openai-codex"]?.signed_in).toBe(false);
++  });
++
++  it("keeps a sign-in that belongs to the default profile and says so", async () => {
++    mock.state.inheritedSignIns = ["openai-codex"];
++    mock.state.signIns["openai-codex"] = {
++      provider: "openai-codex",
++      label: CHATGPT.label,
++      signed_in: true,
++      signed_in_at: null,
++      flows: { browser: true, device: true },
++      accounts: [
++        {
++          id: "acct-b",
++          label: "home",
++          source: "device_code",
++          status: "ok",
++          expires_at: null,
++          expired: false,
++          plan: null,
++        },
++      ],
++    };
++    renderPage(<EnvPage />, "/env");
++    const row = await chatgptRow();
++    const account = await row.findByTestId("sign-in-account-acct-b");
++    expect(account.textContent).toBe("home");
++    fireEvent.click(row.getByRole("button", { name: "Sign out" }));
++    const dialog = within(await screen.findByRole("dialog"));
++    fireEvent.click(dialog.getByRole("button", { name: "Sign out" }));
++    expect((await row.findByRole("alert")).textContent).toContain("default profile");
++    expect(row.getByTestId("sign-in-account-acct-b")).toBeTruthy();
++  });
++});
++
++describe("the mock follows M1's contract", () => {
++  it("refuses an API key for a sign-in-only provider", async () => {
++    await expect(
++      api.system.addToPool({ provider: "openai-codex", api_key: "x".repeat(24) }),
++    ).rejects.toMatchObject({ status: 400, code: "sign_in_only" });
++  });
++
++  it("answers the accounts route for a known provider and 404s an unknown one", async () => {
++    const answer = await api.providerLogin.accounts("openai-codex");
++    expect(answer).toMatchObject({ provider: "openai-codex", signed_in: false, accounts: [] });
++    await expect(api.providerLogin.accounts("nope")).rejects.toMatchObject({
++      status: 404,
++      code: "provider_not_found",
++    });
++    await expect(api.providerLogin.start("nope")).rejects.toMatchObject({
++      status: 404,
++      code: "unknown_provider",
++    });
++  });
++});
+diff --git a/apps/web/src/pages/SignInAccount.tsx b/apps/web/src/pages/SignInAccount.tsx
+new file mode 100644
+index 0000000..3fca721
+--- /dev/null
++++ b/apps/web/src/pages/SignInAccount.tsx
+@@ -0,0 +1,116 @@
++// A provider's signed-in accounts on the Keys page's OAuth card (W61-M2, D-16.1282): who is signed
++// in (label, plan, when the access runs out) and Sign out, which asks first and then deletes every
++// sign-in of the provider on the backend (`DELETE /api/providers/login/accounts/{provider}`). The
++// answers carry metadata only; no token ever reaches the browser.
++
++import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
++import { LogOut } from "lucide-react";
++import { useState } from "react";
++import { api } from "../lib/api.ts";
++import { relativeTime } from "../lib/format.ts";
++import type { ProviderOption, SignInAccount } from "../lib/restTypes.ts";
++import { errorText, useToast } from "../shell/Toasts.tsx";
++import { Badge, Button, Notice } from "../ui/controls.tsx";
++import { ConfirmDialog } from "../ui/Dialog.tsx";
++
++/** Query key of a provider's sign-ins (invalidated after a sign-in or a sign-out). */
++export function signInsKey(provider: string) {
++  return ["models", "sign-ins", provider] as const;
++}
++
++export function useSignIns(provider: string, enabled = true) {
++  return useQuery({
++    queryKey: signInsKey(provider),
++    queryFn: () => api.providerLogin.accounts(provider),
++    enabled,
++    retry: false,
++  });
++}
++
++/** "plus" → "Plus"; the plan names come from the sign-in's own claims. */
++function planName(plan: string): string {
++  return plan.charAt(0).toUpperCase() + plan.slice(1);
++}
++
++function expiryText(account: SignInAccount, now: number): string | null {
++  if (account.expires_at === null) return null;
++  const when = relativeTime(account.expires_at, now);
++  return account.expired
++    ? `access expired ${when}; renewed on the next use`
++    : `access renews by itself · expires ${when}`;
++}
++
++function AccountLine({ account, now }: { account: SignInAccount; now: number }) {
++  const expiry = expiryText(account, now);
++  return (
++    <li
++      data-testid={`sign-in-account-${account.id}`}
++      className="flex flex-wrap items-center gap-2 text-[0.8125rem]"
++    >
++      <span className="font-medium text-ink">{account.label}</span>
++      {account.plan ? <Badge tone="accent">{planName(account.plan)}</Badge> : null}
++      {account.expired ? <Badge tone="warn">expired</Badge> : null}
++      {account.status !== "ok" ? <Badge tone="danger">{account.status}</Badge> : null}
++      {expiry ? <span className="text-[0.75rem] text-ink-muted">{expiry}</span> : null}
++    </li>
++  );
++}
++
++/** The signed-in accounts of `provider` and Sign out; nothing while it is not signed in. */
++export function SignInAccounts({ provider }: { provider: ProviderOption }) {
++  const client = useQueryClient();
++  const toast = useToast();
++  const [confirming, setConfirming] = useState(false);
++  const [problem, setProblem] = useState("");
++  const signIns = useSignIns(provider.name);
++  const signOut = useMutation({
++    mutationFn: () => api.providerLogin.signOut(provider.name),
++    onMutate: () => setProblem(""),
++    onSuccess: () => {
++      setConfirming(false);
++      toast.show(`Signed out of ${provider.label}.`, "success");
++      void client.invalidateQueries({ queryKey: ["models"] });
++    },
++    onError: (error) => {
++      setConfirming(false);
++      setProblem(errorText(error));
++    },
++  });
++  const data = signIns.data;
++  if (!data?.signed_in || data.accounts.length === 0) return null;
++  const now = Date.now();
++  return (
++    <section
++      aria-label={`Signed-in accounts of ${provider.label}`}
++      className="flex flex-col gap-2 border border-line p-3"
++    >
++      <div className="flex flex-wrap items-start justify-between gap-2">
++        <ul className="m-0 flex min-w-0 list-none flex-col gap-1.5 p-0">
++          {data.accounts.map((account) => (
++            <AccountLine key={account.id} account={account} now={now} />
++          ))}
++        </ul>
++        <Button
++          size="sm"
++          tone="danger-outline"
++          icon={<LogOut />}
++          onClick={() => setConfirming(true)}
++          disabled={signOut.isPending}
++        >
++          Sign out
++        </Button>
++      </div>
++      {problem ? <Notice tone="danger">{problem}</Notice> : null}
++      <ConfirmDialog
++        open={confirming}
++        title={`Sign out of ${provider.label}?`}
++        description="Indus forgets this sign-in on this profile. API keys stay. You can sign in again any time."
++        confirmLabel="Sign out"
++        danger
++        busy={signOut.isPending}
++        onConfirm={() => signOut.mutate()}
++        onCancel={() => setConfirming(false)}
++      />
++    </section>
++  );
++}
+diff --git a/apps/web/src/test/routes.generated.ts b/apps/web/src/test/routes.generated.ts
+index 7c2f065..b5b651b 100644
+--- a/apps/web/src/test/routes.generated.ts
++++ b/apps/web/src/test/routes.generated.ts
+@@ -108,6 +108,8 @@ export const GENERATED_ROUTES: readonly GeneratedRoute[] = [
+   { method: "PUT", path: "/api/profiles/{name}/model", scoped: false },
+   { method: "GET", path: "/api/profiles/{name}/persona", scoped: false },
+   { method: "PUT", path: "/api/profiles/{name}/persona", scoped: false },
++  { method: "DELETE", path: "/api/providers/login/accounts/{provider}", scoped: true },
++  { method: "GET", path: "/api/providers/login/accounts/{provider}", scoped: true },
+   { method: "POST", path: "/api/providers/login/start", scoped: true },
+   { method: "DELETE", path: "/api/providers/login/{session_id}", scoped: true },
+   { method: "GET", path: "/api/providers/login/{session_id}", scoped: true },
+diff --git a/apps/web/src/testing/mockApi.ts b/apps/web/src/testing/mockApi.ts
+index 1d494ed..b684ee3 100644
+--- a/apps/web/src/testing/mockApi.ts
++++ b/apps/web/src/testing/mockApi.ts
+@@ -37,6 +37,7 @@ import type {
+   PlatformTestResult,
+   PluginInfo,
+   ProfilesResponse,
++  ProviderSignIns,
+   SessionInfo,
+   SessionMessage,
+   SessionStats,
+@@ -124,6 +125,11 @@ export interface MockState {
+   deviceGrant: Omit<LoginStarted, "session_id" | "provider" | "status" | "message"> | null;
+   /** Statuses successive polls of a sign-in answer (the last repeats). */
+   loginPolls: LoginStatus[];
++  /** Provider → its signed-in accounts (`/api/providers/login/accounts/{provider}`, W61-M2); an
++   * approved device sign-in adds one, a sign-out clears them. Metadata only, like the backend. */
++  signIns: Record<string, ProviderSignIns>;
++  /** Providers whose sign-ins belong to the default profile: sign-out is 409 `inherited_pool`. */
++  inheritedSignIns: string[];
+   hostStats: HostStats;
+   update: UpdateInfo;
+   memory: MemoryInfo;
+@@ -162,6 +168,9 @@ export interface MockApi {
+   failNext(method: string, path: string | RegExp, reply: MockReply): void;
+ }
+ 
++/** Providers that take a sign-in only: the pool refuses an API key for them (W61-M2 contract). */
++const SIGN_IN_ONLY: ReadonlySet<string> = new Set(["openai-codex"]);
++
+ const ok = (body: unknown = { ok: true }): MockReply => ({ status: 200, body });
+ const fail = (status: number, code: string, message: string): MockReply => ({
+   status,
+@@ -334,6 +343,8 @@ export function defaultMockState(): MockState {
+     auxiliary: { tasks: [], main: { provider: "fake", model: "fake-model" } },
+     deviceGrant: null,
+     loginPolls: ["pending"],
++    signIns: {},
++    inheritedSignIns: [],
+     hostStats: {
+       cpu_count: 4,
+       load: [0.5, 0.4, 0.3],
+@@ -994,7 +1005,45 @@ function finishedRun(name: string): ActionStatus {
+ function adminRoutes(state: MockState): Array<[string, RegExp, Handler]> {
+   const polls: Record<string, number> = {};
+   const logins: Record<string, number> = {};
++  const loginProvider: Record<string, string> = {};
++  const approved = new Set<string>();
+   let nextLogin = 1;
++  let nextAccount = 1;
++
++  const providerRow = (name: string) => state.modelOptions.providers.find((p) => p.name === name);
++  const signInsOf = (name: string): ProviderSignIns =>
++    state.signIns[name] ?? {
++      provider: name,
++      label: providerRow(name)?.label ?? name,
++      signed_in: false,
++      signed_in_at: null,
++      flows: { browser: false, device: providerRow(name)?.device_login === true },
++      accounts: [],
++    };
++  // What an approved device sign-in leaves behind: one account (no token, as the backend answers).
++  const signedIn = (name: string) => {
++    const current = signInsOf(name);
++    const id = `acct-${nextAccount++}`;
++    state.signIns[name] = {
++      ...current,
++      signed_in: true,
++      signed_in_at: new Date().toISOString(),
++      accounts: [
++        ...current.accounts,
++        {
++          id,
++          label: `device_code-${current.accounts.length + 1}`,
++          source: "device_code",
++          status: "ok",
++          expires_at: new Date(Date.now() + 10 * 86_400_000).toISOString(),
++          expired: false,
++          plan: "plus",
++        },
++      ],
++    };
++    const row = providerRow(name);
++    if (row) row.configured = true;
++  };
+   let nextPool = 1;
+ 
+   const started = (name: string, extra: Record<string, unknown> = {}): MockReply => {
+@@ -1403,11 +1452,13 @@ function adminRoutes(state: MockState): Array<[string, RegExp, Handler]> {
+       /^\/api\/providers\/login\/start$/,
+       (call) => {
+         const provider = text(asRecord(call.body).provider);
++        if (!providerRow(provider)) return fail(404, "unknown_provider", "Unknown provider.");
+         if (!state.deviceGrant) {
+           return fail(400, "no_device_flow", "This provider documents no device sign-in.");
+         }
+         const id = `login-${nextLogin++}`;
+         logins[id] = 0;
++        loginProvider[id] = provider;
+         return ok({
+           session_id: id,
+           provider,
+@@ -1424,10 +1475,15 @@ function adminRoutes(state: MockState): Array<[string, RegExp, Handler]> {
+         const id = decodeURIComponent(m[1] ?? "");
+         const at = logins[id];
+         if (at === undefined) return fail(404, "no_such_session", "No such sign-in session.");
++        const provider = loginProvider[id] ?? "fake";
+         logins[id] = at + 1;
+         const status = state.loginPolls[Math.min(at, state.loginPolls.length - 1)] ?? "pending";
++        if (status === "approved" && !approved.has(id)) {
++          approved.add(id);
++          signedIn(provider);
++        }
+         const message = status === "approved" ? "Signed in; the credential was added." : "";
+-        return ok({ session_id: id, provider: "fake", status, message });
++        return ok({ session_id: id, provider, status, message });
+       },
+     ],
+     [
+@@ -1436,7 +1492,38 @@ function adminRoutes(state: MockState): Array<[string, RegExp, Handler]> {
+       (_call, m) => {
+         const id = decodeURIComponent(m[1] ?? "");
+         if (logins[id] === undefined) return fail(404, "no_such_session", "No such session.");
+-        return ok({ session_id: id, provider: "fake", status: "cancelled", message: "Cancelled." });
++        const provider = loginProvider[id] ?? "fake";
++        return ok({ session_id: id, provider, status: "cancelled", message: "Cancelled." });
++      },
++    ],
++    [
++      "GET",
++      /^\/api\/providers\/login\/accounts\/([^/]+)$/,
++      (_call, m) => {
++        const provider = decodeURIComponent(m[1] ?? "");
++        if (!providerRow(provider)) return fail(404, "provider_not_found", "Unknown provider.");
++        return ok(signInsOf(provider));
++      },
++    ],
++    [
++      "DELETE",
++      /^\/api\/providers\/login\/accounts\/([^/]+)$/,
++      (_call, m) => {
++        const provider = decodeURIComponent(m[1] ?? "");
++        if (!providerRow(provider)) return fail(404, "unknown_provider", "Unknown provider.");
++        const current = signInsOf(provider);
++        if (state.inheritedSignIns.includes(provider) && current.accounts.length > 0) {
++          return fail(409, "inherited_pool", "These sign-ins belong to the default profile.");
++        }
++        state.signIns[provider] = {
++          ...current,
++          signed_in: false,
++          signed_in_at: null,
++          accounts: [],
++        };
++        const row = providerRow(provider);
++        if (row) row.configured = false;
++        return ok({ provider, removed: current.accounts.length, signed_in: false });
+       },
+     ],
+ 
+@@ -1471,6 +1558,9 @@ function adminRoutes(state: MockState): Array<[string, RegExp, Handler]> {
+         const body = asRecord(call.body);
+         const provider = text(body.provider);
+         const key = text(body.api_key).trim();
++        if (SIGN_IN_ONLY.has(provider)) {
++          return fail(400, "sign_in_only", "This provider takes a sign-in, not an API key.");
++        }
+         if (!key || key === "changeme") {
+           return fail(400, "placeholder_key", "That does not look like a real key.");
+         }
+diff --git a/docs/notes/P08/chatgpt-sign-in-ui.md b/docs/notes/P08/chatgpt-sign-in-ui.md
+new file mode 100644
+index 0000000..87f881c
+--- /dev/null
++++ b/docs/notes/P08/chatgpt-sign-in-ui.md
+@@ -0,0 +1,114 @@
++# Task: ChatGPT sign-in in the web dashboard and the desktop app (wave 61 M2, D-16.1282) Phase: 08 Owner: builder M2
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): `web/src/components/OAuthLoginModal.tsx`
++(layout of the device-code card only: code box with a copy button, link to the verification page,
++waiting line, success line, error box), `apps/desktop/src/components/onboarding/providers.tsx` (layout
++of the provider rows and the "connected" tag only), `apps/desktop/src/components/onboarding/flow.tsx`
++(searched for the device-code step's layout). No code, CSS or text taken.
++Evidence: none (no live sign-in; the backend is M1's, coded against its "Contract for UI" in
++`docs/notes/P08/chatgpt-sign-in.md`).
++
++What it does (own words): a person signs Indus in with their ChatGPT plan from the dashboard or the
++desktop app, without a terminal. Both use the device flow of M1's REST contract: Sign in asks the
++backend for a code, the code is shown large with a copy button and a link to OpenAI's verification
++page (new tab / the system browser), and the sign-in session is polled at the interval the backend
++gave (never faster) until it is approved, denied, expired, failed or cancelled; each end is said in
++plain words, and Cancel ends the session on the backend. Once signed in, the account is listed
++(label, plan, when the access expires) with Sign out, which asks first and then deletes the
++sign-in on the backend. No token, refresh token or device code ever reaches the browser or the
++renderer: the UI only sees the user code, the link, statuses and account metadata.
++
++Inputs → outputs:
++- Web Keys › Provider logins (OAuth), the `openai-codex` row (any device-flow row): Sign in →
++  `POST /api/providers/login/start` → code + link + status; `GET /api/providers/login/{id}` every
++  `interval` s; Cancel → `DELETE /api/providers/login/{id}`; approved → the row reloads
++  `GET /api/providers/login/accounts/{provider}` and `/api/model/options`; Sign out → confirm dialog
++  → `DELETE /api/providers/login/accounts/{provider}`.
++- Desktop onboarding, "Other providers": a "Sign in with ChatGPT" row (provider `openai-codex`) runs
++  the same device flow inside the onboarding card, then the model step.
++- Desktop Settings › Providers › Accounts: a ChatGPT card with the account (label, plan, expiry),
++  Sign in (device flow inside the card) and Sign out (asks first). Everything goes through main's
++  existing REST proxy (`desktopBridge().api`); no new IPC channel.
++- Model pickers: `openai-codex` is listed like any provider from `/api/model/options` (web) and the
++  daemon's `model.options` (desktop) once `configured`; no picker change needed.
++
++Files: `apps/web/src/lib/{restTypes,api}.ts`, `apps/web/src/pages/{ModelsPage,EnvPage}.tsx`, new
++`apps/web/src/pages/SignInAccount.tsx`, `apps/web/src/testing/mockApi.ts`,
++`apps/web/src/test/routes.generated.ts` (the two rows M1's generator writes), web tests;
++`apps/desktop/src/onboarding/{flow.ts,Onboarding.tsx,strings.en.ts,onboarding.css}`,
++`apps/desktop/src/settings/pagesB/providers.tsx`, new `apps/desktop/src/settings/pagesB/chatgptAccount.tsx`,
++`apps/desktop/src/settings/stringsB.en.ts`, `apps/desktop/src/settings/pagesB/pagesB.css`, desktop
++tests and one Electron end-to-end case.
++
++Edge cases / failure modes:
++- start refused: 400 `no_device_flow`, 404 `unknown_provider`, 502 `sign_in_unavailable` → the
++  backend's message is shown; nothing is polled.
++- a poll that fails on the wire is not an answer (web keeps asking at the interval; desktop
++  onboarding ends in its error step as before); `interval` 0 or missing → floor of 1 s (web) / 5 s
++  default, 1 s floor (desktop).
++- the card or overlay closes while pending → polling stops and the session is cancelled
++  (desktop; web cancels on Cancel).
++- sign-out refused with 409 `inherited_pool` → the message ("belongs to the default profile") shown,
++  nothing removed.
++- an account with no expiry or no plan → those parts are left out; an expired one says "expired".
++
++Our design differences / decisions:
++- The flow is inline (in the row / the card), not a modal: the Keys row already hosted our device
++  sign-in panel; the reference uses a modal.
++- No browser (PKCE) flow in the UI: OpenAI only redirects to localhost:1455 on the machine that runs
++  `indus` (M1's contract); the terminal command stays on the row.
++- Copy is ours and never speaks as OpenAI ("Sign in with ChatGPT", "your ChatGPT plan").
++
++Tests we will write: web: the openai-codex row (start → code + copy + link noopener, polls at
++`interval`, approved → account with plan and expiry, denied/expired text, Cancel, sign-out with
++confirm, 409 refused), mock routes; desktop: onboarding row under "Other providers" and its flow,
++the Accounts card (signed out → sign in → signed in → sign out with confirm, failure text), flow
++reducer; Electron: the onboarding sign-in through the real REST bridge against the fake backend.
++
++## Decisions for the lead
++- (W61-M2-1) The desktop onboarding lists `openai-codex` as "Sign in with ChatGPT" under "Other
++  providers" (the brief) and not among the always-visible device rows; other device providers keep
++  their place. Change: drop the slug from `SIGN_IN_ROWS` in `onboarding/flow.ts`.
++- (W61-M2-2) The web account view and Sign out apply to every device-flow row (the contract's
++  accounts routes are per provider); today only `openai-codex` has a device flow.
++
++Compare checklist (filled after the rewrite; reopened `web/src/components/OAuthLoginModal.tsx` and
++`apps/desktop/src/components/onboarding/providers.tsx`):
++- [x] code large in a framed box with the copy button beside it (web
++  `apps/web/src/pages/SignInAccount.test.tsx::starts at once, shows the code with copy and link, …`;
++  desktop `apps/desktop/src/settings/pagesB/chatgptAccount.test.tsx::signs in inside the card: …`,
++  onboarding `Onboarding.test.tsx::runs the device flow in the card: …`)
++- [x] link to the verification page opens outside (web `target=_blank rel=noopener noreferrer`;
++  desktop through the bridge's external open; same tests)
++- [x] waiting line with a spinner while pending; success line; failure line with Try again / Close
++  (web `::says %s plainly and offers Try again`; desktop `::a %s sign-in is said plainly, with Try
++  again`, onboarding `::a %s sign-in says so and offers Try again`)
++- [x] polls at the backend's interval, never under 1 s; stops on any end (web `::never polls faster
++  than once a second, …`; desktop timers pinned to `interval * 1000`)
++- [x] Cancel ends the session on the backend (web `::Cancel ends the session …`; desktop
++  `::Cancel ends the session on the backend and stops polling`)
++- [x] a connected tag on a signed-in provider row (onboarding `::shows Connected on the row once
++  signed in`)
++- [x] account with plan and expiry, Sign out asks first, 409 `inherited_pool` shown (web `::lists a
++  signed-in account and signs out after asking`, `::keeps a sign-in that belongs to the default
++  profile …`; desktop `::lists the signed-in account and signs out only after asking`, `::says when
++  the sign-in belongs to the default profile`)
++- [x] the whole onboarding sign-in over main's real REST proxy against the fake backend (Electron:
++  `e2e/core/surfaces.electron.test.ts::first-run onboarding: Sign in with ChatGPT …`)
++- Deliberate differences: inline (row / card) instead of a modal; no countdown of the code's
++  lifetime (the backend answers `expired`); a failed poll on the wire is not an answer (web keeps
++  asking; the desktop card gives up after 10 in a row).
++- Not taken: the reference's other sign-in providers, its free-tier rows, its PKCE paste-the-code
++  flow and its external-CLI flow.
++
++## Status
++
++Done (2026-10-25), uncommitted in the w61m2 worktree. Shared files outside the new ones:
++`apps/web/src/pages/ModelsPage.tsx` (`DeviceLogin`: `autoStart`, code box with copy, status tones,
++Try again, `onApproved`; the Models page keeps "Get a sign-in code"), `apps/web/src/pages/EnvPage.tsx`
++(OAuth row: "Sign in" replaces "Login", account view), `apps/web/src/pages/EnvPage.test.tsx` (the
++"Login" pin now reads "Sign in"), `apps/web/src/testing/mockApi.ts` (contract routes),
++`apps/web/src/test/routes.generated.ts` (the two rows M1's generator writes; identical to M1's
++hunk), `apps/desktop/src/onboarding/*`, `apps/desktop/src/settings/pagesB/providers.tsx`,
++`apps/desktop/src/settings/stringsB.en.ts`, `apps/desktop/src/settings/pagesB/pagesB.css`,
++`apps/desktop/e2e/core/surfaces.electron.test.ts`. Needs M1's backend to work for real.

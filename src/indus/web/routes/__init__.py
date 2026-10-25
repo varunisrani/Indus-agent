@@ -24,6 +24,7 @@ ROUTERS: tuple[str, ...] = (
     "indus.web.routes.daemon:router",
     "indus.web.routes.profiles:router",
     "indus.web.routes.models:router",
+    "indus.web.routes.provider_accounts:router",  # W61-M1 sign-in status and sign-out
     "indus.web.routes.files:router",
     "indus.web.routes.system:router",
     "indus.web.routes.session_import:router",

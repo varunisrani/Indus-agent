@@ -242,8 +242,8 @@ indus auth [OPTIONS] [COMMAND] [ARGS]...
 | [`indus auth reset`](#indus-auth-reset) | Put benched credentials back in rotation (all of PROVIDER's, or one). |
 | [`indus auth priority`](#indus-auth-priority) | Move a credential to PRIORITY (0 = tried first); the others shift. |
 | [`indus auth refresh`](#indus-auth-refresh) | Renew a signed-in credential's tokens and put it back in rotation. |
-| [`indus auth status`](#indus-auth-status) | Summarise PROVIDER: credentials, strategy, sign-in and what would be used next. |
-| [`indus auth logout`](#indus-auth-logout) | Forget everything stored for PROVIDER (credentials and sign-in state). |
+| [`indus auth status`](#indus-auth-status) | Summarise PROVIDER (or every provider with credentials or a sign-in): credentials, strategy, sign-ins and what would be used next. |
+| [`indus auth logout`](#indus-auth-logout) | Forget everything stored for PROVIDER (credentials, sign-in tokens and state). |
 
 ### indus auth add
 
@@ -264,6 +264,7 @@ indus auth add [OPTIONS] PROVIDER
 | `--priority` | INTEGER |  | Place it at this position (0 = tried first). |
 | `--api-key` | TEXT |  | The key (asked for, hidden, if omitted). |
 | `--no-browser` | flag |  | Never open a browser; print the address. |
+| `--device` | flag |  | Sign in with a code approved on another device (for machines without a browser). |
 | `--timeout` | FLOAT | `300.0` | Seconds to wait for sign-in. |
 | `--ca-bundle` | TEXT |  | Trust this CA bundle for sign-in. |
 | `--insecure` | flag |  | Skip TLS certificate checks (unsafe). |
@@ -335,27 +336,32 @@ indus auth refresh [OPTIONS] PROVIDER [TARGET]
 
 ### indus auth status
 
-Summarise PROVIDER: credentials, strategy, sign-in and what would be used next.
+Summarise PROVIDER (or every provider with credentials or a sign-in): credentials,
+strategy, sign-ins and what would be used next.
 
 ```text
-indus auth status [OPTIONS] PROVIDER
+indus auth status [OPTIONS] [PROVIDER]
 ```
 
 | Argument | Required | Count |
 |---|---|---|
-| `PROVIDER` | yes | 1 |
+| `PROVIDER` | no | 1 |
 
 ### indus auth logout
 
-Forget everything stored for PROVIDER (credentials and sign-in state).
+Forget everything stored for PROVIDER (credentials, sign-in tokens and state).
 
 ```text
-indus auth logout [OPTIONS] PROVIDER
+indus auth logout [OPTIONS] [PROVIDER]
 ```
 
 | Argument | Required | Count |
 |---|---|---|
-| `PROVIDER` | yes | 1 |
+| `PROVIDER` | no | 1 |
+
+| Option | Value | Default | What it does |
+|---|---|---|---|
+| `--provider` | TEXT |  | The provider to sign out of. |
 
 ## indus status
 

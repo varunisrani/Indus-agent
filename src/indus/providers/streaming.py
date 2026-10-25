@@ -346,6 +346,10 @@ async def stream_call(
         return default_classify(err, route=route, clock=clock)
 
     epoch = route_epoch()
+    # A provider that only answers streamed requests never gets the one-JSON-reply path.
+    stream_only = bool(getattr(getattr(route, "profile", None), "stream_only", False))
+    if stream_only:
+        flags.streaming = True
     thinking = bool(req.reasoning_effort) if reasoning is None else reasoning
     call = _Call(client, transport, route, clock, on_event)
     first = transport.build_request(route, replace(req, stream=flags.streaming))
@@ -395,7 +399,7 @@ async def stream_call(
             request = transport.build_request(route, replace(req, stream=True))
             continue
         keepalive_only = att.keepalives > 0 and att.content_events == 0
-        if verdict.reason == "stream_unsupported" or keepalive_only:
+        if (verdict.reason == "stream_unsupported" or keepalive_only) and not stream_only:
             log.warning(
                 "%s did not stream (%s); switching this route to non-streaming",
                 _host(route),

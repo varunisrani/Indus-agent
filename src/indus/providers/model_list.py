@@ -30,6 +30,8 @@ LIST_TIMEOUT_SECONDS = 10.0
 ANTHROPIC_VERSION = "2023-06-01"
 # Fields OpenAI-compatible servers use for a model's window (vLLM: max_model_len).
 CONTEXT_FIELDS = ("context_length", "max_model_len", "context_window")
+# ``visibility`` values of catalogue entries a picker must not offer (the ChatGPT Codex backend).
+HIDDEN = frozenset({"hide", "hidden"})
 
 
 @dataclass(frozen=True)
@@ -63,6 +65,8 @@ def request_headers(route: RuntimeRoute) -> dict[str, str]:
         headers["x-api-key"] = route.api_key.reveal()
     else:
         headers["Authorization"] = f"Bearer {route.api_key.reveal()}"
+    if route.profile is not None:
+        headers.update(route.profile.key_headers(route.api_key.reveal()))
     if route.api_mode == "anthropic_messages":
         headers["anthropic-version"] = ANTHROPIC_VERSION
     return headers
@@ -77,7 +81,9 @@ def _context_of(item: dict[str, Any]) -> int | None:
 
 
 def parse_models(payload: object) -> list[ModelInfo]:
-    """Models from ``{"data": [...]}`` or a bare list; entries without a string id are skipped."""
+    """Models from ``{"data": [...]}``, ``{"models": [...]}`` or a bare list; an entry's id is
+    ``id`` (or ``slug``); entries without one, and hidden ones, are skipped. A list whose entries
+    carry ``priority`` is ordered by it."""
     raw: object = payload
     if isinstance(payload, dict):
         body = cast(dict[str, Any], payload)
@@ -86,14 +92,20 @@ def parse_models(payload: object) -> list[ModelInfo]:
         return []
     models: list[ModelInfo] = []
     seen: set[str] = set()
+    ranks: dict[str, float] = {}
     for entry in cast(list[object], raw):
         if not isinstance(entry, dict):
             continue
         item = cast(dict[str, Any], entry)
-        model_id = item.get("id")
+        model_id = item.get("id", item.get("slug"))
         if not isinstance(model_id, str) or not model_id.strip() or model_id in seen:
             continue
+        if str(item.get("visibility") or "").strip().lower() in HIDDEN:
+            continue
         seen.add(model_id)
+        priority = item.get("priority")
+        if isinstance(priority, int | float) and not isinstance(priority, bool):
+            ranks[model_id] = float(priority)
         owner = item.get("owned_by")
         models.append(
             ModelInfo(
@@ -102,6 +114,8 @@ def parse_models(payload: object) -> list[ModelInfo]:
                 owned_by=owner if isinstance(owner, str) else None,
             )
         )
+    if ranks:
+        models.sort(key=lambda m: (ranks.get(m.id, 1e9), m.id))
     return models
 
 
@@ -167,7 +181,8 @@ async def list_models(
     cache_ttl: float | None = None,
     refresh: bool = False,
 ) -> list[ModelInfo]:
-    """The models ``route``'s endpoint offers; ``[]`` on any failure (reason logged).
+    """The models ``route``'s endpoint offers; on any failure (reason logged) the profile's
+    documented ``default_models`` (not cached), else ``[]``.
 
     With a ``scope`` the list is cached in ``<home>/cache/model_lists.json`` per base URL for
     ``cache_ttl`` seconds (default ``model_catalog.ttl_minutes``) of the scope's clock time;
@@ -182,22 +197,25 @@ async def list_models(
         if cached is not None:
             return cached
     url = models_url(route)
+    fallback = [ModelInfo(id=m) for m in (route.profile.default_models if route.profile else ())]
     try:
         response = await client.get(
             url, headers=request_headers(route), timeout=LIST_TIMEOUT_SECONDS
         )
     except httpx.HTTPError as exc:
         log.warning("could not list models at %s: %s", url, type(exc).__name__)
-        return []
+        return fallback
     if response.status_code >= 400:
         log.warning("could not list models at %s: HTTP %s", url, response.status_code)
-        return []
+        return fallback
     try:
         payload = response.json()
     except (ValueError, UnicodeDecodeError):
         log.warning("could not list models at %s: the answer is not JSON", url)
-        return []
+        return fallback
     models = parse_models(payload)
+    if not models and fallback:
+        return fallback
     if scope is not None and ttl > 0:
         _store(scope, base, models)
     return models

@@ -1,8 +1,10 @@
 """``indus auth``: credential pools and provider sign-in.
 
 ``add`` stores an API key (asked for with a hidden prompt when not given) or runs the provider's
-documented sign-in flow; ``list``, ``remove``, ``reset``, ``priority``, ``refresh``, ``status`` and
-``logout`` read and edit the pools in ``auth.json``. Secrets go to the profile's SecretStore,
+sign-in flow (a browser on this machine, or ``--device`` for a code to approve elsewhere; a
+provider without API keys, such as ``openai-codex``, signs in by default); ``list``, ``remove``,
+``reset``, ``priority``, ``refresh``, ``status`` and ``logout`` read and edit the pools in
+``auth.json``. Secrets go to the profile's SecretStore,
 never to ``auth.json`` or the screen. Bare ``indus auth`` opens a small menu in a terminal and
 prints the pools otherwise. There is no ``indus login`` (D-16.80): the unknown-command answer
 points here.
@@ -25,11 +27,12 @@ from indus.cli.args import CliState
 from indus.cli.lazy import LazyGroup
 from indus.cli.prompts import Cancelled, Interactive, NonInteractive
 from indus.foundation import config as config_mod
+from indus.foundation import fsio
 from indus.foundation.config import keys as config_keys
 from indus.foundation.errors import AuthError, ConfigError, IndusError, SecretStoreError
 from indus.foundation.scope import Scope
 from indus.foundation.secrets import open_secret_store
-from indus.providers.auth import browser, device_code, pkce
+from indus.providers.auth import browser, chatgpt, device_code, device_signin, pkce, renew
 from indus.providers.auth.flows import SignInFlows, flows_for
 from indus.providers.auth.pool_model import (
     STRATEGIES,
@@ -307,12 +310,13 @@ class _FlowOptions:
     timeout: float
     ca_bundle: str | None
     insecure: bool
+    device: bool = False
 
 
 async def _sign_in(env: _Env, flows: SignInFlows, options: _FlowOptions) -> pkce.PkceOutcome:
     verify = device_code.tls_verify(options.ca_bundle, options.insecure, warn=_warn)
     async with device_code.make_client(verify) as client:
-        if flows.pkce is not None:
+        if flows.pkce is not None and not (options.device and flows.device is not None):
             return await pkce.run_pkce_login(
                 flows.pkce,
                 clock=env.scope.clock,
@@ -328,7 +332,7 @@ async def _sign_in(env: _Env, flows: SignInFlows, options: _FlowOptions) -> pkce
             if browser.should_open(env.scope.env, no_browser=options.no_browser)
             else None
         )
-        tokens = await device_code.run_device_login(
+        tokens = await device_signin.run_login(
             flows.device, clock=env.scope.clock, say=_say, open_url=opener, client=client
         )
         return pkce.PkceOutcome(tokens=tokens, via_device=True)
@@ -340,17 +344,7 @@ def run_sign_in(env: _Env, flows: SignInFlows, options: _FlowOptions) -> pkce.Pk
 
 
 def _refresh_spec(flows: SignInFlows) -> device_code.DeviceFlowSpec | None:
-    if flows.device is not None:
-        return flows.device
-    if flows.pkce is not None and flows.pkce.exchange == "token":
-        return device_code.DeviceFlowSpec(
-            provider=flows.provider,
-            device_authorization_url="",
-            token_url=flows.pkce.exchange_url,
-            client_id=flows.pkce.client_id,
-            scope=flows.pkce.scope,
-        )
-    return None
+    return device_signin.refresh_spec_of(flows)
 
 
 def run_refresh(
@@ -504,6 +498,11 @@ def _add_signed_in(
         if not doc.get("active_provider"):
             doc["active_provider"] = profile.name
     _say(f'Signed in. Added {profile.name} credential #{index} ("{saved.label}").')
+    if outcome.tokens is not None and profile.signs_in:
+        plan = chatgpt.plan(outcome.tokens.access_token)
+        if plan:
+            _say(f"Account plan: {plan}.")
+        _say(f"Use it with `indus model` (provider {profile.name}).")
 
 
 @auth_group.command("add")
@@ -522,6 +521,11 @@ def _add_signed_in(
 @click.option("--api-key", "api_key", default=None, help="The key (asked for, hidden, if omitted).")
 @click.option("--no-browser", is_flag=True, help="Never open a browser; print the address.")
 @click.option(
+    "--device",
+    is_flag=True,
+    help="Sign in with a code approved on another device (for machines without a browser).",
+)
+@click.option(
     "--timeout", type=float, default=300.0, show_default=True, help="Seconds to wait for sign-in."
 )
 @click.option("--ca-bundle", default=None, metavar="PEM", help="Trust this CA bundle for sign-in.")
@@ -535,6 +539,7 @@ def add_command(
     priority: int | None,
     api_key: str | None,
     no_browser: bool,
+    device: bool,
     timeout: float,
     ca_bundle: str | None,
     insecure: bool,
@@ -546,10 +551,17 @@ def add_command(
         _no_edit_on_inherited(env, profile)
         flows = flows_for(profile.name)
         wanted = (kind or "").lower().replace("-", "_") or (
-            "oauth" if flows.oauth_default else "api_key"
+            "oauth" if flows.oauth_default or device else "api_key"
         )
+        if profile.signs_in and (api_key or wanted == "api_key"):
+            _fail(
+                f"{profile.name} takes no API key; it signs in.",
+                f"indus auth add {profile.name}  (or --device on a machine without a browser)",
+            )
         if wanted == "oauth" and api_key:
             _fail("--api-key goes with --type api-key, not oauth.")
+        if device and wanted != "oauth":
+            _fail("--device goes with signing in (--type oauth), not with an API key.")
         if wanted == "api_key":
             _add_api_key(env, profile, key=api_key, label=label, priority=priority)
             return
@@ -559,7 +571,9 @@ def add_command(
                 "instead.",
                 f"indus auth add {profile.name} --api-key KEY",
             )
-        options = _FlowOptions(no_browser, timeout, ca_bundle, insecure)
+        if device and flows.device is None:
+            _fail(f"{profile.name} has no device sign-in; drop --device to use the browser.")
+        options = _FlowOptions(no_browser, timeout, ca_bundle, insecure, device)
         try:
             _add_signed_in(env, profile, flows, options, label, priority)
         except AuthError as exc:
@@ -718,8 +732,16 @@ def refresh_command(ctx: click.Context, provider: str, target: str | None) -> No
                 f"indus auth add {profile.name} --type oauth",
             )
         try:
-            tokens = device_code.TokenSet.from_secret(stored)
-            fresh = run_refresh(env, spec, tokens)
+            with fsio.FileLock(
+                env.scope.home / renew.LOCK_FILE, timeout=renew.LOCK_TIMEOUT_SECONDS
+            ):
+                tokens = device_code.TokenSet.from_secret(
+                    env.secrets.get(secret_name(profile.name, entry.id)) or stored
+                )
+                fresh = run_refresh(env, spec, tokens)
+                env.secrets.set(secret_name(profile.name, entry.id), fresh.to_secret())
+        except fsio.LockTimeout:
+            _fail("Another indus process is renewing this sign-in; try again in a moment.")
         except ValueError:
             _fail(
                 "The stored sign-in is damaged; sign in again.",
@@ -729,7 +751,6 @@ def refresh_command(ctx: click.Context, provider: str, target: str | None) -> No
             _fail(f"{exc}.", f"indus auth add {profile.name} --type oauth")
         except AuthError as exc:
             _fail(f"Refresh failed: {exc}")
-        env.secrets.set(secret_name(profile.name, entry.id), fresh.to_secret())
         expires = fresh.expires_at.isoformat() if fresh.expires_at else None
 
         def change(pool: Pool, _doc: dict[str, Any]) -> None:
@@ -744,49 +765,109 @@ def refresh_command(ctx: click.Context, provider: str, target: str | None) -> No
         )
 
 
+def _sign_in_lines(env: _Env, profile: ProviderProfile, pool: Pool, now: datetime) -> None:
+    """One line per signed-in credential: how long its token lasts and the account plan."""
+    for entry in pool.entries:
+        if entry.auth_type != "oauth":
+            continue
+        try:
+            stored = env.secrets.get(secret_name(profile.name, entry.id))
+        except SecretStoreError:
+            stored = None
+        tokens: device_code.TokenSet | None = None
+        if stored:
+            try:
+                tokens = device_code.TokenSet.from_secret(stored)
+            except ValueError:
+                tokens = None
+        if tokens is None:
+            state = "stored tokens missing or damaged; sign in again"
+        elif tokens.expires_at is None:
+            state = "token without an expiry"
+        elif tokens.expires_at <= now:
+            state = (
+                "token expired; renewed on next use"
+                if tokens.refresh_token
+                else "token expired; sign in again"
+            )
+        else:
+            state = f"token valid for {_left((tokens.expires_at - now).total_seconds())}"
+        plan = chatgpt.plan(tokens.access_token) if tokens is not None else None
+        extra = f", plan {plan}" if plan else ""
+        _say(f'  sign-in "{entry.label}" ({entry.source}): {state}{extra}')
+
+
+def _status(env: _Env, profile: ProviderProfile) -> None:
+    now = env.scope.clock.now()
+    pool, inherited = _pool(env, profile)
+    strategy = _strategy(env, profile.name)
+    state, state_inherited = env.store.provider_state(profile.name)
+    active = env.store.read().get("active_provider")
+    flows = flows_for(profile.name)
+    _say(f"{profile.label} ({profile.name})")
+    count = len(pool)
+    origin = " (from the default profile)" if inherited else ""
+    _say(f"  credentials: {count}{origin}, strategy {strategy}")
+    nxt = pool.peek(strategy, now)
+    if nxt is not None:
+        _say(f'  next to use: "{nxt.label}" ({nxt.auth_type}, {nxt.source})')
+    elif count:
+        _say("  next to use: none (every credential is benched)")
+    if state is not None:
+        since = state.get("signed_in_at")
+        where = " (default profile)" if state_inherited else ""
+        _say(f"  signed in{where}: {since or 'yes'}")
+    _sign_in_lines(env, profile, pool, now)
+    _say(f"  active sign-in provider: {'yes' if active == profile.name else 'no'}")
+    kinds = [k for k, v in (("browser (PKCE)", flows.pkce), ("device code", flows.device)) if v]
+    _say(f"  sign-in flows: {', '.join(kinds) if kinds else 'none (API keys only)'}")
+    configured = str(_config_get(env.scope, "model.provider") or "")
+    if configured:
+        _say(f"  model.provider: {configured}")
+
+
 @auth_group.command("status")
-@click.argument("provider")
+@click.argument("provider", required=False)
 @click.pass_context
-def status_command(ctx: click.Context, provider: str) -> None:
-    """Summarise PROVIDER: credentials, strategy, sign-in and what would be used next."""
+def status_command(ctx: click.Context, provider: str | None) -> None:
+    """Summarise PROVIDER (or every provider with credentials or a sign-in): credentials,
+    strategy, sign-ins and what would be used next."""
     env = _env_from(ctx)
     with _guarded():
-        profile = _provider(env, provider)
-        now = env.scope.clock.now()
-        pool, inherited = _pool(env, profile)
-        strategy = _strategy(env, profile.name)
-        state, state_inherited = env.store.provider_state(profile.name)
-        active = env.store.read().get("active_provider")
-        flows = flows_for(profile.name)
-        _say(f"{profile.label} ({profile.name})")
-        count = len(pool)
-        origin = " (from the default profile)" if inherited else ""
-        _say(f"  credentials: {count}{origin}, strategy {strategy}")
-        nxt = pool.peek(strategy, now)
-        if nxt is not None:
-            _say(f'  next to use: "{nxt.label}" ({nxt.auth_type}, {nxt.source})')
-        elif count:
-            _say("  next to use: none (every credential is benched)")
-        if state is not None:
-            since = state.get("signed_in_at")
-            where = " (default profile)" if state_inherited else ""
-            _say(f"  signed in{where}: {since or 'yes'}")
-        _say(f"  active sign-in provider: {'yes' if active == profile.name else 'no'}")
-        kinds = [k for k, v in (("browser (PKCE)", flows.pkce), ("device code", flows.device)) if v]
-        _say(f"  sign-in flows: {', '.join(kinds) if kinds else 'none (API keys only)'}")
-        configured = str(_config_get(env.scope, "model.provider") or "")
-        if configured:
-            _say(f"  model.provider: {configured}")
+        if provider is not None:
+            _status(env, _provider(env, provider))
+            return
+        names = set(env.store.signed_in())
+        for doc in (env.store.read(), env.store.read_fallback()):
+            pools = doc.get("pool")
+            if isinstance(pools, dict):
+                names.update(str(k) for k, v in cast(dict[str, Any], pools).items() if v)
+        shown = 0
+        for profile in env.registry.list_providers():
+            if profile.name not in names and not env.env_rows(profile):
+                continue
+            if shown:
+                _say("")
+            _status(env, profile)
+            shown += 1
+        if not shown:
+            _say("No credentials or sign-ins yet. Add one with `indus auth add PROVIDER`.")
 
 
 @auth_group.command("logout")
-@click.argument("provider")
+@click.argument("provider", required=False)
+@click.option("--provider", "provider_option", default=None, help="The provider to sign out of.")
 @click.pass_context
-def logout_command(ctx: click.Context, provider: str) -> None:
-    """Forget everything stored for PROVIDER (credentials and sign-in state)."""
+def logout_command(ctx: click.Context, provider: str | None, provider_option: str | None) -> None:
+    """Forget everything stored for PROVIDER (credentials, sign-in tokens and state)."""
+    if provider and provider_option and provider.lower() != provider_option.lower():
+        raise click.UsageError("name the provider once (PROVIDER or --provider)")
+    chosen = provider or provider_option
+    if not chosen:
+        raise click.UsageError("say which provider: indus auth logout --provider NAME")
     env = _env_from(ctx)
     with _guarded():
-        profile = _provider(env, provider)
+        profile = _provider(env, chosen)
         removed: list[PoolEntry] = []
 
         def change(pool: Pool, doc: dict[str, Any]) -> None:

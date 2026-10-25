@@ -29,7 +29,7 @@ import {
 import { desktopBridge } from "../app/bridge.ts";
 import { Loader } from "../app/Loader.tsx";
 import { classifyFailure } from "../chat/failure.ts";
-import { useT } from "../i18n/index.tsx";
+import { type MessageKey, useT } from "../i18n/index.tsx";
 import type { SaveKey } from "../settings/context.tsx";
 import { SecretInput } from "../settings/customPages.tsx";
 import { bridgeRest, type RestLike, rest } from "../settings/settingsApi.ts";
@@ -40,11 +40,25 @@ import {
   INITIAL_FLOW,
   isShown,
   keyProviders,
+  otherSignIns,
   type ProviderOption,
   reduce,
 } from "./flow.ts";
 import { onOnboardingRequest } from "./requests.ts";
 import "./onboarding.css";
+
+/** Titles of the "Other providers" sign-in rows, by provider slug (W61-M2). */
+const SIGN_IN_TITLES: Readonly<Record<string, MessageKey>> = {
+  "openai-codex": "onboarding.chatgpt.option",
+};
+
+/** What the error step says when a device sign-in ended without a message of its own. */
+const DEVICE_END: Readonly<Record<string, MessageKey>> = {
+  denied: "onboarding.device.denied",
+  expired: "onboarding.device.expired",
+  failed: "onboarding.device.failed",
+  cancelled: "onboarding.device.cancelled",
+};
 
 /** Loopback URL the local-runtime form starts with (a common local server port). */
 export const LOCAL_ENDPOINT_HINT = "http://127.0.0.1:11434/v1";
@@ -385,7 +399,13 @@ export function Onboarding(props: OnboardingProps) {
         <div className="onboarding-error" role="alert">
           <p className="onboarding-error-line">
             <CircleAlert aria-hidden="true" size={14} />
-            <span>{step.message || t("onboarding.error.default")}</span>
+            <span>
+              {step.message ||
+                t(
+                  (step.status === undefined ? undefined : DEVICE_END[step.status]) ??
+                    "onboarding.error.default",
+                )}
+            </span>
           </p>
           <div className="onboarding-actions">
             <button
@@ -490,6 +510,8 @@ function ProviderRow(props: {
   title: string;
   hint: string;
   featured?: boolean;
+  /** A short tag after the title ("Connected"). */
+  tag?: string;
   /** Test hook, spelled as the attribute so the parity scenarios find it in the source. */
   "data-ui"?: string;
   onClick: () => void;
@@ -504,7 +526,15 @@ function ProviderRow(props: {
         onClick={props.onClick}
       >
         <span className="onboarding-option-text">
-          <span className="onboarding-option-title">{props.title}</span>
+          <span className="onboarding-option-title">
+            {props.title}
+            {props.tag !== undefined && (
+              <span className="onboarding-tag">
+                <Check aria-hidden="true" size={11} />
+                {props.tag}
+              </span>
+            )}
+          </span>
           {props.hint !== "" && <span className="onboarding-option-hint">{props.hint}</span>}
         </span>
         <ChevronRight aria-hidden="true" size={16} className="onboarding-option-chevron" />
@@ -524,6 +554,7 @@ function Picker(props: {
   const t = useT();
   const [more, setMore] = useState(false);
   const device = deviceProviders(props.providers);
+  const signIns = otherSignIns(props.providers);
   const keys = keyProviders(props.providers);
   const hintOf = (provider: ProviderOption, fallback: string) =>
     provider.description !== undefined && provider.description !== ""
@@ -546,6 +577,24 @@ function Picker(props: {
           hint={t("onboarding.local.optionHint")}
           onClick={() => props.onEndpoint("local")}
         />
+        {more &&
+          signIns.map((provider) => {
+            const title = SIGN_IN_TITLES[provider.name];
+            return (
+              <ProviderRow
+                key={provider.name}
+                title={title === undefined ? provider.label : t(title)}
+                hint={
+                  provider.name === "openai-codex"
+                    ? t("onboarding.chatgpt.hint")
+                    : hintOf(provider, t("onboarding.device.hint"))
+                }
+                data-ui={`onboarding-signin-${provider.name}`}
+                {...(provider.configured ? { tag: t("onboarding.connected") } : {})}
+                onClick={() => props.onDevice(provider)}
+              />
+            );
+          })}
         {more &&
           keys.map((provider) => (
             <ProviderRow
@@ -604,11 +653,16 @@ function DeviceCode(props: {
 }) {
   const t = useT();
   const [copied, setCopied] = useState(false);
+  const chatgpt = props.provider.name === "openai-codex";
   return (
-    <div className="onboarding-device">
-      <h3 className="onboarding-step-title">{t("onboarding.device.title")}</h3>
+    <div className="onboarding-device" data-provider={props.provider.name}>
+      <h3 className="onboarding-step-title">
+        {chatgpt ? t("onboarding.chatgpt.title") : t("onboarding.device.title")}
+      </h3>
       <p className="onboarding-muted">
-        {t("onboarding.device.instructions", { provider: props.provider.label })}
+        {chatgpt
+          ? t("onboarding.chatgpt.instructions")
+          : t("onboarding.device.instructions", { provider: props.provider.label })}
       </p>
       <output className="onboarding-code" aria-label={t("onboarding.device.code")}>
         {props.code}
@@ -642,6 +696,7 @@ function DeviceCode(props: {
           {t("onboarding.device.open")}
         </button>
       </div>
+      <p className="onboarding-url">{props.url}</p>
       <p className="onboarding-status" role="status">
         <LoaderCircle aria-hidden="true" size={12} className="onboarding-spin" />
         <span>{t("onboarding.device.waiting")}</span>

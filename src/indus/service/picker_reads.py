@@ -207,6 +207,17 @@ def _key_stored(scope: Scope, profile: ProviderProfile) -> bool:
     return False
 
 
+def _signed_in(scope: Scope, profile: ProviderProfile) -> bool:
+    """A sign-in-only provider counts as usable once ``indus auth add`` stored a sign-in."""
+    from indus.providers.auth.store import AuthStore
+
+    try:
+        return profile.name in AuthStore(scope.home, env=scope.env).signed_in()
+    except Exception:
+        log.debug("auth store unreadable", exc_info=True)
+        return False
+
+
 def provider_option(scope: Scope, profile: ProviderProfile, current: str) -> ProviderOption:
     """One picker row: the provider, whether it can be used now, whether it is current."""
     return ProviderOption(
@@ -215,7 +226,8 @@ def provider_option(scope: Scope, profile: ProviderProfile, current: str) -> Pro
         auth_type=profile.auth_type,
         # A provider whose key is optional (local servers, custom endpoints) works without one.
         authenticated=profile.auth_type in ("none", "api_key_optional")
-        or _key_stored(scope, profile),
+        or _key_stored(scope, profile)
+        or (profile.signs_in and _signed_in(scope, profile)),
         current=profile.name == current,
     )
 

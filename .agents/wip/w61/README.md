@@ -11,3 +11,11 @@
 - Lead review: loopback bind 127.0.0.1, state check, no token in responses/logs, no credential literals. On main + M1:
   one import union in test_profiles_models_routes.py; ruff clean; sign-in + docs tests 113 passed; route list fresh.
 - Owner item: 4 early builder commands ran without the ENV RULE — uv may have written cache under the real ~/.cache.
+
+## w61m2.patch — "Sign in with ChatGPT" UI (M2) — PUSHED with M1 on the owner's request
+- Builder: web vitest 43 / 413; desktop vitest 189 / 1900; Electron 44 / 2 skipped; tsc, check-ipc, tooling.checks ok;
+  its lint error fixed in-tree; web Playwright run was still in progress.
+- Lead on main + M1 + M2: one import union in apps/web/src/pages/ModelsPage.tsx (L1's Layers + M2's icons); biome 0
+  errors, tsc web + desktop, check-ipc, bridge types, ruff, route list, ModelsPage + EnvPage tests 25 passed,
+  tooling.checks ok. NOT run on the combined tree (owner said "just push, I will do the rest"): full pytest, perf,
+  full vitest, Electron lane, web Playwright.

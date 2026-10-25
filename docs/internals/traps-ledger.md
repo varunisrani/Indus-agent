@@ -95,7 +95,8 @@ Checked by `python -m tooling.checks traps`.
   - `tests/unit/providers/test_profile.py::test_foreign_user_agent_refused`
   - `tests/unit/providers/test_profile.py::test_foreign_product_token_in_any_header_refused`
   - `tests/unit/providers/test_http.py::test_identity_headers_only_ours`
-  - `tests/unit/providers/test_bundled.py::test_no_oauth_or_portal_routes`
+  - `tests/unit/providers/test_bundled.py::test_the_only_sign_in_route_is_the_owners_chatgpt_one`
+  - `tests/unit/providers/test_chatgpt_backend.py::test_request_is_streamed_unstored_and_carries_the_account_header`
   - `tests/unit/providers/transports/test_anthropic.py::test_no_header_names_another_product`
   - `tests/unit/providers/transports/test_chat_completions.py::test_no_identity_headers_besides_ours`
   - `tests/unit/providers/auth/test_pkce.py::test_only_documented_flows_are_registered`

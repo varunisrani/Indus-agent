@@ -108,6 +108,8 @@ export const GENERATED_ROUTES: readonly GeneratedRoute[] = [
   { method: "PUT", path: "/api/profiles/{name}/model", scoped: false },
   { method: "GET", path: "/api/profiles/{name}/persona", scoped: false },
   { method: "PUT", path: "/api/profiles/{name}/persona", scoped: false },
+  { method: "DELETE", path: "/api/providers/login/accounts/{provider}", scoped: true },
+  { method: "GET", path: "/api/providers/login/accounts/{provider}", scoped: true },
   { method: "POST", path: "/api/providers/login/start", scoped: true },
   { method: "DELETE", path: "/api/providers/login/{session_id}", scoped: true },
   { method: "GET", path: "/api/providers/login/{session_id}", scoped: true },

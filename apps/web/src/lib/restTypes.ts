@@ -301,6 +301,36 @@ export interface LoginStarted extends LoginSessionInfo {
   interval: number;
 }
 
+/** One signed-in credential of a provider (`GET /api/providers/login/accounts/{provider}`).
+ * Metadata only: no answer ever carries a token. */
+export interface SignInAccount {
+  id: string;
+  label: string;
+  source: string;
+  status: string;
+  /** ISO time the access token runs out (it is renewed on the next use), or null. */
+  expires_at: string | null;
+  expired: boolean;
+  /** The subscription plan named in the sign-in (e.g. "plus"), or null. */
+  plan: string | null;
+}
+
+export interface ProviderSignIns {
+  provider: string;
+  label: string;
+  signed_in: boolean;
+  signed_in_at: string | null;
+  flows: { browser: boolean; device: boolean };
+  accounts: SignInAccount[];
+}
+
+/** `DELETE /api/providers/login/accounts/{provider}` (sign out). */
+export interface SignOutResult {
+  provider: string;
+  removed: number;
+  signed_in: false;
+}
+
 // -- system -----------------------------------------------------------------------------------
 
 export interface HostStats {

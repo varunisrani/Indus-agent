@@ -24,6 +24,7 @@ from __future__ import annotations
 import base64
 import errno
 import hashlib
+import hmac
 import logging
 import secrets
 import threading
@@ -37,15 +38,14 @@ import httpx
 
 from indus.foundation.clock import Clock
 from indus.foundation.errors import AuthError
-from indus.providers.auth import browser
+from indus.providers.auth import browser, device_signin
 from indus.providers.auth.device_code import (
     DeviceFlowError,
-    DeviceFlowSpec,
     OpenUrl,
     Say,
     TokenSet,
-    run_device_login,
 )
+from indus.providers.auth.device_signin import DeviceSpec
 
 log = logging.getLogger(__name__)
 
@@ -57,6 +57,8 @@ WAIT_POLL_SECONDS = 0.1
 VERIFIER_BYTES = 48  # 64 base64url characters, inside RFC 7636's 43..128
 
 Exchange = Literal["key_mint", "token"]
+# Names a redirect URI may use for this machine's loopback listener.
+_LOOPBACK_NAMES = frozenset({LOOPBACK_HOST, "localhost"})
 
 
 class PkceError(AuthError):
@@ -115,8 +117,12 @@ class PkceFlowSpec:
     scope: str = ""
     fixed_port: int | None = None
     extra_params: Mapping[str, str] = field(default_factory=dict[str, str])
-    fallback_device: DeviceFlowSpec | None = None
+    fallback_device: DeviceSpec | None = None
     doc_url: str = ""
+    # How the redirect URI spells the loopback host and path. A client registered for
+    # ``http://localhost:<port>/<path>`` needs that exact string; the listener binds 127.0.0.1.
+    redirect_host: str = LOOPBACK_HOST
+    callback_path: str = CALLBACK_PATH
 
 
 @dataclass(frozen=True)
@@ -154,7 +160,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._reply(404, "Not found.")
             return
         params = {k: v[0] for k, v in parse_qs(parts.query).items() if v}
-        if params.get("state") != owner.state:
+        if not owner.state_matches(params.get("state")):
             if params.get("error") and "code" not in params:
                 # Some servers drop ``state`` on a refusal; a refusal carries nothing to steal.
                 owner.finish(error=params["error"], description=params.get("error_description"))
@@ -200,9 +206,15 @@ class LoopbackServer:
     """A one-shot HTTP listener on 127.0.0.1 for the authorization redirect."""
 
     def __init__(
-        self, *, port: int = 0, path: str = CALLBACK_PATH, state: str | None = None
+        self,
+        *,
+        port: int = 0,
+        path: str = CALLBACK_PATH,
+        state: str | None = None,
+        redirect_host: str = LOOPBACK_HOST,
     ) -> None:
         self.path = path
+        self.redirect_host = redirect_host if redirect_host in _LOOPBACK_NAMES else LOOPBACK_HOST
         self.state = state or make_state()
         self.result = CallbackResult()
         self._done = threading.Event()
@@ -229,7 +241,7 @@ class LoopbackServer:
 
     @property
     def redirect_uri(self) -> str:
-        return f"http://{LOOPBACK_HOST}:{self.port}{self.path}"
+        return f"http://{self.redirect_host}:{self.port}{self.path}"
 
     @property
     def done(self) -> bool:
@@ -251,6 +263,12 @@ class LoopbackServer:
             self.result.error = error
             self.result.error_description = description
             self._done.set()
+
+    def state_matches(self, state: str | None) -> bool:
+        """Constant-time comparison with the ``state`` this listener waits for."""
+        return state is not None and hmac.compare_digest(
+            state.encode("utf-8"), self.state.encode("utf-8")
+        )
 
     def reject(self) -> None:
         with self._lock:
@@ -375,7 +393,9 @@ async def run_pkce_login(
 ) -> PkceOutcome:
     """Run the browser sign-in; ``open_url`` None never opens anything (tests, ``--no-browser``)."""
     try:
-        server = LoopbackServer(port=spec.fixed_port or 0)
+        server = LoopbackServer(
+            port=spec.fixed_port or 0, path=spec.callback_path, redirect_host=spec.redirect_host
+        )
     except CallbackPortBusy:
         if spec.fallback_device is None:
             raise
@@ -385,7 +405,7 @@ async def run_pkce_login(
             if open_url is not None and browser.should_open(env, no_browser=no_browser)
             else None
         )
-        tokens = await run_device_login(
+        tokens = await device_signin.run_login(
             spec.fallback_device, clock=clock, say=say, open_url=opener, client=client
         )
         return PkceOutcome(tokens=tokens, via_device=True)

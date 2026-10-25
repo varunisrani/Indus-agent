@@ -1,15 +1,19 @@
-"""Which providers have a documented sign-in flow, and which one ``indus auth add`` uses.
+"""Which providers have a sign-in flow, and which one ``indus auth add`` uses.
 
-Only flows a provider publishes for third-party programs are listed; nothing here borrows
-another product's client id, redirect or identity (R01.12, P2). Each row cites the page it was
-checked against.
+Flows a provider publishes for third-party programs are listed with the page they were checked
+against. One row is the owner's explicit exception (D-16.1282, 2026-10-25): ``openai-codex`` signs
+in with a ChatGPT account through the public client of OpenAI's open-source Codex CLI (facts and
+citations in ``chatgpt_facts``). No other row borrows another product's client id or redirect,
+and no row ever reads another program's saved login (R01.12, P2).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from indus.providers.auth.device_code import DeviceFlowSpec
+from indus.providers.auth import chatgpt_facts
+from indus.providers.auth.chatgpt import ChatGptDeviceSpec
+from indus.providers.auth.device_signin import DeviceSpec
 from indus.providers.auth.pkce import PkceFlowSpec
 
 
@@ -17,8 +21,8 @@ from indus.providers.auth.pkce import PkceFlowSpec
 class SignInFlows:
     provider: str
     pkce: PkceFlowSpec | None = None
-    device: DeviceFlowSpec | None = None
-    # True only when signing in should be the default type for ``auth add`` (no provider today).
+    device: DeviceSpec | None = None
+    # True when signing in is the default type for ``auth add`` (a provider without API keys).
     oauth_default: bool = False
 
     @property
@@ -41,6 +45,27 @@ FLOWS: dict[str, SignInFlows] = {
             extra_params={"key_label": "Indus Agent"},
             doc_url="https://openrouter.ai/docs/guides/overview/auth/oauth",
         ),
+    ),
+    # D-16.1282: ChatGPT sign-in. Browser (authorization code + PKCE on the client's registered
+    # loopback redirect) by default; the device code when asked for, or when port 1455 is busy.
+    chatgpt_facts.PROVIDER: SignInFlows(
+        provider=chatgpt_facts.PROVIDER,
+        pkce=PkceFlowSpec(
+            provider=chatgpt_facts.PROVIDER,
+            authorize_url=chatgpt_facts.AUTHORIZE_URL,
+            exchange_url=chatgpt_facts.TOKEN_URL,
+            exchange="token",
+            client_id=chatgpt_facts.CLIENT_ID,
+            scope=chatgpt_facts.SCOPE,
+            fixed_port=chatgpt_facts.CALLBACK_PORT,
+            extra_params=chatgpt_facts.AUTHORIZE_EXTRA,
+            fallback_device=ChatGptDeviceSpec(),
+            doc_url="https://github.com/openai/codex (codex-rs/login/src/server.rs)",
+            redirect_host=chatgpt_facts.CALLBACK_HOST,
+            callback_path=chatgpt_facts.CALLBACK_PATH,
+        ),
+        device=ChatGptDeviceSpec(),
+        oauth_default=True,
     ),
 }
 # fmt: on

@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  deviceProviders,
   type FlowEvent,
   type FlowState,
   INITIAL_FLOW,
   isShown,
   keyProviders,
+  otherSignIns,
   type ProviderOption,
   reduce,
 } from "./flow.ts";
@@ -286,5 +288,42 @@ describe("onboarding flow", () => {
 
   it("the key catalogue is every api_key provider except custom-family endpoints", () => {
     expect(keyProviders([KEYED, DEVICE, LOCAL]).map((p) => p.name)).toEqual(["openrouter"]);
+  });
+});
+
+describe("the ChatGPT sign-in row (W61-M2)", () => {
+  const CHATGPT: ProviderOption = {
+    ...DEVICE,
+    name: "openai-codex",
+    label: "OpenAI (ChatGPT sign-in)",
+  };
+
+  it("is listed under Other providers, not among the visible device rows", () => {
+    expect(deviceProviders([DEVICE, CHATGPT, KEYED]).map((p) => p.name)).toEqual(["acme"]);
+    expect(otherSignIns([DEVICE, CHATGPT, KEYED]).map((p) => p.name)).toEqual(["openai-codex"]);
+    expect(otherSignIns([{ ...CHATGPT, device_login: false }])).toEqual([]);
+  });
+
+  it("an ended sign-in keeps its status for the error step", () => {
+    let state: FlowState = INITIAL_FLOW;
+    const events: FlowEvent[] = [
+      { type: "options-loaded", providers: [CHATGPT], currentModel: null },
+      { type: "pick-device", provider: CHATGPT },
+      {
+        type: "device-started",
+        sessionId: "s",
+        userCode: "c",
+        verificationUrl: "u",
+        intervalS: 5,
+      },
+      { type: "device-status", status: "expired", message: "" },
+    ];
+    for (const event of events) state = reduce(state, event);
+    expect(state.step).toEqual({
+      kind: "error",
+      provider: CHATGPT,
+      message: "",
+      status: "expired",
+    });
   });
 });

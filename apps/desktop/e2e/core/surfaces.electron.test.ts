@@ -1,8 +1,8 @@
 // P20-40 ambient surfaces (fake backend): the sidebar's pop-out opens the HUD window with the
 // conversation, the global shortcuts report their registration, the tray with and without a
 // StatusNotifier host (a private D-Bus session bus and `testing/fakeTrayWatcher.py`), the update
-// check against a loopback releases feed, and first-run onboarding with an API key that reaches
-// the backend only (nothing in renderer storage).
+// check against a loopback releases feed, first-run onboarding with an API key that reaches
+// the backend only (nothing in renderer storage), and the ChatGPT device sign-in (W61-M2).
 
 import { type ChildProcess, spawn } from "node:child_process";
 import fs from "node:fs";
@@ -323,6 +323,84 @@ describe.skipIf(skipReason !== "")(
         `JSON.stringify({ local: { ...localStorage }, session: { ...sessionStorage } })`,
       );
       expect(stored).not.toContain(key);
+      await sleep(200);
+      expect(await app.stop()).toBe(true);
+    }, 120_000);
+
+    it("first-run onboarding: Sign in with ChatGPT runs the device flow over the REST proxy (W61-M2)", async () => {
+      const work = tempDir("indus-e2e-chatgpt-");
+      const scenario = structuredClone(HEALTHY) as {
+        rest: { routes: Record<string, unknown> };
+      };
+      const userCode = ["E2E7", "CODE"].join("-");
+      scenario.rest.routes["GET /api/model/options"] = {
+        status: 200,
+        body: {
+          providers: [
+            {
+              name: "openai-codex",
+              label: "OpenAI (ChatGPT sign-in)",
+              auth_type: "oauth",
+              configured: false,
+              device_login: true,
+              sign_in: true,
+            },
+          ],
+          current: { provider: null, model: null },
+        },
+      };
+      scenario.rest.routes["POST /api/providers/login/start"] = {
+        status: 200,
+        body: {
+          session_id: "login-e2e",
+          provider: "openai-codex",
+          status: "pending",
+          message: "",
+          user_code: userCode,
+          verification_url: "https://signin.example.invalid/codex/device",
+          expires_in: 900,
+          interval: 1,
+        },
+      };
+      scenario.rest.routes["GET /api/providers/login/login-e2e"] = {
+        status: 200,
+        body: {
+          session_id: "login-e2e",
+          provider: "openai-codex",
+          status: "approved",
+          message: "",
+        },
+      };
+      scenario.rest.routes["POST /api/model/set"] = { status: 200, body: { ok: true } };
+      const fake = fakeBackend(work, scenario);
+      const app = await launchApp({ work, home: fake.home, indus: fake.indus });
+      running.push(app);
+      await waitConnected(app.cdp);
+      await clickButton(app.cdp, "Other providers", 30_000);
+      await clickButtonStarting(app.cdp, "Sign in with ChatGPT");
+      await app.cdp.waitFor(
+        `document.querySelector('.onboarding-code')?.textContent === ${JSON.stringify(userCode)}`,
+        "the sign-in code",
+      );
+      await app.cdp.waitFor(hasButton("Start chatting"), "the model step after approval", 20_000);
+      await fillField(app.cdp, ".onboarding-form input[list]", "gpt-e2e");
+      await clickButton(app.cdp, "Start chatting");
+      await app.cdp.waitFor(`!(${hasButton("Start chatting")})`, "the overlay to close");
+      const calls = await fake.restCalls();
+      const start = calls.filter(
+        (c) => c.method === "POST" && c.path.startsWith("/api/providers/login/start"),
+      );
+      expect(start.length).toBe(1);
+      expect(
+        calls.some(
+          (c) => c.method === "GET" && c.path.startsWith("/api/providers/login/login-e2e"),
+        ),
+      ).toBe(true);
+      // the session ended approved: nothing left to cancel
+      expect(calls.some((c) => c.method === "DELETE")).toBe(false);
+      expect(calls.some((c) => c.method === "POST" && c.path.startsWith("/api/model/set"))).toBe(
+        true,
+      );
       await sleep(200);
       expect(await app.stop()).toBe(true);
     }, 120_000);

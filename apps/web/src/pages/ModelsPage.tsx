@@ -9,7 +9,16 @@
 // the totals).
 
 import { useIsFetching, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Cpu, Layers, SlidersHorizontal, Star } from "lucide-react";
+import {
+  Check,
+  CircleAlert,
+  Cpu,
+  ExternalLink,
+  Layers,
+  LoaderCircle,
+  SlidersHorizontal,
+  Star,
+} from "lucide-react";
 import { type ComponentType, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { api } from "../lib/api.ts";
@@ -25,6 +34,7 @@ import type {
 import { useTokenAnalyticsFlag } from "../lib/useTokenAnalyticsFlag.ts";
 import { HeaderAfterTitle } from "../shell/PageHeader.tsx";
 import { errorText, useToast } from "../shell/Toasts.tsx";
+import { CopyButton } from "../ui/CopyButton.tsx";
 import {
   Badge,
   Button,
@@ -63,13 +73,32 @@ function useModelsChanged() {
   return () => void client.invalidateQueries({ queryKey: ["models"] });
 }
 
-/** Device-code sign-in panel; also used by the Keys page's OAuth card (W52-d-2). */
+const LOGIN_TONE: Record<LoginStatus, string> = {
+  pending: "text-ink-muted",
+  approved: "text-success",
+  denied: "text-danger",
+  expired: "text-danger",
+  failed: "text-danger",
+  cancelled: "text-ink-muted",
+};
+
+/**
+ * Device-code sign-in panel; also used by the Keys page's OAuth card (W52-d-2, W61-M2). With
+ * `autoStart` it asks for a code as soon as it opens (the Keys row's Sign in), else it offers
+ * "Get a sign-in code" first. The code is shown large with a copy button, the verification page
+ * opens in a new tab, and the session is polled at the interval the backend gave, never faster
+ * than MIN_POLL_S, until it ends; a failed poll is not an answer.
+ */
 export function DeviceLogin({
   provider,
   onDone,
+  onApproved,
+  autoStart = false,
 }: {
   provider: ProviderOption;
   onDone: () => void;
+  onApproved?: () => void;
+  autoStart?: boolean;
 }) {
   const client = useQueryClient();
   const [grant, setGrant] = useState<LoginStarted | null>(null);
@@ -77,6 +106,7 @@ export function DeviceLogin({
   const [message, setMessage] = useState("");
   const [problem, setProblem] = useState("");
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const asked = useRef(false);
 
   const stop = () => {
     if (timer.current !== null) clearInterval(timer.current);
@@ -93,17 +123,22 @@ export function DeviceLogin({
     stop();
     setStatus(next);
     setMessage(text);
-    if (next === "approved") void client.invalidateQueries({ queryKey: ["models"] });
+    if (next === "approved") {
+      void client.invalidateQueries({ queryKey: ["models"] });
+      onApproved?.();
+    }
   };
 
   const start = useMutation({
     mutationFn: () => api.providerLogin.start(provider.name),
+    onMutate: () => {
+      stop();
+      setProblem("");
+    },
     onSuccess: (started) => {
       setGrant(started);
       setStatus("pending");
       setMessage("");
-      setProblem("");
-      stop();
       const every = Math.max(started.interval || MIN_POLL_S, MIN_POLL_S) * 1000;
       timer.current = setInterval(() => {
         api.providerLogin.poll(started.session_id).then(
@@ -125,37 +160,79 @@ export function DeviceLogin({
     onSettled: () => finish("cancelled", ""),
   });
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: asks once, when the panel opens
+  useEffect(() => {
+    if (!autoStart || asked.current) return;
+    asked.current = true;
+    start.mutate();
+  }, [autoStart]);
+
+  const ended = grant !== null && status !== "pending";
+  const failed = status === "denied" || status === "expired" || status === "failed";
+
   return (
     <section
       aria-label={`Sign in to ${provider.label}`}
-      className="flex flex-col gap-2 border border-line p-3"
+      className="flex flex-col gap-3 border border-line p-3"
     >
       {!grant ? (
-        <div className="flex gap-2">
-          <Button tone="primary" onClick={() => start.mutate()} disabled={start.isPending}>
-            {start.isPending ? "Asking for a code…" : "Get a sign-in code"}
-          </Button>
-          <Button onClick={onDone}>Close</Button>
-        </div>
+        autoStart && !problem ? (
+          <p role="status" className="m-0 flex items-center gap-2 text-[0.8125rem] text-ink-muted">
+            <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin" />
+            Asking for a sign-in code…
+          </p>
+        ) : (
+          <div className="flex gap-2">
+            <Button tone="primary" onClick={() => start.mutate()} disabled={start.isPending}>
+              {start.isPending ? "Asking for a code…" : "Get a sign-in code"}
+            </Button>
+            <Button onClick={onDone}>Close</Button>
+          </div>
+        )
       ) : (
         <>
-          <p className="m-0 text-[0.8125rem]">
-            Open{" "}
-            <a
-              href={grant.verification_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="break-all text-ink underline"
-            >
-              {grant.verification_url}
-            </a>{" "}
-            and enter this code:
-          </p>
-          <code data-testid="device-code" className="font-mono text-lg tracking-widest text-ink">
-            {grant.user_code}
-          </code>
-          <p role="status" className="m-0 text-[0.8125rem] text-ink-muted">
-            {message || LOGIN_TEXT[status]}
+          {status === "pending" ? (
+            <>
+              <p className="m-0 text-[0.8125rem] text-ink-muted">
+                Open the sign-in page, enter this code and approve. This updates by itself.
+              </p>
+              <div className="flex flex-wrap items-center justify-between gap-2 border border-line bg-selected/40 px-4 py-3">
+                <code
+                  data-testid="device-code"
+                  className="font-mono text-2xl tracking-widest text-ink select-all"
+                >
+                  {grant.user_code}
+                </code>
+                <CopyButton value={grant.user_code} label="Copy the code" />
+              </div>
+              <a
+                href={grant.verification_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 self-start break-all text-[0.8125rem] text-ink underline"
+              >
+                <ExternalLink aria-hidden="true" className="size-3.5 shrink-0" />
+                {grant.verification_url}
+              </a>
+            </>
+          ) : null}
+          <p
+            role="status"
+            data-status={status}
+            className={cx(
+              "m-0 flex items-center gap-2 text-[0.8125rem]",
+              LOGIN_TONE[status],
+              status === "pending" && "border-t border-line pt-3",
+            )}
+          >
+            {status === "pending" ? (
+              <LoaderCircle aria-hidden="true" className="size-3.5 shrink-0 animate-spin" />
+            ) : status === "approved" ? (
+              <Check aria-hidden="true" className="size-4 shrink-0" />
+            ) : failed ? (
+              <CircleAlert aria-hidden="true" className="size-4 shrink-0" />
+            ) : null}
+            <span>{message || LOGIN_TEXT[status]}</span>
           </p>
           <div className="flex gap-2">
             {status === "pending" ? (
@@ -167,12 +244,31 @@ export function DeviceLogin({
                 Cancel
               </Button>
             ) : (
-              <Button onClick={onDone}>Close</Button>
+              <>
+                {ended && status !== "approved" ? (
+                  <Button tone="primary" onClick={() => start.mutate()} disabled={start.isPending}>
+                    Try again
+                  </Button>
+                ) : null}
+                <Button onClick={onDone}>Close</Button>
+              </>
             )}
           </div>
         </>
       )}
-      {problem ? <Notice tone="danger">{problem}</Notice> : null}
+      {problem ? (
+        <>
+          <Notice tone="danger">{problem}</Notice>
+          {autoStart && !grant ? (
+            <div className="flex gap-2">
+              <Button tone="primary" onClick={() => start.mutate()} disabled={start.isPending}>
+                Try again
+              </Button>
+              <Button onClick={onDone}>Close</Button>
+            </div>
+          ) : null}
+        </>
+      ) : null}
     </section>
   );
 }

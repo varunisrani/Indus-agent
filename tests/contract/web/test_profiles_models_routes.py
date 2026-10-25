@@ -22,7 +22,7 @@ from indus.providers.auth.device_code import DeviceFlowSpec
 from indus.providers.auth.pool_model import secret_name
 from indus.providers.auth.store import AuthStore
 from indus.providers.pricing import default_table
-from indus.web.routes import models, profiles
+from indus.web.routes import models, profiles, provider_accounts
 from tests.contract.web.rest_app import (
     RestApp,
     build_rest_app,
@@ -58,7 +58,9 @@ def _wait(rest: RestApp, name: str, params: dict[str, str]) -> dict[str, Any]:
 
 def test_route_lists_are_pinned(rest: RestApp) -> None:
     assert route_table(rest.app, ("/api/profiles",)) == set(profiles.ROUTE_LIST)
-    assert route_table(rest.app, ("/api/model", "/api/providers/login")) == set(models.ROUTE_LIST)
+    assert route_table(rest.app, ("/api/model", "/api/providers/login")) == set(
+        models.ROUTE_LIST
+    ) | set(provider_accounts.ROUTE_LIST)
     assert unscoped_writes(rest.app, ("/api/model", "/api/providers/login")) == []
     expected = {f"{m} {p}" for m, p, _ in profiles.ROUTE_LIST if m != "GET"}
     assert set(unscoped_writes(rest.app, ("/api/profiles",))) == expected

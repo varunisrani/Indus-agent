@@ -387,4 +387,152 @@ describe("onboarding look (W52-m)", () => {
     await settle();
     expect(screen.getByText(/failed at the provider/)).toBeTruthy();
   });
+
+  describe("Sign in with ChatGPT (W61-M2)", () => {
+    const CHATGPT = {
+      name: "openai-codex",
+      label: "OpenAI (ChatGPT sign-in)",
+      auth_type: "oauth",
+      configured: false,
+      device_login: true,
+      family: "openai",
+    };
+    const withChatgpt = (configured: boolean) => {
+      const options = OPTIONS(false);
+      return { ...options, providers: [...options.providers, { ...CHATGPT, configured }] };
+    };
+    // A code like the sign-in page's, built at runtime.
+    const code = () => ["K4TR", "77QZ"].join("-");
+
+    it("lives under Other providers, not among the visible sign-ins", async () => {
+      const api = fakeRest();
+      api.route("GET", "/api/model/options", withChatgpt(false));
+      render(<Onboarding ready api={api} saveKey={null} />);
+      await settle();
+      expect(screen.queryByRole("button", { name: /Sign in with ChatGPT/ })).toBeNull();
+      expect(screen.queryByRole("button", { name: /OpenAI \(ChatGPT sign-in\)/ })).toBeNull();
+      expect(screen.getByRole("button", { name: /Acme Cloud/ })).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "Other providers" }));
+      const row = screen.getByRole("button", { name: /Sign in with ChatGPT/ });
+      expect(row.getAttribute("data-ui")).toBe("onboarding-signin-openai-codex");
+      expect(row.textContent).toContain("ChatGPT plan");
+      expect(row.textContent).not.toContain("Connected");
+    });
+
+    it("shows Connected on the row once signed in", async () => {
+      const api = fakeRest();
+      api.route("GET", "/api/model/options", withChatgpt(true));
+      render(<Onboarding ready api={api} saveKey={null} />);
+      await settle();
+      await act(async () => {
+        requestOnboarding({ reason: "manual" });
+      });
+      await settle();
+      fireEvent.click(screen.getByRole("button", { name: "Other providers" }));
+      expect(screen.getByRole("button", { name: /Sign in with ChatGPT/ }).textContent).toContain(
+        "Connected",
+      );
+    });
+
+    it("runs the device flow in the card: code, copy, page, polls at the interval, then the model step", async () => {
+      const api = fakeRest();
+      const clock = manualTimers();
+      api.route("GET", "/api/model/options", withChatgpt(false));
+      api.route("POST", "/api/providers/login/start", {
+        session_id: "login-c",
+        provider: "openai-codex",
+        status: "pending",
+        message: "",
+        user_code: code(),
+        verification_url: "https://signin.example.org/codex/device",
+        expires_in: 900,
+        interval: 6,
+      });
+      let status = "pending";
+      api.route("GET", "/api/providers/login/login-c", () => ({
+        status: 200,
+        body: { session_id: "login-c", provider: "openai-codex", status, message: "" },
+      }));
+      const copy = vi.fn(async () => undefined);
+      const openExternal = vi.fn();
+      const delays: number[] = [];
+      const timers: Timers = {
+        setTimeout: (fn, ms) => {
+          delays.push(ms);
+          return clock.timers.setTimeout(fn, ms);
+        },
+        clearTimeout: clock.timers.clearTimeout,
+      };
+      render(
+        <Onboarding
+          ready
+          api={api}
+          saveKey={null}
+          copy={copy}
+          openExternal={openExternal}
+          timers={timers}
+        />,
+      );
+      await settle();
+      fireEvent.click(screen.getByRole("button", { name: "Other providers" }));
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /Sign in with ChatGPT/ }));
+      });
+      await settle();
+      const start = api.calls.find((c) => c.path === "/api/providers/login/start");
+      expect(start?.body).toEqual({ provider: "openai-codex" });
+      expect(screen.getByRole("heading", { name: "Sign in with ChatGPT" })).toBeTruthy();
+      expect(screen.getByText(code())).toBeTruthy();
+      expect(screen.getByText("https://signin.example.org/codex/device")).toBeTruthy();
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Copy the code" }));
+      });
+      expect(copy).toHaveBeenCalledWith(code());
+      fireEvent.click(screen.getByRole("button", { name: "Open the sign-in page" }));
+      expect(openExternal).toHaveBeenCalledWith("https://signin.example.org/codex/device");
+      expect(delays).toEqual([6_000]);
+      await clock.flush();
+      expect(screen.getByText(code())).toBeTruthy();
+      status = "approved";
+      await clock.flush();
+      expect(delays).toEqual([6_000, 6_000]);
+      expect(screen.getByRole("button", { name: "Start chatting" })).toBeTruthy();
+    });
+
+    it.each([
+      ["denied", "The sign-in was refused."],
+      ["expired", "The code expired before it was approved."],
+    ])("a %s sign-in says so and offers Try again", async (end, words) => {
+      const api = fakeRest();
+      const clock = manualTimers();
+      api.route("GET", "/api/model/options", withChatgpt(false));
+      api.route("POST", "/api/providers/login/start", {
+        session_id: "login-d",
+        user_code: code(),
+        verification_url: "https://signin.example.org/codex/device",
+        interval: 5,
+      });
+      api.route("GET", "/api/providers/login/login-d", {
+        session_id: "login-d",
+        provider: "openai-codex",
+        status: end,
+        message: "",
+      });
+      render(<Onboarding ready api={api} saveKey={null} timers={clock.timers} />);
+      await settle();
+      fireEvent.click(screen.getByRole("button", { name: "Other providers" }));
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /Sign in with ChatGPT/ }));
+      });
+      await settle();
+      await clock.flush();
+      expect(screen.getByRole("alert").textContent).toContain(words);
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+      });
+      await settle();
+      expect(api.calls.filter((c) => c.path === "/api/providers/login/start")).toHaveLength(2);
+      expect(screen.getByText(code())).toBeTruthy();
+    });
+  });
 });

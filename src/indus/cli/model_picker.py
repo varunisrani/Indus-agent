@@ -249,7 +249,7 @@ def _route_for(
 def _model_ids(
     scope: Scope, profile: ProviderProfile, route: RuntimeRoute | None, deps: PickerDeps
 ) -> list[str]:
-    curated = list(profile.model_aliases)
+    curated = list(dict.fromkeys([*profile.model_aliases, *profile.default_models]))
     if route is None or not profile.supports_model_listing:
         return curated
     secret = route.api_key.reveal() if route.api_key is not None else None
@@ -338,6 +338,11 @@ def _provider_flow(
     except _Stop:
         return None
     route = _route_for(scope, profile.name, key=new_key)
+    if route is None and profile.signs_in:
+        io.say(
+            f"{profile.label} is not signed in yet; after choosing a model, sign in with "
+            f"`indus auth add {profile.name}` (add --device on a machine without a browser)."
+        )
     models = _model_ids(scope, profile, route, deps)
     model = _choose_model(io, models, current if saved_provider == profile.name else "")
     return Selection(

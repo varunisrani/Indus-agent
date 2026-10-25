@@ -33,6 +33,7 @@ import threading
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any, Literal, Protocol, cast
 
 from indus.foundation.blocking import run_blocking
@@ -348,9 +349,12 @@ class PoolRuntime:
             from indus.providers.auth.device_code import TokenSet
 
             try:
-                stored = TokenSet.from_secret(stored).access_token
+                token = TokenSet.from_secret(stored).access_token.strip()
             except (ValueError, KeyError, TypeError):
                 return None
+            # A token a sign-in issued is never a typed placeholder; the "looks like a
+            # placeholder" rules (e.g. "xxx" inside) would drop real tokens by chance.
+            return token or None
         return None if is_placeholder(stored) else stored.strip()
 
     def _host_ok(self, entry: PoolEntry, route: RuntimeRoute | None) -> bool:
@@ -560,6 +564,36 @@ class PoolRuntime:
         )
         return other
 
+    async def renewed_ahead(self, lease: Lease) -> Lease:
+        """``lease`` with a renewed access token when its sign-in expires within the refresh
+        margin (``device_code.REFRESH_SKEW_SECONDS``); unchanged otherwise or when renewing fails
+        (the request then goes out and a 401 takes the refresh path)."""
+        from indus.providers.auth.device_code import TokenSet, needs_refresh
+
+        entry = self.entry(lease.entry_id)
+        if entry is None or entry.auth_type != "oauth" or self.refresher is None:
+            return lease
+        stored = self._stored(entry)
+        if not stored:
+            return lease
+        try:
+            tokens = TokenSet.from_secret(stored)
+        except (ValueError, KeyError, TypeError):
+            return lease
+        if not needs_refresh(tokens, self.clock.now()):
+            return lease
+        try:
+            fresh = await self.refresher(self.provider, entry, stored)
+        except Exception as exc:
+            log.warning(
+                "renewing %s sign-in %r ahead of expiry failed: %s", self.provider, entry.label, exc
+            )
+            return lease
+        if not fresh:
+            return lease
+        log.info("%s sign-in %r renewed ahead of expiry", self.provider, entry.label)
+        return replace(lease, key=Secret(fresh))
+
     async def _refresh(self, entry: PoolEntry) -> bool:
         if entry.auth_type != "oauth" or self.refresher is None:
             return False
@@ -649,6 +683,8 @@ class PoolRuntime:
         budget = 2 * max(1, len(self.pool)) + MAX_REFRESHES + 1
         while True:
             lease = self.lease(route, model)
+            if lease is not None:
+                lease = await self.renewed_ahead(lease)
             target = lease.apply(route) if lease is not None else route
             adjust = self.adjuster(lease, model, route)
             try:
@@ -708,7 +744,7 @@ class PoolSet:
             clock=scope.clock,
             config=scope.config,
             rng=rng,
-            refresher=sign_in_refresher(secrets, scope.clock),
+            refresher=sign_in_refresher(secrets, scope.clock, getattr(scope, "home", None)),
         )
 
     def runtime(self, profile: ProviderProfile) -> PoolRuntime:
@@ -747,34 +783,46 @@ class PoolSet:
 # -- sign-in refresh ------------------------------------------------------------------------------
 
 
-def sign_in_refresher(secrets: SecretReader | None, clock: Clock) -> Refresher | None:
-    """Renew a stored sign-in through its provider's token endpoint and store the new tokens;
-    None when the secret store cannot be written."""
+def sign_in_refresher(
+    secrets: SecretReader | None, clock: Clock, home: Path | None = None
+) -> Refresher | None:
+    """Renew a stored sign-in through its provider's token endpoint and store the new tokens
+    (``auth.renew``: locked per credential and across processes, and a pair another session
+    already renewed is adopted instead of spending its refresh token again); None when the secret
+    store cannot be written."""
     if secrets is None or not callable(getattr(secrets, "set", None)):
         return None
     sink = cast(SecretSink, secrets)
 
     async def refresh(provider: str, entry: PoolEntry, stored: str) -> str | None:
-        from indus.providers.auth import device_code
-        from indus.providers.auth.flows import flows_for
+        from indus.providers.auth import device_code, device_signin, renew
 
-        flows = flows_for(provider)
-        spec = flows.device
-        if spec is None and flows.pkce is not None and flows.pkce.exchange == "token":
-            spec = device_code.DeviceFlowSpec(
-                provider=provider,
-                device_authorization_url="",
-                token_url=flows.pkce.exchange_url,
-                client_id=flows.pkce.client_id,
-                scope=flows.pkce.scope,
-            )
+        spec = device_signin.refresh_spec(provider)
         if spec is None:
             return None
-        tokens = device_code.TokenSet.from_secret(stored)
-        async with device_code.make_client() as client:
-            fresh = await device_code.refresh_tokens(client, spec, tokens, clock=clock)
-        sink.set(secret_name(provider, entry.id), fresh.to_secret())
-        return fresh.access_token
+        seen = device_code.TokenSet.from_secret(stored).access_token
+        if home is None:
+            tokens = device_code.TokenSet.from_secret(stored)
+            async with device_code.make_client() as client:
+                fresh = await device_code.refresh_tokens(client, spec, tokens, clock=clock)
+            sink.set(secret_name(provider, entry.id), fresh.to_secret())
+            return fresh.access_token
+
+        where = home
+
+        def work() -> device_code.TokenSet | None:
+            return renew.renew_stored(
+                home=where,
+                secrets=sink,
+                provider=provider,
+                entry_id=entry.id,
+                spec=spec,
+                clock=clock,
+                seen_access=seen,
+            )
+
+        fresh = await run_blocking(work, label="sign-in renewal")
+        return fresh.access_token if fresh is not None else None
 
     return refresh
 
