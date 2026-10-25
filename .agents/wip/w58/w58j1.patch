@@ -1,0 +1,812 @@
+diff --git a/apps/desktop/src/app/Shell.tsx b/apps/desktop/src/app/Shell.tsx
+index 885a63f..7b07a8f 100644
+--- a/apps/desktop/src/app/Shell.tsx
++++ b/apps/desktop/src/app/Shell.tsx
+@@ -55,7 +55,7 @@ import {
+   useLayout,
+ } from "../panes/PaneShell.tsx";
+ import { CHAT_PANE, isHidden, zones } from "../panes/paneTree.ts";
+-import { surfaceShown } from "../panes/presets.ts";
++import { paneAllowed, surfaceShown } from "../panes/presets.ts";
+ import type { PreviewTarget } from "../panes/preview/target.ts";
+ import { type PaneAction, usePaneShortcuts } from "../panes/shortcuts.ts";
+ import { ProfileRail, type ProfilesApi, useProfileNames } from "../profiles/ProfileRail.tsx";
+@@ -194,6 +194,13 @@ function LeftSidebar(props: {
+     if (ready) void sessions.refresh();
+   }, [ready, sessions]);
+   const mod = props.platform === "mac" ? "\u2318" : "Ctrl";
++  // "Open in terminal" (W58-J1-5): only where the terminal pane can run a local shell
++  const interfaceMode = useLayout(props.chrome.layout).mode;
++  const connectionMode = useConnectionMode(props.connection);
++  const terminalOk =
++    paneAllowed(interfaceMode, "terminal") &&
++    connectionMode !== "remote" &&
++    desktopBridge()?.terminal !== undefined;
+   const onBots = location.pathname === BOTS_PATH;
+   const botsOn = contributed.has(BOTS_PATH);
+   const [panel, setPanel] = useState<"sessions" | "bots">("sessions");
+@@ -350,6 +357,16 @@ function LeftSidebar(props: {
+                     );
+                   },
+                 })}
++            {...(terminalOk
++              ? {
++                  onOpenInTerminal: (id: string) => {
++                    // the chat's folder becomes the window's workspace, where the pane's shells start
++                    navigate(sessionPath(id));
++                    if (props.chrome.layout.open("terminal"))
++                      props.chrome.layout.activate("terminal");
++                  },
++                }
++              : {})}
+             onNewChat={() => navigate(NEW_CHAT_PATH)}
+             events={props.connection}
+             homeDir={launchFacts().homeDir || null}
+diff --git a/apps/desktop/src/app/capabilities/CapabilitiesPage.test.tsx b/apps/desktop/src/app/capabilities/CapabilitiesPage.test.tsx
+index 10f0b00..83a9a46 100644
+--- a/apps/desktop/src/app/capabilities/CapabilitiesPage.test.tsx
++++ b/apps/desktop/src/app/capabilities/CapabilitiesPage.test.tsx
+@@ -290,6 +290,47 @@ describe("capabilities page", () => {
+     });
+   });
+ 
++  it("tools: the terminal toolset leads; a backend card writes terminal.backend (W58-J1-3)", async () => {
++    const api = backend();
++    api.route("GET", "/api/tools/toolsets", {
++      toolsets: [
++        { name: "a2a", label: "A2A", description: "", enabled: false, tools: ["a2a_call"] },
++        {
++          name: "terminal",
++          label: "Terminal",
++          description: "",
++          enabled: true,
++          tools: ["terminal"],
++        },
++      ],
++    });
++    api.route("GET", "/api/config", { terminal: { backend: "local" } });
++    api.route("PUT", "/api/config", { ok: true, warnings: [] });
++    wrap(<CapabilitiesPage api={api} profile="default" initialTab="toolsets" />);
++    await flush();
++    const backends = screen.getByRole("region", { name: "Execution backend" });
++    expect(
++      within(backends)
++        .getByRole("button", { name: /^Local/ })
++        .getAttribute("aria-pressed"),
++    ).toBe("true");
++    fireEvent.click(within(backends).getByRole("button", { name: /^Docker/ }));
++    await flush();
++    const put = api.calls.find((c) => c.method === "PUT" && c.path === "/api/config");
++    expect(put).toMatchObject({
++      profile: "default",
++      body: { config: { terminal: { backend: "docker" } } },
++    });
++    expect(
++      within(backends)
++        .getByRole("button", { name: /^Docker/ })
++        .getAttribute("aria-pressed"),
++    ).toBe("true");
++    // another toolset has no backend cards
++    fireEvent.click(screen.getByText("A2A"));
++    expect(screen.queryByRole("region", { name: "Execution backend" })).toBeNull();
++  });
++
+   it("a connector card opens its dialog; Test reports the tools", async () => {
+     const api = backend();
+     api.route("GET", "/api/mcp/servers", {
+diff --git a/apps/desktop/src/app/capabilities/ToolsetsTab.tsx b/apps/desktop/src/app/capabilities/ToolsetsTab.tsx
+index 16a2f12..9cf27e7 100644
+--- a/apps/desktop/src/app/capabilities/ToolsetsTab.tsx
++++ b/apps/desktop/src/app/capabilities/ToolsetsTab.tsx
+@@ -1,10 +1,11 @@
+ // The Tools tab (P24-26, W52-k): the plain toolsets as rows with their tool counts, the chosen
+-// one's tools as chips, and for the terminal toolset the execution backend cards. A toolset's
++// one's tools as chips, and for the terminal toolset (shown first, W58-J1-3) the execution backend
++// cards. A toolset's
+ // switch is read-only here (W52-k-1: there is no toolset write route; the selection lives in
+ // Settings); the backend card writes `terminal.backend` through `PUT /api/config`.
+ 
+ import { RefreshCw, Search } from "lucide-react";
+-import { useEffect, useMemo, useState } from "react";
++import { useEffect, useMemo, useRef, useState } from "react";
+ import { type MessageKey, type Translate, useT } from "../../i18n/index.tsx";
+ import { patchFor, type RestLike, rest, valueAt } from "../../settings/settingsApi.ts";
+ import { EmptyState, IconButton } from "../../ui/components.tsx";
+@@ -42,6 +43,9 @@ const BACKEND_NAMES: Readonly<Record<(typeof BACKENDS)[number], string>> = {
+   vercel_sandbox: "Vercel Sandbox",
+ };
+ 
++/** The toolset shown before one is picked: the one with the execution backend cards. */
++export const DEFAULT_TOOLSET = "terminal";
++
+ /** "1 tool" / "N tools". */
+ export function toolCount(t: Translate, count: number): string {
+   return t(count === 1 ? "toolsets.toolsOne" : "toolsets.tools", { count });
+@@ -77,7 +81,22 @@ export function ToolsetsTab(props: {
+     () => visibleToolsets(props.list.rows ?? [], props.query, ascending),
+     [props.list.rows, props.query, ascending],
+   );
+-  const selected = rows.find((row) => row.name === chosen) ?? rows[0] ?? null;
++  // W58-J1-3: with nothing picked yet, the terminal toolset leads (its detail carries the
++  // execution backend cards); otherwise the first row
++  const selected =
++    rows.find((row) => row.name === chosen) ??
++    rows.find((row) => row.name === DEFAULT_TOOLSET) ??
++    rows[0] ??
++    null;
++  // the default row may sit below the fold: bring it into view once, before anything is picked
++  const listRef = useRef<HTMLUListElement | null>(null);
++  const defaultName = chosen === null ? (selected?.name ?? null) : null;
++  useEffect(() => {
++    if (defaultName === null) return;
++    listRef.current
++      ?.querySelector<HTMLElement>('[data-selected="true"]')
++      ?.scrollIntoView?.({ block: "nearest" });
++  }, [defaultName]);
+ 
+   if (props.list.rows !== null && rows.length === 0) {
+     return (
+@@ -104,7 +123,7 @@ export function ToolsetsTab(props: {
+         descending={ascending}
+         onSort={() => setAscending(!ascending)}
+       />
+-      <ul>
++      <ul ref={listRef}>
+         {rows.map((set) => (
+           <CapRow
+             key={set.name}
+diff --git a/apps/desktop/src/app/command-center/CommandCenter.test.tsx b/apps/desktop/src/app/command-center/CommandCenter.test.tsx
+index 80846d2..45eac8f 100644
+--- a/apps/desktop/src/app/command-center/CommandCenter.test.tsx
++++ b/apps/desktop/src/app/command-center/CommandCenter.test.tsx
+@@ -1,5 +1,5 @@
+ // @vitest-environment jsdom
+-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
++import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+ import { describe, expect, it } from "vitest";
+ import { fakeRest } from "../../settings/fakeRest.ts";
+ import { EMPTY_DELEGATION, reduceDelegation, totals } from "../agents/delegation.ts";
+@@ -160,6 +160,45 @@ describe("CommandCenter", () => {
+     expect(await screen.findByText("Nothing was used in this period.")).toBeTruthy();
+   });
+ 
++  it("usage shows the counted API calls and the top models (W58-J1-1)", async () => {
++    const api = fakeRest();
++    const model = (name: string, tokens: number, calls: number) => ({
++      model: name,
++      input_tokens: tokens,
++      output_tokens: 0,
++      api_calls: calls,
++      cost: 0,
++    });
++    api.route("GET", "/api/analytics/usage?days=30", {
++      daily: [{ day: "2026-10-24", input_tokens: 4900, output_tokens: 576, cost: 0, sessions: 5 }],
++      totals: { input_tokens: 4900, output_tokens: 576, cost: 0, sessions: 5, api_calls: 6 },
++      by_model: [
++        model("big-model", 5400, 4),
++        model("m2", 50, 1),
++        model("m3", 40, 1),
++        model("m4", 30, 1),
++        model("m5", 20, 1),
++        model("m6", 10, 1),
++      ],
++    });
++    api.route("GET", "/api/analytics/usage?days=7", {
++      daily: [],
++      totals: { input_tokens: 0, output_tokens: 0, cost: 0, sessions: 0, api_calls: 0 },
++      by_model: [],
++    });
++    render(<CommandCenter api={api} profile="work" bridge={null} initial="usage" />);
++    expect(await screen.findByText("4.9K / 576")).toBeTruthy();
++    expect(screen.getByText("6")).toBeTruthy();
++    expect(screen.queryByText("not counted yet")).toBeNull();
++    const top = screen.getByRole("list", { name: "Top models" });
++    expect(within(top).getAllByRole("listitem")).toHaveLength(5);
++    expect(within(top).getByText("big-model")).toBeTruthy();
++    expect(within(top).getByText("5.4K")).toBeTruthy();
++    expect(within(top).queryByText("m6")).toBeNull();
++    fireEvent.click(screen.getByRole("radio", { name: "7d" }));
++    expect(await screen.findByText("No model was used in this period.")).toBeTruthy();
++  });
++
+   it("maintenance answers 409 with who holds the gate", async () => {
+     const api = fakeRest();
+     api.route("POST", "/api/sessions/prune", () => ({
+diff --git a/apps/desktop/src/app/command-center/CommandCenter.tsx b/apps/desktop/src/app/command-center/CommandCenter.tsx
+index 73565cd..90240fa 100644
+--- a/apps/desktop/src/app/command-center/CommandCenter.tsx
++++ b/apps/desktop/src/app/command-center/CommandCenter.tsx
+@@ -1,11 +1,12 @@
+ // The Command center (P24-28; W52-l look): a full-window overlay with a 208px rail —
+ // Sessions (every session, newest activity first: open, pin, delete), System (the gateway's state,
+ // restart and update as tailed actions, and the recent log lines of the four log files: agent,
+-// errors, gateway from the profile; the desktop's own log from main), Usage (tokens and sessions
+-// over 7/30/90 days as tiles and a daily bar chart) and Maintenance (doctor, backup, the session
++// errors, gateway from the profile; the desktop's own log from main), Usage (sessions, API calls and
++// tokens over 7/30/90 days as tiles, a daily bar chart and the top models — W58-J1-1, from what
++// the store recorded) and Maintenance (doctor, backup, the session
+ // clean-ups — the bulk ones go through the P17-21 maintenance gate, so a running daemon answers 409
+ // and the page says who holds it —, memory files, and the way into the session import overlay).
+-// Data our backend does not have (API-call counts, per-model and per-skill usage, a security
++// Data our backend does not have (per-skill usage per period, a security
+ // audit, debug share, the skill curator, memory reset, session export) shows as a disabled or
+ // empty placeholder, never an invented call.
+ 
+@@ -549,9 +550,54 @@ interface UsageDay {
+   sessions?: number;
+ }
+ 
++interface ModelUsageRow {
++  model: string;
++  input_tokens: number;
++  output_tokens: number;
++  api_calls: number;
++  cost: number;
++}
++
+ interface UsageAnswer {
+   daily?: UsageDay[];
+-  totals: { input_tokens: number; output_tokens: number; cost: number; sessions: number };
++  totals: {
++    input_tokens: number;
++    output_tokens: number;
++    cost: number;
++    sessions: number;
++    /** Absent from a backend older than W58-J1-1. */
++    api_calls?: number;
++  };
++  by_model?: ModelUsageRow[];
++}
++
++/** How many models the Top models column lists. */
++export const TOP_MODELS = 5;
++
++function TopModels(props: { rows: readonly ModelUsageRow[] | undefined }) {
++  const t = useT();
++  if (props.rows === undefined)
++    return <p className="cc-empty-line cc-left">{t("cc.usage.noModels")}</p>;
++  if (props.rows.length === 0)
++    return <p className="cc-empty-line cc-left">{t("cc.usage.noModelsInPeriod")}</p>;
++  return (
++    <ul className="cc-top-list" aria-label={t("cc.usage.topModels")}>
++      {props.rows.slice(0, TOP_MODELS).map((row) => (
++        <li
++          key={row.model}
++          title={t("cc.usage.modelTip", {
++            input: compact(row.input_tokens),
++            output: compact(row.output_tokens),
++            calls: compact(row.api_calls),
++            cost: row.cost.toFixed(2),
++          })}
++        >
++          <span className="cc-top-name">{row.model}</span>
++          <span className="cc-top-value">{compact(row.input_tokens + row.output_tokens)}</span>
++        </li>
++      ))}
++    </ul>
++  );
+ }
+ 
+ export const PERIODS = ["7", "30", "90"] as const;
+@@ -616,7 +662,11 @@ function UsageSection(props: { api: RestLike | null; profile: string | null; day
+     <div className="cc-usage">
+       <div className="cc-tiles">
+         <StatTile label={t("cc.usage.sessions")} value={compact(totals.sessions)} />
+-        <StatTile label={t("cc.usage.apiCalls")} value="—" hint={t("cc.usage.apiCallsHint")} />
++        {totals.api_calls === undefined ? (
++          <StatTile label={t("cc.usage.apiCalls")} value="—" hint={t("cc.usage.apiCallsHint")} />
++        ) : (
++          <StatTile label={t("cc.usage.apiCalls")} value={compact(totals.api_calls)} />
++        )}
+         <StatTile
+           label={t("cc.usage.tokens")}
+           value={`${compact(totals.input_tokens)} / ${compact(totals.output_tokens)}`}
+@@ -641,7 +691,7 @@ function UsageSection(props: { api: RestLike | null; profile: string | null; day
+       <div className="cc-usage-cols">
+         <section>
+           <CapsLabel>{t("cc.usage.topModels")}</CapsLabel>
+-          <p className="cc-empty-line cc-left">{t("cc.usage.noModels")}</p>
++          <TopModels rows={usage.data.by_model} />
+         </section>
+         <section>
+           <CapsLabel>{t("cc.usage.topSkills")}</CapsLabel>
+diff --git a/apps/desktop/src/app/command-center/commandCenter.css b/apps/desktop/src/app/command-center/commandCenter.css
+index 2307c4d..d16d663 100644
+--- a/apps/desktop/src/app/command-center/commandCenter.css
++++ b/apps/desktop/src/app/command-center/commandCenter.css
+@@ -338,6 +338,39 @@
+   gap: 32px;
+ }
+ 
++.cc-top-list {
++  display: flex;
++  flex-direction: column;
++  gap: 6px;
++  margin: 0;
++  padding: 0;
++  list-style: none;
++}
++
++.cc-top-list li {
++  display: flex;
++  align-items: baseline;
++  justify-content: space-between;
++  gap: 12px;
++  min-width: 0;
++}
++
++.cc-top-name {
++  overflow: hidden;
++  color: var(--desk-fg-1);
++  font-family: var(--indus-font-mono, ui-monospace, monospace);
++  font-size: var(--desk-text-small);
++  text-overflow: ellipsis;
++  white-space: nowrap;
++}
++
++.cc-top-value {
++  flex: none;
++  color: var(--desk-fg-3);
++  font-size: 11px;
++  font-variant-numeric: tabular-nums;
++}
++
+ /* -- maintenance ---------------------------------------------------------------------------- */
+ 
+ .cc-maint {
+diff --git a/apps/desktop/src/app/command-center/strings.en.ts b/apps/desktop/src/app/command-center/strings.en.ts
+index 6c79924..7c7269a 100644
+--- a/apps/desktop/src/app/command-center/strings.en.ts
++++ b/apps/desktop/src/app/command-center/strings.en.ts
+@@ -63,7 +63,9 @@ export const COMMAND_CENTER_STRINGS = {
+   "cc.usage.topModels": "Top models",
+   "cc.usage.topSkills": "Top skills",
+   "cc.usage.noModels": "Per-model usage is not recorded yet.",
+-  "cc.usage.noSkills": "Per-skill usage is not recorded yet.",
++  "cc.usage.noModelsInPeriod": "No model was used in this period.",
++  "cc.usage.modelTip": "in {input} · out {output} · {calls} calls · {cost} USD",
++  "cc.usage.noSkills": "Skill use is not counted per period yet.",
+ 
+   "cc.maint.diagnostics": "Diagnostics",
+   "cc.maint.doctorBody": "Check the install, keys and folders and report what is wrong.",
+diff --git a/apps/desktop/src/sidebar/SessionRowMenu.tsx b/apps/desktop/src/sidebar/SessionRowMenu.tsx
+index 0784c85..aa88a4f 100644
+--- a/apps/desktop/src/sidebar/SessionRowMenu.tsx
++++ b/apps/desktop/src/sidebar/SessionRowMenu.tsx
+@@ -1,7 +1,8 @@
+ // The sidebar row's menu (W52-h): right-click a session row, or Shift+F10 / the context-menu key on
+ // a focused one. Only actions Indus really has: open in a floating window, rename, pin, unread,
+ // copy the id, branch (`session.branch`, W54-D1-8), export (main writes the file, W56-G1),
+-// archive, delete (W52-h-4 lists what the reference has that we leave out).
++// open the terminal pane in the chat's folder (W58-J1-5), archive, delete (W52-h-4 lists what the
++// reference has that we leave out; "Move to project" waits for a session → project route).
+ 
+ import {
+   Archive,
+@@ -15,6 +16,7 @@ import {
+   Pencil,
+   Pin,
+   PinOff,
++  SquareTerminal,
+   Trash2,
+ } from "lucide-react";
+ import { useT } from "../i18n/index.tsx";
+@@ -30,6 +32,8 @@ export interface RowMenuActions {
+   branch?: (() => void) | undefined;
+   /** Save the conversation to a file the person picks (absent: no desktop bridge). */
+   exportFile?: (() => void) | undefined;
++  /** Open the chat and the terminal pane in its folder (absent: no folder, or no local terminal). */
++  openInTerminal?: (() => void) | undefined;
+   toggleArchive: () => void;
+   remove: () => void;
+ }
+@@ -87,7 +91,16 @@ export function SessionRowMenu(props: {
+         label={t("sidebar.menu.copyId")}
+         onSelect={run(a.copyId)}
+       />
+-      {(a.branch !== undefined || a.exportFile !== undefined) && <MenuSeparator />}
++      {(a.branch !== undefined || a.exportFile !== undefined || a.openInTerminal !== undefined) && (
++        <MenuSeparator />
++      )}
++      {a.openInTerminal !== undefined && (
++        <MenuRow
++          icon={<SquareTerminal aria-hidden="true" />}
++          label={t("sidebar.menu.openInTerminal")}
++          onSelect={run(a.openInTerminal)}
++        />
++      )}
+       {a.branch !== undefined && (
+         <MenuRow
+           icon={<GitBranch aria-hidden="true" />}
+diff --git a/apps/desktop/src/sidebar/Sidebar.test.tsx b/apps/desktop/src/sidebar/Sidebar.test.tsx
+index 2a388a7..eb7a4b9 100644
+--- a/apps/desktop/src/sidebar/Sidebar.test.tsx
++++ b/apps/desktop/src/sidebar/Sidebar.test.tsx
+@@ -130,6 +130,35 @@ describe("sessions sidebar", () => {
+     expect(onBranch).toHaveBeenCalledWith("s-tip");
+   });
+ 
++  it("W58-J1-5: Open in terminal shows on a row with a folder and asks the host", async () => {
++    const storage = new MemoryStorage();
++    const model = new SidebarModel({ api: fakeApi(), storage, listDir: null });
++    const onOpenInTerminal = vi.fn();
++    render(
++      <Sidebar
++        model={model}
++        profile="work"
++        activeSessionId={null}
++        onOpenSession={vi.fn()}
++        onNewChat={vi.fn()}
++        onOpenInTerminal={onOpenInTerminal}
++      />,
++    );
++    // a row without a folder has no such item
++    fireEvent.contextMenu(await screen.findByRole("button", { name: /^Lunch/ }));
++    expect(screen.queryByRole("menuitem", { name: "Open in terminal" })).toBeNull();
++    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
++    fireEvent.contextMenu(screen.getByRole("button", { name: /^Parser work/ }));
++    fireEvent.click(screen.getByRole("menuitem", { name: "Open in terminal" }));
++    expect(onOpenInTerminal).toHaveBeenCalledWith("s-tip");
++  });
++
++  it("W58-J1-5: no Open in terminal without a host that can open the pane", async () => {
++    mount();
++    fireEvent.contextMenu(await screen.findByRole("button", { name: /^Parser work/ }));
++    expect(screen.queryByRole("menuitem", { name: "Open in terminal" })).toBeNull();
++  });
++
+   it("W54-D1-2: dots rank waiting > working > new activity > live > quiet", () => {
+     expect(sessionDot({ attention: true, running: true, unread: true, live: true })).toBe(
+       "attention",
+diff --git a/apps/desktop/src/sidebar/Sidebar.tsx b/apps/desktop/src/sidebar/Sidebar.tsx
+index 218c6eb..6811731 100644
+--- a/apps/desktop/src/sidebar/Sidebar.tsx
++++ b/apps/desktop/src/sidebar/Sidebar.tsx
+@@ -151,6 +151,9 @@ export interface SidebarProps {
+   onBranch?(sessionId: string): void;
+   /** Export the conversation to a file (main asks where, W56-G1); no menu item without it. */
+   onExport?(sessionId: string): void;
++  /** Open the chat with the terminal pane in its folder (W58-J1-5); no menu item without it, and
++   * none on a row that has no folder. */
++  onOpenInTerminal?(sessionId: string): void;
+   onNewChat(): void;
+   events?: EventSource | null;
+   /** The default root of the repo scan. */
+@@ -221,6 +224,7 @@ interface RowHost {
+   onPopOut?: ((id: string) => void) | undefined;
+   onBranch?: ((id: string) => void) | undefined;
+   onExport?: ((id: string) => void) | undefined;
++  onOpenInTerminal?: ((id: string) => void) | undefined;
+   onDelete(row: SessionRow): void;
+ }
+ 
+@@ -390,6 +394,10 @@ function SessionItem(
+             copyId: () => void copyText(row.durableId),
+             branch: props.onBranch === undefined ? undefined : () => props.onBranch?.(row.id),
+             exportFile: props.onExport === undefined ? undefined : () => props.onExport?.(row.id),
++            openInTerminal:
++              props.onOpenInTerminal === undefined || row.cwd === null
++                ? undefined
++                : () => props.onOpenInTerminal?.(row.id),
+             toggleArchive: () => void list.setArchived(row, !row.archived),
+             remove: () => props.onDelete(row),
+           }}
+@@ -643,6 +651,7 @@ export function Sidebar(props: SidebarProps) {
+     onPopOut: props.onPopOut,
+     onBranch: props.onBranch,
+     onExport: props.onExport,
++    onOpenInTerminal: props.onOpenInTerminal,
+     onDelete: (row: SessionRow) => setDeleting(row),
+   };
+   const confirmDelete = async () => {
+diff --git a/apps/desktop/src/sidebar/strings.en.ts b/apps/desktop/src/sidebar/strings.en.ts
+index cdf3c63..97c5a56 100644
+--- a/apps/desktop/src/sidebar/strings.en.ts
++++ b/apps/desktop/src/sidebar/strings.en.ts
+@@ -65,6 +65,7 @@ export const SIDEBAR_STRINGS = {
+   "sidebar.menu.branch": "Branch",
+   "sidebar.branchFailed": "Could not branch this chat",
+   "sidebar.menu.export": "Export…",
++  "sidebar.menu.openInTerminal": "Open in terminal",
+   "sidebar.exported": "Chat exported to {name}",
+   "sidebar.exportFailed": "Could not export this chat",
+   "sidebar.menu.archive": "Archive",
+diff --git a/docs/notes/ui-parity/w58-j1-desktop-backend-gaps.md b/docs/notes/ui-parity/w58-j1-desktop-backend-gaps.md
+new file mode 100644
+index 0000000..7da29f1
+--- /dev/null
++++ b/docs/notes/ui-parity/w58-j1-desktop-backend-gaps.md
+@@ -0,0 +1,83 @@
++# Task: Desktop gaps our backend can close (W58-J1) Phase: ui-parity Owner: builder w58j1
++
++Status: Done for wave 58 (2026-10-25); items 2 and the "Move to project" half of 5 left out on
++purpose (no backend behind them); see the end.
++
++Read (reference): none opened. Evidence: the wave-55 desktop compare set
++(`$S/compare2/{hermes,indus}/desktop/`), slugs `command-center-usage`, `tools`,
++`settings-models-moa`, `settings-advanced`, `context-menu` (both themes), and
++`$S/compare2/deliver/gaps.md` (top-10 items 3, 4 and 10). Our own code read first: the analytics
++route, `state/usage.py`, the usage recording in `core/usage.py`, `foundation/config/schema.py`
++(`moa`, `terminal`), `core/moa_presets.py`, `web/routes/config_env.py` + `config_view.py`,
++`service/projects_rpc.py` + `state/projects.py`, the desktop window factory, navigation guard,
++external opener and app menu.
++
++What it does (own words):
++1. **Command center › Usage** shows what the store already records. `GET /api/analytics/usage`
++   gains `api_calls` (per day and in `totals`: the sessions' `api_call_count` plus side calls'
++   `model_usage.api_call_count`) and `by_model` (the window's `model_usage` rows grouped by model,
++   main loop and side calls, most tokens first). The desktop page shows the API-call count instead
++   of "—, not counted yet" when the answer has it, and Top models lists up to five models with
++   their tokens (a tooltip adds in/out, calls and cost). Per-skill usage per period is still not
++   recorded, so Top skills keeps an honest empty line. The 0/0 in the wave-55 shots came from the
++   capture's scripted model, which sent no usage; the real runtime records every answered call.
++2. **Desktop & startup: Disable F12 DevTools / Always open links externally** — not added. DevTools
++   exist only in dev builds (`webPreferences.devTools = dev && app window`; the menu item is
++   dev-only) and nothing binds F12, so a packaged build has nothing to disable. Chat links always go
++   through main's audited external opener; there is no in-app browser choice for a pref to switch.
++   A row for either would be fake.
++3. **Tools tab: Execution backend picker** already existed (wave 53, W52-k): the terminal toolset's
++   detail has one card per `terminal.backend` value, writing through `PUT /api/config`. It was
++   invisible because the tab opened on the first A–Z row (A2A). The tab now opens on the terminal
++   toolset when nothing is picked, so the backend cards show at once.
++4. **Model › Mixture of Agents "No presets yet"** — root cause: the capture's `config.yaml` has no
++   `moa` section (we ship no default preset; the reference's screen shows one it ships). Checked
++   end to end: a preset in `config.yaml` comes back from `GET /api/config` under `moa.presets`
++   (probe through the REST test app), and the desktop page lists it (unit test, and a re-shot with
++   a preset in the capture config). No code change; we do not invent a default preset.
++5. **Session row menu: Open in terminal** opens the chat (its folder becomes the window's
++   workspace, where the terminal pane's shells start) and opens/brings forward the terminal pane.
++   Shown only for a row with a folder, when the pane may run (Advanced mode, local connection,
++   desktop bridge with a terminal). **Move to project** is not added: `projects.*` has no method
++   that assigns a session to a project (a session joins one only by its folder at creation).
++
++Inputs → outputs: `GET /api/analytics/usage?days=` → `{days, daily[{day, input_tokens,
++output_tokens, api_calls, cost, sessions}], totals{…, api_calls}, by_model[{model, input_tokens,
++output_tokens, api_calls, cost}]}` → stat tiles and Top models. Row menu → `navigate(session)` +
++`layout.open("terminal")` / `activate`.
++
++Files: src/indus/web/routes/analytics.py, tests/contract/web/test_logs_analytics_routes.py,
++apps/desktop/src/app/command-center/{CommandCenter.tsx,CommandCenter.test.tsx,strings.en.ts,
++commandCenter.css}, apps/desktop/src/app/capabilities/{ToolsetsTab.tsx,CapabilitiesPage.test.tsx},
++apps/desktop/src/sidebar/{SessionRowMenu.tsx,Sidebar.tsx,Sidebar.test.tsx,strings.en.ts},
++apps/desktop/src/app/Shell.tsx.
++
++Edge cases / failure modes:
++- An older backend without `api_calls` / `by_model`: the page keeps "—, not counted yet" and
++  "Per-model usage is not recorded yet." (fields are optional in the answer type).
++- A gateway that reports cumulative totals (`mode="absolute"`) writes no `model_usage` rows: its
++  sessions count in `totals` but under no model, so Top models can sum to less than the tiles.
++- A session without a folder has no "Open in terminal"; simple interface mode, a remote connection
++  or no desktop bridge hides it too. Opening it while a terminal runs in another folder restarts
++  that terminal's shell in the new folder (the pane's existing cwd rule).
++
++Our design differences / decisions:
++- W58-J1-1: usage API calls and the per-model split come only from what the store counts; the web
++  Analytics page may read the same two fields later (web slice, not changed here).
++- W58-J1-2: no F12 DevTools or "open links externally" rows — no behaviour behind them.
++- W58-J1-3: the Tools tab opens on the terminal toolset (its backend cards) instead of the first row.
++- W58-J1-4: MoA empty state is correct for a config without presets; no default preset shipped.
++- W58-J1-5: "Open in terminal" in the row menu; "Move to project" waits for a session → project
++  route.
++
++## Compare checklist
++- [x] command-center-usage: API CALLS shows a number; tokens from recorded usage; TOP MODELS lists
++      the model with its token count.
++- [x] tools: opens with the terminal toolset and its Execution backend cards.
++- [x] settings-models-moa: a configured preset shows (re-shot with a preset in config).
++- [x] context-menu: "Open in terminal" next to Branch / Export.
++
++## Status
++Done (wave 58). Left: Desktop & startup rows (W58-J1-2) and "Move to project" (W58-J1-5) for lack
++of a backend; backend readiness badges on the backend cards ("Ready" / "Needs setup") — we have no
++route that reports them.
+diff --git a/src/indus/web/routes/analytics.py b/src/indus/web/routes/analytics.py
+index 471936c..b44d80a 100644
+--- a/src/indus/web/routes/analytics.py
++++ b/src/indus/web/routes/analytics.py
+@@ -1,11 +1,16 @@
+-"""``GET /api/analytics/usage``: tokens, cost and sessions per day (P18-13).
++"""``GET /api/analytics/usage``: tokens, cost, API calls and sessions per day (P18-13).
+ 
+ ``days`` (default 30, 1..365; the page offers 7, 30 and 90) counts calendar days back from today in
+ the clock's zone, today included. Each session's main-loop counters land on the day it started;
+ side calls (title, compression, vision… rows of ``model_usage`` with a task) land on their
+ session's day too, so nothing is counted twice. Cost is the billed figure where known, else the
+-estimate, row by row (``state.usage``'s rule). Only days with a session appear in ``daily``;
+-``totals`` sums them.
++estimate, row by row (``state.usage``'s rule). ``api_calls`` is the model requests the store
++counted (``api_call_count``, main loop plus side calls). Only days with a session appear in
++``daily``; ``totals`` sums them.
++
++``by_model`` (W58-J1-1) splits the same window by model from ``model_usage`` (main loop and side
++calls), most tokens first. A gateway that reports cumulative totals (``mode="absolute"``) writes no
++``model_usage`` rows, so its sessions count in ``totals`` but under no model.
+ 
+ The store is opened read-only (``state.browse``): a missing store is an empty answer, a store that
+ cannot be read right now is 503 with a code; nothing is ever created or migrated.
+@@ -25,7 +30,7 @@ from indus.state import browse
+ from indus.state.errors import Bucket, classify
+ from indus.web.scope import read_scope
+ 
+-__all__ = ["ROUTE_LIST", "router", "usage_by_day"]
++__all__ = ["ROUTE_LIST", "router", "usage_by_day", "usage_by_model"]
+ 
+ router = APIRouter()
+ 
+@@ -36,18 +41,28 @@ ReadScope = Annotated[Scope, Depends(read_scope)]
+ 
+ _COST: Final = "COALESCE(actual_cost_usd, estimated_cost_usd, 0)"
+ _MAIN_SQL: Final = (
+-    "SELECT id, started_at, input_tokens, output_tokens, "
++    "SELECT id, started_at, input_tokens, output_tokens, api_call_count, "
+     f"{_COST} AS cost FROM sessions WHERE started_at >= ?"
+ )
+ _SIDE_SQL: Final = (
+     "SELECT s.started_at AS started_at, "
+     "COALESCE(SUM(u.input_tokens), 0) AS input_tokens, "
+     "COALESCE(SUM(u.output_tokens), 0) AS output_tokens, "
++    "COALESCE(SUM(u.api_call_count), 0) AS api_calls, "
+     "COALESCE(SUM(COALESCE(u.actual_cost_usd, u.estimated_cost_usd, 0)), 0) AS cost "
+     "FROM model_usage u JOIN sessions s ON s.id = u.session_id "
+     "WHERE u.task <> '' AND s.started_at >= ? GROUP BY u.session_id"
+ )
+-_FIELDS: Final = ("input_tokens", "output_tokens", "cost", "sessions")
++_MODEL_SQL: Final = (
++    "SELECT u.model AS model, "
++    "COALESCE(SUM(u.input_tokens), 0) AS input_tokens, "
++    "COALESCE(SUM(u.output_tokens), 0) AS output_tokens, "
++    "COALESCE(SUM(u.api_call_count), 0) AS api_calls, "
++    "COALESCE(SUM(COALESCE(u.actual_cost_usd, u.estimated_cost_usd, 0)), 0) AS cost "
++    "FROM model_usage u JOIN sessions s ON s.id = u.session_id "
++    "WHERE s.started_at >= ? GROUP BY u.model"
++)
++_FIELDS: Final = ("input_tokens", "output_tokens", "api_calls", "cost", "sessions")
+ 
+ 
+ def _store_error(exc: BaseException) -> HTTPException:
+@@ -79,29 +94,52 @@ def usage_by_day(conn: sqlite3.Connection, since: float, zone: tzinfo | None) ->
+ 
+     def bucket(day: str) -> dict[str, Any]:
+         return daily.setdefault(
+-            day, {"input_tokens": 0, "output_tokens": 0, "cost": 0.0, "sessions": 0}
++            day,
++            {"input_tokens": 0, "output_tokens": 0, "api_calls": 0, "cost": 0.0, "sessions": 0},
+         )
+ 
+     for row in conn.execute(_MAIN_SQL, (since,)):
+         into = bucket(_day_of(float(row["started_at"]), zone))
+         into["input_tokens"] += int(row["input_tokens"] or 0)
+         into["output_tokens"] += int(row["output_tokens"] or 0)
++        into["api_calls"] += int(row["api_call_count"] or 0)
+         into["cost"] += float(row["cost"] or 0.0)
+         into["sessions"] += 1
+     for row in conn.execute(_SIDE_SQL, (since,)):
+         into = bucket(_day_of(float(row["started_at"]), zone))
+         into["input_tokens"] += int(row["input_tokens"] or 0)
+         into["output_tokens"] += int(row["output_tokens"] or 0)
++        into["api_calls"] += int(row["api_calls"] or 0)
+         into["cost"] += float(row["cost"] or 0.0)
+     return daily
+ 
+ 
++def usage_by_model(conn: sqlite3.Connection, since: float) -> list[dict[str, Any]]:
++    """``[{model, input_tokens, output_tokens, api_calls, cost}]`` over ``model_usage`` rows of
++    sessions started at/after ``since``, most tokens first (then calls, then name)."""
++    rows = [
++        {
++            "model": str(row["model"]),
++            "input_tokens": int(row["input_tokens"] or 0),
++            "output_tokens": int(row["output_tokens"] or 0),
++            "api_calls": int(row["api_calls"] or 0),
++            "cost": round(float(row["cost"] or 0.0), 6),
++        }
++        for row in conn.execute(_MODEL_SQL, (since,))
++    ]
++    rows.sort(
++        key=lambda r: (-(r["input_tokens"] + r["output_tokens"]), -r["api_calls"], r["model"])
++    )
++    return rows
++
++
+ @router.get("/api/analytics/usage")
+ def get_usage(scope: ReadScope, days: Annotated[int, Query(ge=1, le=365)] = 30) -> dict[str, Any]:
+     now = scope.clock.now()
+     zone = now.tzinfo
+     since = _first_day(now.date(), days, zone)
+     daily: dict[str, dict[str, Any]] = {}
++    models: list[dict[str, Any]] = []
+     try:
+         store = browse.open_readonly(scope)
+     except StoreUnavailable as exc:
+@@ -114,6 +152,7 @@ def get_usage(scope: ReadScope, days: Annotated[int, Query(ge=1, le=365)] = 30)
+         try:
+             with store.read() as conn:
+                 daily = usage_by_day(conn, since, zone)
++                models = usage_by_model(conn, since)
+         except sqlite3.Error as exc:
+             raise _store_error(exc) from None
+         finally:
+@@ -123,4 +162,4 @@ def get_usage(scope: ReadScope, days: Annotated[int, Query(ge=1, le=365)] = 30)
+         row["cost"] = round(row["cost"], 6)
+     totals: dict[str, Any] = {name: sum(row[name] for row in rows) for name in _FIELDS}
+     totals["cost"] = round(totals["cost"], 6)
+-    return {"days": days, "daily": rows, "totals": totals}
++    return {"days": days, "daily": rows, "totals": totals, "by_model": models}
+diff --git a/tests/contract/web/test_logs_analytics_routes.py b/tests/contract/web/test_logs_analytics_routes.py
+index 7a5db0d..235f23d 100644
+--- a/tests/contract/web/test_logs_analytics_routes.py
++++ b/tests/contract/web/test_logs_analytics_routes.py
+@@ -170,18 +170,24 @@ def test_usage_sums_match_the_store(rest: RestApp, scope: Scope, fake_clock: Fak
+         "day": today.isoformat(),
+         "input_tokens": 110,
+         "output_tokens": 55,
++        "api_calls": 0,
+         "cost": 0.29,  # the billed 0.04 replaces the 0.05 estimate
+         "sessions": 2,
+     }
+     yesterday = days[(today - timedelta(days=1)).isoformat()]
+     assert yesterday["input_tokens"] == 1020 and yesterday["output_tokens"] == 402
+     assert yesterday["cost"] == pytest.approx(1.01) and yesterday["sessions"] == 1
++    assert yesterday["api_calls"] == 1  # the title call
+     assert week["totals"] == {
+         "input_tokens": 110 + 1020 + 7,
+         "output_tokens": 55 + 402 + 3,
++        "api_calls": 1,
+         "cost": pytest.approx(1.30),
+         "sessions": 4,
+     }
++    assert week["by_model"] == [
++        {"model": "m", "input_tokens": 20, "output_tokens": 2, "api_calls": 1, "cost": 0.01}
++    ]
+     assert week["days"] == 7
+     month = rest.client.get("/api/analytics/usage").json()
+     assert month["days"] == 30 and month["totals"]["sessions"] == 5
+@@ -194,11 +200,47 @@ def test_usage_without_a_store_is_empty_and_creates_nothing(rest: RestApp, scope
+     assert body == {
+         "days": 90,
+         "daily": [],
+-        "totals": {"input_tokens": 0, "output_tokens": 0, "cost": 0, "sessions": 0},
++        "totals": {"input_tokens": 0, "output_tokens": 0, "api_calls": 0, "cost": 0, "sessions": 0},
++        "by_model": [],
+     }
+     assert sorted(p.name for p in scope.home.iterdir()) == before
+ 
+ 
++def test_usage_counts_calls_and_splits_by_model(
++    rest: RestApp, scope: Scope, fake_clock: FakeClock
++) -> None:
++    """W58-J1-1: API calls and the per-model split come from what the store recorded."""
++    fake_clock.advance(12 * 3600)
++    now = fake_clock.now().timestamp()
++    store = registry.open_unshared(scope)
++    try:
++        sessions.create(store, "a", "cli", started_at=now - 60)
++        sessions.create(store, "b", "cli", started_at=now - 30)
++        sessions.create(store, "old", "cli", started_at=now - 40 * DAY)
++        big = UsageDelta(input_tokens=500, output_tokens=40, model="big", billing_provider="p")
++        small = UsageDelta(input_tokens=30, output_tokens=5, model="small", billing_provider="p")
++        for delta in (big, big, small):
++            assert usage.record(store, "a", delta)
++        assert usage.record(store, "b", small)
++        assert usage.record(store, "b", small, task="title")
++        assert usage.record(store, "old", big)
++    finally:
++        store.close()
++    body = rest.client.get("/api/analytics/usage", params={"days": 30}).json()
++    assert body["totals"]["api_calls"] == 5
++    assert body["totals"]["input_tokens"] == 500 + 500 + 30 + 30 + 30
++    assert [row["model"] for row in body["by_model"]] == ["big", "small"]
++    assert body["by_model"][0] == {
++        "model": "big",
++        "input_tokens": 1000,
++        "output_tokens": 80,
++        "api_calls": 2,
++        "cost": 0,
++    }
++    assert body["by_model"][1]["api_calls"] == 3  # main loop and the side call alike
++    assert sum(row["api_calls"] for row in body["by_model"]) == body["totals"]["api_calls"]
++
++
+ @pytest.mark.parametrize("days", [0, -1, 366, "many"])
+ def test_usage_days_out_of_range_is_422(rest: RestApp, days: Any) -> None:
+     assert rest.client.get("/api/analytics/usage", params={"days": days}).status_code == 422
