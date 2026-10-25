@@ -405,6 +405,58 @@ def test_toolsets_list_plain_toolsets_with_tools(rest: RestApp) -> None:
     assert any(r["enabled"] for r in rows)
 
 
+def test_toolsets_answer_the_cli_selection_and_save_a_checked_one(
+    rest: RestApp, scope: Scope
+) -> None:
+    first = rest.client.get("/api/tools/toolsets").json()["selection"]
+    assert first == {"platform": "cli", "toolsets": ["indus-cli"], "saved": False}
+
+    saved = rest.client.put("/api/tools/toolsets", json={"toolsets": [" web ", "file", "web"]})
+    assert saved.status_code == 200, saved.text
+    assert saved.json() == {"ok": True, "platform": "cli", "toolsets": ["web", "file"]}
+    listed = rest.client.get("/api/tools/toolsets").json()
+    assert listed["selection"] == {"platform": "cli", "toolsets": ["web", "file"], "saved": True}
+    enabled = {r["name"] for r in listed["toolsets"] if r["enabled"]}
+    assert {"web", "file"} <= enabled and "browser" not in enabled
+
+    typo = rest.client.put("/api/tools/toolsets", json={"toolsets": ["web", "wbe"]})
+    assert typo.status_code == 400 and _code(typo) == "unknown_toolset"
+    assert typo.json()["detail"]["names"] == ["wbe"]
+    empty = rest.client.put("/api/tools/toolsets", json={"toolsets": [" "]})
+    assert empty.status_code == 400 and _code(empty) == "empty_selection"
+    after = rest.client.get("/api/tools/toolsets").json()["selection"]["toolsets"]
+    assert after == ["web", "file"]  # refusals wrote nothing
+
+
+def test_toolset_save_needs_the_dashboard_session(rest: RestApp) -> None:
+    refused = rest.anonymous().put("/api/tools/toolsets", params=WRITE, json={"toolsets": ["web"]})
+    assert refused.status_code == 401
+
+
+def test_tool_keys_list_declared_names_with_set_state_only(rest: RestApp, scope: Scope) -> None:
+    value = "kv-" + "".join(["t5Wq"] * 6)  # a fake key built at runtime
+    groups = rest.client.get("/api/tools/keys").json()["tools"]
+    by_backend = {g["backend"]: g for g in groups}
+    assert by_backend["brave"]["toolset"] == "web"
+    assert by_backend["brave"]["vars"] == [
+        {"name": "BRAVE_SEARCH_API_KEY", "kind": "key", "is_set": False}
+    ]
+    assert {v["name"]: v["kind"] for v in by_backend["browserbase"]["vars"]} == {
+        "BROWSERBASE_API_KEY": "key",
+        "BROWSERBASE_PROJECT_ID": "key",
+        "BROWSERBASE_BASE_URL": "url",
+    }
+    assert by_backend["searxng"]["vars"][0]["kind"] == "url"
+
+    stored = rest.client.put("/api/env", json={"key": "BRAVE_SEARCH_API_KEY", "value": value})
+    assert stored.status_code == 200, stored.text
+    again = rest.client.get("/api/tools/keys")
+    assert value not in again.text and value[:4] + "…" not in again.text
+    brave = next(g for g in again.json()["tools"] if g["backend"] == "brave")
+    assert brave["vars"][0]["is_set"] is True
+    assert set(brave["vars"][0]) == {"name", "kind", "is_set"}
+
+
 def _hub_skill(web: FakeWeb, name: str, body: str) -> str:
     text = f"---\nname: {name}\ndescription: The {name} skill.\n---\n\n# {name}\n\n{body}\n"
     url = f"{HUB}/{name}/SKILL.md"

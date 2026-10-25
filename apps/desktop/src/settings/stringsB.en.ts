@@ -165,6 +165,14 @@ export const SETTINGS_B_STRINGS = {
   "settings.toolKeys.intro": "Keys that tools and skills read; providers' keys are on Providers.",
   "settings.toolKeys.none": "No tool keys yet",
   "settings.toolKeys.noneBody": "Add a key a tool or skill asks for.",
+  "settings.toolKeys.group": "{toolset} tools",
+  "settings.toolsets.title": "Enabled toolsets",
+  "settings.toolsets.body": "Toolsets new chats get, separated by commas.",
+  "settings.toolsets.bundle":
+    "Toolsets new chats get, separated by commas. Now: the {name} bundle.",
+  "settings.toolKeys.set": "Set",
+  "settings.toolKeys.unset": "Not set",
+  "settings.toolKeys.others": "Other keys",
 
   "settings.archived2.intro":
     "Archived chats are hidden from the sidebar and keep all their messages.",

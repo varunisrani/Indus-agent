@@ -105,6 +105,10 @@ class WebProvider:
     keyless: bool = False
     can_search: bool = False
     can_extract: bool = False
+    secret_names: tuple[str, ...] = ()
+    """Key variables the provider reads (W60-L2-1: listed on the desktop's Tools & Keys)."""
+    url_names: tuple[str, ...] = ()
+    """Address variables the provider reads."""
 
     def can(self, capability: Capability) -> bool:
         return self.can_search if capability == "search" else self.can_extract
@@ -280,6 +284,7 @@ class BraveProvider(WebProvider):
     name = "brave"
     title = "Brave Search"
     can_search = True
+    secret_names = (BRAVE_KEY,)
 
     def missing(self, scope: Scope | None) -> str | None:
         return None if _secret(scope, BRAVE_KEY) else f"{BRAVE_KEY} is not set"
@@ -312,6 +317,7 @@ class SearxngProvider(WebProvider):
     name = "searxng"
     title = "SearXNG"
     can_search = True
+    url_names = (SEARXNG_ENV,)
 
     @staticmethod
     def base_url(scope: Scope | None) -> str:

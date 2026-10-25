@@ -1,7 +1,8 @@
 // Settings › Advanced (W52-j): Desktop & startup (keep awake, quick entry and its shortcut, run
 // onboarding again) and Profiles (rename / delete through the window's switcher).
+// W60-L2-2: Tool access starts with the enabled toolsets (the CLI selection new chats get).
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import type { IndusKeepAwakeMode } from "../../global.d.ts";
 import { useT } from "../../i18n/index.tsx";
 import { useSwitcher } from "../../profiles/switcherReact.tsx";
@@ -218,5 +219,89 @@ export function ProfilesPage() {
       </div>
       <Note text={error} error />
     </PageBody>
+  );
+}
+
+// -- Tool access: enabled toolsets (W60-L2-2) --------------------------------------------------------
+
+interface ToolsetSelection {
+  readonly platform: string;
+  readonly toolsets: readonly string[];
+  readonly saved: boolean;
+}
+
+/** "web, file" → ["web", "file"]: comma- or line-separated, blanks dropped. */
+export function toolsetNames(text: string): string[] {
+  return text
+    .split(/[,\n]/)
+    .map((name) => name.trim())
+    .filter((name) => name !== "");
+}
+
+/**
+ * The toolsets new chats get (`platform_toolsets.cli`, else the `indus-cli` bundle), as one
+ * comma-separated field. The backend checks every name (`PUT /api/tools/toolsets`); a refusal keeps
+ * what is saved and says why.
+ */
+export function EnabledToolsetsRow() {
+  const t = useT();
+  const { api, profile, focusRow } = useSettings();
+  const [selection, setSelection] = useState<ToolsetSelection | null>(null);
+  const [draft, setDraft] = useState("");
+  const [note, setNote] = useState<{ text: string; error: boolean } | null>(null);
+  const fieldId = useId();
+  const load = useCallback(() => {
+    void rest<{ selection?: ToolsetSelection }>(api, "GET", "/api/tools/toolsets", {
+      profile,
+    }).then((answer) => {
+      if (!answer.ok) setNote({ text: answer.message, error: true });
+      else if (answer.data.selection !== undefined) {
+        setSelection(answer.data.selection);
+        setDraft(answer.data.selection.toolsets.join(", "));
+      }
+    });
+  }, [api, profile]);
+  useEffect(load, [load]);
+  const commit = async () => {
+    if (selection === null) return;
+    const names = toolsetNames(draft);
+    if (names.join(",") === selection.toolsets.join(",")) return;
+    const answer = await rest<{ toolsets: string[] }>(api, "PUT", "/api/tools/toolsets", {
+      body: { toolsets: names },
+      profile,
+    });
+    if (answer.ok) {
+      setSelection({ ...selection, toolsets: answer.data.toolsets, saved: true });
+      setDraft(answer.data.toolsets.join(", "));
+      setNote({ text: t("settings.saved"), error: false });
+    } else setNote({ text: answer.message, error: true });
+  };
+  return (
+    <SettingRow
+      rowId="enabled-toolsets"
+      highlighted={focusRow === "enabled-toolsets"}
+      title={t("settings.toolsets.title")}
+      description={
+        selection !== null && !selection.saved
+          ? t("settings.toolsets.bundle", { name: selection.toolsets.join(", ") })
+          : t("settings.toolsets.body")
+      }
+      htmlFor={fieldId}
+      control={
+        <span className="sb-stack">
+          <TextField
+            id={fieldId}
+            value={draft}
+            disabled={selection === null}
+            onChange={(event) => setDraft(event.currentTarget.value)}
+            onBlur={() => void commit()}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") void commit();
+            }}
+          />
+          <Note text={note?.text ?? null} error={note?.error ?? false} />
+        </span>
+      }
+    />
   );
 }

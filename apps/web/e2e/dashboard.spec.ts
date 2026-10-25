@@ -1,5 +1,6 @@
 // Admin pages against a real `indus dashboard` and daemon (P18-30): Sessions search and delete,
-// Config save (form and raw YAML), Skills create, the in-app Docs.
+// Config save (form and raw YAML), Skills create, the in-app Docs, Models (per-model usage and
+// the price table's model lists).
 
 import { expect, test } from "./fixtures.ts";
 
@@ -110,6 +111,35 @@ test("Skills: New skill saves SKILL.md into the profile's skills folder", async 
   const written = await stack.ask("read", { path: "skills/release-notes/SKILL.md" });
   expect(String(written.text)).toContain("name: release-notes");
   await expect(page.getByText("release-notes", { exact: true }).first()).toBeVisible();
+});
+
+test("Models: a run shows as a per-model card; a vendor lists the price table's models", async ({
+  launch,
+  page,
+}) => {
+  const stack = await launch({
+    turns: [[{ text: "Hello." }, { usage: { prompt: 1200, completion: 30 } }]],
+  });
+  const ran = await stack.ask("indus", { args: ["chat", "-q", "hello"] });
+  expect(ran.code, String(ran.stderr)).toBe(0);
+
+  await page.goto(`${stack.url}/models`);
+  const card = page
+    .getByRole("list", { name: "Usage by model" })
+    .getByTestId("model-usage-fake-model");
+  await expect(card).toContainText("#1");
+  await expect(card).toContainText("main");
+  await expect(page.getByTestId("moa-summary")).toHaveText("no presets");
+
+  await page.getByRole("button", { name: "Change", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Switch model" });
+  const openai = dialog
+    .getByRole("list", { name: "Providers" })
+    .getByRole("button", { name: /^OpenAI/ });
+  await expect(openai).toContainText(/openai · \d+ models/);
+  await openai.click();
+  await expect(dialog.getByTestId("model-list-hint")).toContainText("From our price table");
+  await expect(dialog.getByRole("list", { name: "Models" }).getByRole("button")).not.toHaveCount(0);
 });
 
 test("Logs: the gateway log's tail as the daemon wrote it", async ({ launch, page }) => {

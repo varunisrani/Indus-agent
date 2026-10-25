@@ -25,6 +25,7 @@ stored, and a value equal to the stored value's preview is refused. No answer ev
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Annotated, Any, Final, NoReturn
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -64,7 +65,7 @@ from indus.web.routes.config_view import (
 )
 from indus.web.scope import read_scope, write_scope
 
-__all__ = ["ROUTE_LIST", "router"]
+__all__ = ["ROUTE_LIST", "router", "set_flags"]
 
 router = APIRouter()
 
@@ -274,6 +275,16 @@ def _stored_value(store: SecretStore, file_values: dict[str, str], name: str) ->
     except (SecretStoreError, ValueError):
         found = None
     return found if found else file_values.get(name)
+
+
+def set_flags(scope: Scope, names: Iterable[str]) -> dict[str, bool]:
+    """Whether each name has a value where a tool would find it (the secret store, the profile's
+    ``.env``, the scope's environment); never the value itself (W60-L2-1)."""
+    store = _store(scope)
+    file_values = read_env_file(env_file_path(scope.home))
+    return {
+        name: bool(_stored_value(store, file_values, name) or scope.env.get(name)) for name in names
+    }
 
 
 @router.get("/api/env")

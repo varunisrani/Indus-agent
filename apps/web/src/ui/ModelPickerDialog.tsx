@@ -1,12 +1,14 @@
 // "Switch model" dialog, shared by the chat rail and the Models page (W52-a / W52-b, one picker
 // since the wave 53 integration). Providers on the left, models on the right, a fuzzy filter over
-// both, the provider and model in use tagged CURRENT. Our server lists providers but not each
-// vendor's models; it can ask an OpenAI-compatible endpoint for its own list
-// (`POST /api/model/test-endpoint`). W57-H1-5: so a custom or local endpoint (a saved
-// `providers.<name>` entry with a base URL, or the main model's own `model.base_url`) lists its
-// models, with the entry's saved models; every other provider shows the model in use. The typed
-// model id field stays as the fallback. The caller decides what applying means (`onApply`), and
-// owns the request.
+// both, the provider and model in use tagged CURRENT. Where the models come from:
+// - a custom or local endpoint (a saved `providers.<name>` entry with a base URL, or the main
+//   model's own `model.base_url`): its own `/models`, asked by our server
+//   (`POST /api/model/test-endpoint`, W57-H1-5), plus the entry's saved models;
+// - a vendor provider: the ids our price table lists for its own host (`models` on its
+//   `/api/model/options` row, W60-L1-1);
+// - any other provider: only the model in use.
+// The typed model id field stays as the fallback. The caller decides what applying means
+// (`onApply`), and owns the request.
 
 import { useQuery } from "@tanstack/react-query";
 import { Check, LoaderCircle, RefreshCw, Search } from "lucide-react";
@@ -87,6 +89,10 @@ export function endpointSource(
   return null;
 }
 
+function countText(n: number): string {
+  return `${n} ${n === 1 ? "model" : "models"}`;
+}
+
 function CurrentTag() {
   return <span className="type-heading shrink-0 text-[0.75rem] text-ink">CURRENT</span>;
 }
@@ -149,6 +155,8 @@ export function ModelPickerDialog({
     enabled: open,
   });
   const source = endpointSource(config.data, shownProvider, current.provider);
+  const shownRow = options.data?.providers.find((p) => p.name === shownProvider);
+  const catalogue = shownRow?.models ?? [];
   const listed = useQuery({
     queryKey: ["models", "endpoint", source?.query.base_url ?? "", source?.query.key_env ?? ""],
     queryFn: () => api.model.testEndpoint(source?.query ?? { base_url: "" }),
@@ -165,12 +173,15 @@ export function ModelPickerDialog({
         : []),
       ...listedModels,
       ...(source?.saved ?? []),
+      ...catalogue,
     ]),
   ];
   const models = known.filter((m) => fuzzyHits(m, filter) !== null);
   const listHint =
     source === null
-      ? "Type the model id as the provider names it; this install cannot list them."
+      ? catalogue.length > 0
+        ? `From our price table${shownRow?.models_checked ? ` (checked ${shownRow.models_checked})` : ""}. Pick a model, or type another id.`
+        : "Type the model id as the provider names it; this install cannot list them."
       : listed.isFetching && !listed.data
         ? "Asking the endpoint for its models…"
         : listed.error
@@ -269,12 +280,14 @@ export function ModelPickerDialog({
                     <span className="truncate text-ink-muted">
                       {p.name}
                       {picked && known.length > 0
-                        ? ` · ${known.length} ${known.length === 1 ? "model" : "models"}`
-                        : inUse && current.model
-                          ? " · 1 model"
-                          : p.configured
-                            ? " · configured"
-                            : " · no key"}
+                        ? ` · ${countText(known.length)}`
+                        : (p.models?.length ?? 0) > 0
+                          ? ` · ${countText(p.models?.length ?? 0)}`
+                          : inUse && current.model
+                            ? " · 1 model"
+                            : p.configured
+                              ? " · configured"
+                              : " · no key"}
                     </span>
                   </button>
                 </li>

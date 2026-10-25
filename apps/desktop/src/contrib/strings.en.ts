@@ -30,6 +30,7 @@ export const PLUGIN_STRINGS = {
   "palette.group.commands": "Commands",
   "palette.newWindow": "New window",
   "palette.newChatIn": "New chat in {name}",
+  "palette.manageProjects": "Manage projects",
   "switcher.label": "Switch chat",
   "palette.close": "Close the command list",
   "palette.goTo": "Go to {page}",

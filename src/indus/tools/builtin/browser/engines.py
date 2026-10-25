@@ -770,6 +770,10 @@ class CamofoxHandle:
 class Camofox:
     """Opens one Camofox tab per session (see the module notes)."""
 
+    label = "Camofox"
+    secret_names: tuple[str, ...] = ("CAMOFOX_API_KEY",)
+    """Optional bearer key (W60-L2-1: listed on the desktop's Tools & Keys)."""
+
     def __init__(self, client_factory: CamofoxClientFactory = _camofox_client) -> None:
         self.client_factory = client_factory
 

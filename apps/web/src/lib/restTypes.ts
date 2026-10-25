@@ -234,6 +234,13 @@ export interface ProviderOption {
   /** Any documented sign-in (browser or device) that `indus auth add --type oauth` runs. */
   sign_in?: boolean;
   supports_model_listing: boolean;
+  /** Model ids our price table lists for the vendor whose own host this provider talks to (in the
+   * table's order); empty for an aggregator, a proxy, a local or custom endpoint (W60-L1-1). */
+  models?: string[];
+  /** Where `models` comes from (`price_table`), or null when there is no list. */
+  models_source?: string | null;
+  /** The day the price table's block for that vendor was read. */
+  models_checked?: string | null;
 }
 
 export interface ModelOptions {
@@ -624,10 +631,21 @@ export interface UsageDay {
   sessions: number;
 }
 
+/** One model's share of the window (`by_model`, W58-J1-1): main loop and side calls together. */
+export interface ModelUsageRow {
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  api_calls: number;
+  cost: number;
+}
+
 export interface UsageResponse {
   days: number;
   daily: UsageDay[];
   totals: { input_tokens: number; output_tokens: number; cost: number; sessions: number };
+  /** The same window split by model, most tokens first. */
+  by_model?: ModelUsageRow[];
 }
 
 export interface FileEntry {

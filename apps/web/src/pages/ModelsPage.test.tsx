@@ -1,8 +1,8 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockApi, type MockApi } from "../testing/mockApi.ts";
-import { renderPage } from "../testing/render.tsx";
-import { ModelsPage } from "./ModelsPage.tsx";
+import { currentLocation, renderPage } from "../testing/render.tsx";
+import { ModelsPage, moaSummary } from "./ModelsPage.tsx";
 
 let mock: MockApi;
 let restore: () => void;
@@ -187,6 +187,52 @@ describe("models page", () => {
     expect(mock.callsTo("POST", "/api/model/test-endpoint")).toEqual([]);
   });
 
+  it("lists a vendor provider's models from the price table (W60-L1-1)", async () => {
+    mock.state.modelOptions.providers.push({
+      name: "vendor",
+      label: "Vendor API",
+      description: "",
+      family: "vendor",
+      auth_type: "api_key",
+      configured: false,
+      device_login: false,
+      supports_model_listing: true,
+      models: ["vendor-large", "vendor-small"],
+      models_source: "price_table",
+      models_checked: "2026-10-18",
+    });
+    renderPage(<ModelsPage />, "/models");
+    await screen.findByTestId("provider-fake");
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "Switch model" }));
+    const providers = within(await dialog.findByRole("list", { name: "Providers" }));
+    // The row counts the listed models instead of the key state.
+    const row = await providers.findByRole("button", { name: /Vendor API/ });
+    expect(row.textContent).toContain("vendor · 2 models");
+    expect(providers.getByRole("button", { name: /Sign-in provider/ }).textContent).toContain(
+      "no key",
+    );
+    fireEvent.click(row);
+    const models = within(dialog.getByRole("list", { name: "Models" }));
+    expect(models.getAllByRole("button").map((b) => b.textContent)).toEqual([
+      "vendor-large",
+      "vendor-small",
+    ]);
+    expect(dialog.getByTestId("model-list-hint").textContent).toBe(
+      "From our price table (checked 2026-10-18). Pick a model, or type another id.",
+    );
+    fireEvent.click(models.getByRole("button", { name: "vendor-small" }));
+    fireEvent.click(dialog.getByRole("button", { name: "Switch" }));
+    await waitFor(() =>
+      expect(mock.callsTo("POST", "/api/model/set")[0]?.body).toEqual({
+        scope: "main",
+        provider: "vendor",
+        model: "vendor-small",
+      }),
+    );
+    expect(mock.callsTo("POST", "/api/model/test-endpoint")).toEqual([]);
+  });
+
   it("picks another provider in the dialog and filters the list", async () => {
     renderPage(<ModelsPage />, "/models");
     await screen.findByTestId("provider-fake");
@@ -290,6 +336,66 @@ describe("models page", () => {
     expect(figures.textContent).toContain("$0.0050");
   });
 
+  it("sums up the mixture-of-agents presets; Configure opens that Config section", async () => {
+    mock.state.config = {
+      ...mock.state.config,
+      moa: {
+        default_preset: "review",
+        presets: {
+          review: {
+            reference_models: [
+              { provider: "fake", model: "fake-a" },
+              { provider: "fake", model: "fake-b" },
+              { provider: "fake", model: "fake-c", enabled: false },
+            ],
+            aggregator: { provider: "fake", model: "fake-model" },
+          },
+        },
+      },
+    };
+    renderPage(<ModelsPage />, "/models");
+    await waitFor(() =>
+      expect(screen.getByTestId("moa-summary").textContent).toBe("2 references · fake:fake-model"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Configure mixture of agents" }));
+    await screen.findByTestId("elsewhere");
+    expect(currentLocation()).toBe("/config?section=moa");
+  });
+
+  it("shows a card per model for the period, tokens only with the flag", async () => {
+    mock.state.usage = [
+      { day: "2026-10-24", input_tokens: 3400, output_tokens: 316, cost: 0.005, sessions: 3 },
+    ];
+    mock.state.usageByModel = [
+      { model: "fake-model", input_tokens: 3000, output_tokens: 300, api_calls: 7, cost: 0.004 },
+      { model: "fake-mini", input_tokens: 400, output_tokens: 16, api_calls: 1, cost: 0.001 },
+    ];
+    const view = renderPage(<ModelsPage />, "/models");
+    const cards = within(await screen.findByRole("list", { name: "Usage by model" }));
+    const first = within(cards.getByTestId("model-usage-fake-model"));
+    expect(first.getByText("#1")).toBeTruthy();
+    expect(first.getByText("main")).toBeTruthy();
+    expect(first.getByText("7")).toBeTruthy();
+    expect(first.getByText("API calls")).toBeTruthy();
+    const second = within(cards.getByTestId("model-usage-fake-mini"));
+    expect(second.getByText("#2")).toBeTruthy();
+    expect(second.queryByText("main")).toBeNull();
+    expect(second.getByText("API call")).toBeTruthy();
+    expect(cards.queryByText(/ in · /)).toBeNull();
+    view.unmount();
+
+    mock.state.config = { ...mock.state.config, dashboard: { show_token_analytics: true } };
+    renderPage(<ModelsPage />, "/models");
+    const shown = within(await screen.findByTestId("model-usage-fake-model"));
+    await waitFor(() => expect(shown.getByText("3.0K in · 300 out · $0.0040")).toBeTruthy());
+  });
+
+  it("says so when no model was called in the period", async () => {
+    renderPage(<ModelsPage />, "/models");
+    expect(await screen.findByText("No model calls in this period.")).toBeTruthy();
+    expect(screen.queryByRole("list", { name: "Usage by model" })).toBeNull();
+  });
+
   it("polls at the server's interval and stops when approved", async () => {
     mock.state.loginPolls = ["pending", "approved"];
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
@@ -352,5 +458,21 @@ describe("models page", () => {
     fireEvent.click(row.getByRole("button", { name: "Sign in" }));
     fireEvent.click(row.getByRole("button", { name: "Get a sign-in code" }));
     expect((await row.findByRole("alert")).textContent).toContain("no device sign-in");
+  });
+});
+
+describe("moaSummary", () => {
+  it("reads the preset /moa would use", () => {
+    expect(moaSummary(undefined)).toBe("no presets");
+    expect(moaSummary({ moa: { presets: {} } })).toBe("no presets");
+    const one = { reference_models: [{ provider: "p", model: "m" }] };
+    expect(moaSummary({ moa: { presets: { solo: one } } })).toBe("1 reference · no aggregator");
+    const two = { reference_models: [], aggregator: { model: "agg" } };
+    expect(moaSummary({ moa: { presets: { solo: one, duo: two } } })).toBe(
+      "2 presets · no default",
+    );
+    expect(moaSummary({ moa: { default_preset: "duo", presets: { solo: one, duo: two } } })).toBe(
+      "duo · 0 references · agg",
+    );
   });
 });

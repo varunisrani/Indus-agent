@@ -7,7 +7,13 @@
   providers) with ``configured`` (a key in the pool, the secret store or the environment, or a
   sign-in), ``device_login`` (a device flow this page can run) and ``sign_in`` (any documented
   sign-in flow in ``providers.auth.flows``, browser or device, that ``indus auth add <name> --type
-  oauth`` runs), and the current main choice.
+  oauth`` runs), and the current main choice. Each row also carries ``models``: the model ids
+  our price table (``providers.pricing``) lists for the vendor whose own host the provider's base
+  URL names (HTTPS on 443, the rule pricing itself uses), in the table's order, with
+  ``models_source`` (``price_table``) and ``models_checked`` (the day that block was read); a
+  provider the table does not cover (an aggregator, a proxy, a local or custom endpoint) has an
+  empty list and ``null`` for both (W60-L1-1). Read-only, from the shipped table: no request leaves
+  the machine.
 - ``POST /api/model/set {scope: main|auxiliary, task?, provider, model, base_url?}``: through the
   config writer; a side task must be one the schema knows.
 - ``GET /api/model/auxiliary``: each side task's provider, model and base URL, and the main model.
@@ -54,6 +60,8 @@ from indus.providers.auth.pool_model import PoolEntry, env_entries, load_pool, n
 from indus.providers.auth.store import AuthStore
 from indus.providers.context_length import family_length
 from indus.providers.model_list import LIST_TIMEOUT_SECONDS, parse_models
+from indus.providers.pricing import PriceTableError, VendorPrices, default_table
+from indus.providers.profile import ProviderProfile
 from indus.providers.registry import Registry
 from indus.web.routes.system import add_pool_secret, provider_profile
 from indus.web.scope import read_scope, write_scope
@@ -131,12 +139,26 @@ def _configured(scope: Scope, store: AuthStore, name: str, env_vars: tuple[str, 
     return False
 
 
+MODELS_SOURCE: Final = "price_table"
+
+
+def _price_vendor(profile: ProviderProfile) -> VendorPrices | None:
+    """The price table's block for the vendor whose own host ``profile`` talks to, if any."""
+    if not profile.base_url:
+        return None
+    try:
+        return default_table().vendor_for(profile.base_url)
+    except (PriceTableError, OSError):
+        return None
+
+
 @router.get("/api/model/options")
 def model_options(scope: ReadScope) -> dict[str, Any]:
     store = AuthStore(scope.home, env=scope.env)
     rows: list[dict[str, Any]] = []
     for profile in Registry(scope).list_providers():
         flows = flows_for(profile.name)
+        vendor = _price_vendor(profile)
         rows.append(
             {
                 "name": profile.name,
@@ -148,6 +170,9 @@ def model_options(scope: ReadScope) -> dict[str, Any]:
                 "device_login": flows.device is not None,
                 "sign_in": flows.any,
                 "supports_model_listing": profile.supports_model_listing,
+                "models": list(vendor.models) if vendor is not None else [],
+                "models_source": MODELS_SOURCE if vendor is not None else None,
+                "models_checked": vendor.checked if vendor is not None else None,
             }
         )
     model = _section(scope, "model")

@@ -13,6 +13,7 @@ from typing import Any, cast
 import httpx
 import pytest
 
+from indus.foundation import config as config_module
 from indus.foundation.config import loader as config_loader
 from indus.foundation.profiles import is_tombstoned, read_active, tombstone_path
 from indus.foundation.scope import Scope
@@ -20,6 +21,7 @@ from indus.foundation.secrets import SecretStore
 from indus.providers.auth.device_code import DeviceFlowSpec
 from indus.providers.auth.pool_model import secret_name
 from indus.providers.auth.store import AuthStore
+from indus.providers.pricing import default_table
 from indus.web.routes import models, profiles
 from tests.contract.web.rest_app import (
     RestApp,
@@ -255,6 +257,35 @@ def test_model_set_info_and_options(rest: RestApp) -> None:
         "/api/model/set", params=WRITE, json={"scope": "main", "provider": "nope", "model": "m"}
     )
     assert unknown.status_code == 400
+
+
+def test_options_list_the_price_table_s_models_per_vendor(rest: RestApp, scope: Scope) -> None:
+    # W60-L1-1: a vendor provider's models are the ids our price table lists for its own host.
+    assert rest.anonymous().get("/api/model/options", params=WRITE).status_code == 401
+    rows = {p["name"]: p for p in rest.client.get("/api/model/options").json()["providers"]}
+    table = default_table()
+    for name, url in (
+        ("openai", "https://api.openai.com/v1"),
+        ("anthropic", "https://api.anthropic.com"),
+        ("gemini", "https://generativelanguage.googleapis.com/v1beta"),
+    ):
+        vendor = table.vendor_for(url)
+        assert vendor is not None and vendor.models
+        assert rows[name]["models"] == list(vendor.models)
+        assert rows[name]["models_source"] == "price_table"
+        assert rows[name]["models_checked"] == vendor.checked
+    # An aggregator, a vendor the table does not price and the custom endpoint list nothing.
+    for name in ("openrouter", "deepseek", "custom"):
+        assert rows[name]["models"] == []
+        assert rows[name]["models_source"] is None and rows[name]["models_checked"] is None
+    # A provider pointed at another host is not that vendor: no borrowed list.
+    config_module.save(
+        scope,
+        {"providers": {"openai": {"base_url": "https://proxy.example.test/v1", "override": True}}},
+    )
+    rows = {p["name"]: p for p in rest.client.get("/api/model/options").json()["providers"]}
+    assert rows["openai"]["models"] == [] and rows["openai"]["models_source"] is None
+    assert rows["anthropic"]["models"]
 
 
 def test_auxiliary_tasks(rest: RestApp) -> None:

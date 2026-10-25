@@ -3,14 +3,25 @@
 // a card per provider with its key state and device-code sign-in: Start shows the code and the page
 // to enter it on, then the session is polled at the interval the provider asked for until it is
 // approved, refused, expired or cancelled. No token ever reaches the browser.
+// W60-L1-2: the settings card also sums up the mixture-of-agents presets (`moa` in the config; its
+// Configure opens that Config section), and a card per model shows the period's share of
+// `by_model` from `/api/analytics/usage` (calls always, tokens and cost behind the same flag as
+// the totals).
 
 import { useIsFetching, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Cpu, SlidersHorizontal, Star } from "lucide-react";
+import { Cpu, Layers, SlidersHorizontal, Star } from "lucide-react";
 import { type ComponentType, type ReactNode, useEffect, useId, useRef, useState } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { api } from "../lib/api.ts";
 import { formatCost, formatCount, formatTokens } from "../lib/format.ts";
-import type { AuxiliaryTask, LoginStarted, LoginStatus, ProviderOption } from "../lib/restTypes.ts";
+import type {
+  AuxiliaryTask,
+  ConfigObject,
+  LoginStarted,
+  LoginStatus,
+  ModelUsageRow,
+  ProviderOption,
+} from "../lib/restTypes.ts";
 import { useTokenAnalyticsFlag } from "../lib/useTokenAnalyticsFlag.ts";
 import { HeaderAfterTitle } from "../shell/PageHeader.tsx";
 import { errorText, useToast } from "../shell/Toasts.tsx";
@@ -179,6 +190,45 @@ export function auxSummary(tasks: readonly AuxiliaryTask[]): string {
   const overrides = tasks.filter(isOverride).length;
   if (overrides === 0) return `${tasks.length} task${tasks.length === 1 ? "" : "s"} · all auto`;
   return `${overrides} override${overrides === 1 ? "" : "s"} · ${tasks.length - overrides} auto`;
+}
+
+function record(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function slotLabel(value: unknown): string | null {
+  const slot = record(value);
+  const provider = typeof slot?.provider === "string" ? slot.provider.trim() : "";
+  const model = typeof slot?.model === "string" ? slot.model.trim() : "";
+  if (!model) return null;
+  return provider ? `${provider}:${model}` : model;
+}
+
+/** The `moa` section in one line: the preset /moa uses (the default one, or the only one), its
+ * turned-on reference models and its aggregator; the preset count when there are several. */
+export function moaSummary(config: ConfigObject | undefined): string {
+  const moa = record(config?.moa);
+  const presets = Object.entries(record(moa?.presets) ?? {}).filter(
+    (entry): entry is [string, Record<string, unknown>] => record(entry[1]) !== null,
+  );
+  if (presets.length === 0) return "no presets";
+  const wanted = typeof moa?.default_preset === "string" ? moa.default_preset.trim() : "";
+  const picked =
+    presets.find(([name]) => name === wanted) ?? (presets.length === 1 ? presets[0] : undefined);
+  const many = `${presets.length} presets`;
+  if (!picked) return `${many} · no default`;
+  const [name, preset] = picked;
+  const refs = Array.isArray(preset.reference_models)
+    ? preset.reference_models.filter((r) => slotLabel(r) !== null && record(r)?.enabled !== false)
+    : [];
+  const parts = [
+    `${refs.length} ${refs.length === 1 ? "reference" : "references"}`,
+    slotLabel(preset.aggregator) ?? "no aggregator",
+  ];
+  if (presets.length > 1) parts.unshift(name);
+  return parts.join(" · ");
 }
 
 function routeText(task: AuxiliaryTask): string {
@@ -374,8 +424,10 @@ function AuxDialog({
 function ModelSettings() {
   const toast = useToast();
   const changed = useModelsChanged();
+  const navigate = useNavigate();
   const info = useQuery({ queryKey: ["models", "info"], queryFn: () => api.model.info() });
   const aux = useQuery({ queryKey: ["models", "auxiliary"], queryFn: () => api.model.auxiliary() });
+  const config = useQuery({ queryKey: ["config", "file"], queryFn: () => api.config.get() });
   const [picking, setPicking] = useState(false);
   const [configuring, setConfiguring] = useState(false);
   const save = useMutation({
@@ -445,6 +497,27 @@ function ModelSettings() {
             }
           />
         )}
+        {config.error ? (
+          <ErrorState message={errorText(config.error)} onRetry={() => void config.refetch()} />
+        ) : (
+          <SettingRow
+            icon={Layers}
+            iconClass="text-ink-soft"
+            label="Mixture of agents"
+            value={config.isPending ? "…" : moaSummary(config.data)}
+            valueTestId="moa-summary"
+            action={
+              <Button
+                size="sm"
+                className="uppercase"
+                aria-label="Configure mixture of agents"
+                onClick={() => void navigate("/config?section=moa")}
+              >
+                Configure
+              </Button>
+            }
+          />
+        )}
       </div>
       <ModelPickerDialog
         open={picking}
@@ -501,6 +574,90 @@ function UsageFigures({ days }: { days: Period }) {
         </div>
       )}
     </Card>
+  );
+}
+
+function ModelUsageCard({
+  row,
+  rank,
+  main,
+  tokens,
+}: {
+  row: ModelUsageRow;
+  rank: number;
+  main: boolean;
+  tokens: boolean;
+}) {
+  return (
+    <li
+      data-testid={`model-usage-${row.model}`}
+      className={cx("flex flex-col border border-line", main && "ring-1 ring-ink/40")}
+    >
+      <div className="flex items-start gap-3 px-4 pt-4 pb-3">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <span className="shrink-0 font-mono text-[0.75rem] text-ink-faint">#{rank}</span>
+          <h3 className="m-0 truncate font-mono text-[0.8125rem] font-bold tracking-[0.12em] text-ink uppercase">
+            {row.model}
+          </h3>
+          {main ? (
+            <span className="inline-flex shrink-0 items-center gap-1 bg-ink/15 px-1.5 py-0.5 font-mono text-[0.6875rem] text-ink">
+              <Star aria-hidden="true" className="size-2.5" />
+              main
+            </span>
+          ) : null}
+        </div>
+        <div className="shrink-0 text-right">
+          <p className="m-0 font-mono text-[0.8125rem] font-bold text-ink">
+            {formatCount(row.api_calls)}
+          </p>
+          <p className="m-0 text-[0.75rem] text-ink-muted">
+            {row.api_calls === 1 ? "API call" : "API calls"}
+          </p>
+        </div>
+      </div>
+      {tokens ? (
+        <p className="m-0 mx-4 border-t border-line/60 py-2 text-right font-mono text-[0.75rem] text-ink-muted">
+          {`${formatTokens(row.input_tokens)} in · ${formatTokens(row.output_tokens)} out · ${formatCost(row.cost)}`}
+        </p>
+      ) : null}
+    </li>
+  );
+}
+
+/** One card per model the period's calls used (`by_model`), most tokens first. */
+function ModelUsageCards({ days }: { days: Period }) {
+  const flag = useTokenAnalyticsFlag();
+  const usage = useQuery({
+    queryKey: ["analytics", days],
+    queryFn: () => api.analytics.usage(days),
+  });
+  const info = useQuery({ queryKey: ["models", "info"], queryFn: () => api.model.info() });
+  // The figures card above shows the loading and error states of the same request.
+  if (!usage.data) return null;
+  const rows = usage.data.by_model ?? [];
+  if (rows.length === 0) {
+    return (
+      <Card padded={false}>
+        <EmptyState icon={Cpu}>No model calls in this period.</EmptyState>
+      </Card>
+    );
+  }
+  const main = info.data?.model ?? null;
+  return (
+    <ul
+      aria-label="Usage by model"
+      className="m-0 grid list-none grid-cols-1 gap-4 p-0 md:grid-cols-2 xl:grid-cols-3"
+    >
+      {rows.map((row, at) => (
+        <ModelUsageCard
+          key={row.model}
+          row={row}
+          rank={at + 1}
+          main={row.model === main}
+          tokens={flag.enabled}
+        />
+      ))}
+    </ul>
   );
 }
 
@@ -615,6 +772,7 @@ export function ModelsPage() {
   const refresh = () => {
     void client.invalidateQueries({ queryKey: ["models"] });
     void client.invalidateQueries({ queryKey: ["analytics", days] });
+    void client.invalidateQueries({ queryKey: ["config", "file"] });
   };
   return (
     <div className="flex flex-col gap-[1.4375rem] px-4 py-[1.4375rem] lg:px-[1.4375rem]">
@@ -626,6 +784,7 @@ export function ModelsPage() {
         <ModelSettings />
         <UsageFigures days={days} />
       </div>
+      <ModelUsageCards days={days} />
       <Providers />
     </div>
   );

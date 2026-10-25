@@ -12,7 +12,7 @@ import { LicencesPage } from "./LicencesPage.tsx";
 import type { CustomPage } from "./pages.ts";
 import { PAGES_A } from "./pagesA.tsx";
 import { AboutPage, UninstallPage } from "./pagesB/about.tsx";
-import { AdvancedDesktopPage, ProfilesPage } from "./pagesB/advanced.tsx";
+import { AdvancedDesktopPage, EnabledToolsetsRow, ProfilesPage } from "./pagesB/advanced.tsx";
 import { RemoteUpdatesPage, ThisWindowPage } from "./pagesB/gateways.tsx";
 import { GlobalShortcutsPage, KeyBindingsPage } from "./pagesB/keyboard.tsx";
 import { ProviderKeysPage, ToolKeysPage } from "./pagesB/keys.tsx";
@@ -156,6 +156,7 @@ const PAGES: Readonly<Partial<Record<CustomPage, () => ReactNode>>> = {
   keyboard: () => <KeyBindingsPage />,
   "keyboard-global": () => <GlobalShortcutsPage />,
   "tools-keys": () => <ToolKeysPage />,
+  "advanced-toolsets": () => <EnabledToolsetsRow />,
   "sessions-archived-list": () => <ArchivedList />,
   "sessions-directory": () => <DefaultFolderPage />,
   plugins: () => <PluginsSettingsPage />, // P24-32: the desktop plugin inventory

@@ -1,6 +1,9 @@
 // Settings › Providers › API keys and Tools & Keys › Keys (W52-j): one quiet row per stored key
 // name (status dot, name, the masked value or "Paste key"); a click opens the row to paste,
 // save or remove. Keys go to the backend's secret store and leave the renderer at once.
+// W60-L2-1: Tools & Keys first lists the key and address variables our tools declare
+// (`GET /api/tools/keys`), grouped by toolset, with "Set" / "Not set" only — never a value or a
+// preview; the same row saves or removes one through `/api/env`.
 
 import { ChevronRight, ExternalLink, Search } from "lucide-react";
 import { useCallback, useEffect, useId, useState } from "react";
@@ -62,6 +65,10 @@ function KeyLine(props: {
   name: string;
   title: string;
   row: EnvRow;
+  /** Replaces the masked preview on the right (tool variables show their state only). */
+  shown?: string;
+  /** Under the name in the open row (the backend that reads it). */
+  caption?: string;
   open: boolean;
   highlighted: boolean;
   onToggle: () => void;
@@ -90,20 +97,34 @@ function KeyLine(props: {
       >
         <span className="sb-dot" data-on={props.row.is_set ? "true" : undefined} />
         <span className="sb-key-title">{props.title}</span>
-        <span className="sb-key-value" data-set={props.row.is_set ? "true" : undefined}>
-          {props.row.is_set ? props.row.redacted_value : t("settings.keys2.paste")}
+        <span
+          className="sb-key-value"
+          data-set={props.row.is_set && props.shown === undefined ? "true" : undefined}
+        >
+          {props.shown ?? (props.row.is_set ? props.row.redacted_value : t("settings.keys2.paste"))}
         </span>
       </button>
       {props.open && (
         <div id={bodyId} className="sb-key-body">
-          <span className="sb-mono">{props.name}</span>
+          <span className="sb-mono">
+            {props.caption === undefined ? props.name : `${props.caption} · ${props.name}`}
+          </span>
           <span className="settings-inline">
-            <SecretInput
-              label={props.name}
-              value={value}
-              onChange={setValue}
-              placeholder={t(props.row.is_set ? "settings.keys.replace" : "settings.keys.paste")}
-            />
+            {props.row.is_password ? (
+              <SecretInput
+                label={props.name}
+                value={value}
+                onChange={setValue}
+                placeholder={t(props.row.is_set ? "settings.keys.replace" : "settings.keys.paste")}
+              />
+            ) : (
+              <TextField
+                aria-label={props.name}
+                placeholder="https://…"
+                value={value}
+                onChange={(event) => setValue(event.currentTarget.value)}
+              />
+            )}
             <PrimaryButton
               disabled={value.trim() === ""}
               onClick={async () => {
@@ -153,6 +174,8 @@ function KeyLine(props: {
 function KeyList(props: {
   entries: ReadonlyArray<readonly [string, EnvRow]>;
   titleOf: (name: string, row: EnvRow) => string;
+  shownOf?: (name: string, row: EnvRow) => string;
+  captionOf?: (name: string) => string | undefined;
   onSave: (name: string, value: string) => Promise<string | null>;
   onClear: (name: string) => Promise<string | null>;
 }) {
@@ -168,6 +191,10 @@ function KeyList(props: {
           name={name}
           title={props.titleOf(name, row)}
           row={row}
+          {...(props.shownOf === undefined ? {} : { shown: props.shownOf(name, row) })}
+          {...(props.captionOf?.(name) === undefined
+            ? {}
+            : { caption: props.captionOf(name) as string })}
           open={open === name}
           highlighted={focusRow === `key-${name}`}
           onToggle={() => setOpen((now) => (now === name ? null : name))}
@@ -233,19 +260,122 @@ export function ProviderKeysPage() {
   );
 }
 
-/** Tools & Keys › Keys: the keys a person added for tools and skills, plus the add form. */
+/** One backend of `GET /api/tools/keys` (W60-L2-1): names and set state only. */
+export interface ToolKeyGroup {
+  readonly toolset: string;
+  readonly backend: string;
+  readonly label: string;
+  readonly vars: ReadonlyArray<{
+    readonly name: string;
+    readonly kind: "key" | "url";
+    readonly is_set: boolean;
+  }>;
+}
+
+/** The declared variables per toolset, in the backend's order; a name shared by two backends
+ * shows once (under the first) with both labels as its caption. */
+export function toolKeyRows(groups: readonly ToolKeyGroup[]): Array<{
+  toolset: string;
+  rows: Array<{ name: string; kind: "key" | "url"; is_set: boolean; labels: string[] }>;
+}> {
+  const out: Array<{
+    toolset: string;
+    rows: Array<{ name: string; kind: "key" | "url"; is_set: boolean; labels: string[] }>;
+  }> = [];
+  const seen = new Map<string, { labels: string[] }>();
+  for (const group of groups) {
+    let bucket = out.find((entry) => entry.toolset === group.toolset);
+    if (bucket === undefined) {
+      bucket = { toolset: group.toolset, rows: [] };
+      out.push(bucket);
+    }
+    for (const item of group.vars) {
+      const held = seen.get(item.name);
+      if (held !== undefined) {
+        if (!held.labels.includes(group.label)) held.labels.push(group.label);
+        continue;
+      }
+      const row = { ...item, labels: [group.label] };
+      seen.set(item.name, row);
+      bucket.rows.push(row);
+    }
+  }
+  return out;
+}
+
+function useToolKeys(env: ReturnType<typeof useEnv>) {
+  const { api, profile } = useSettings();
+  const [groups, setGroups] = useState<readonly ToolKeyGroup[] | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+  const load = useCallback(() => {
+    void rest<{ tools: ToolKeyGroup[] }>(api, "GET", "/api/tools/keys", { profile }).then(
+      (answer) => {
+        if (answer.ok) setGroups(answer.data.tools);
+        // a backend without the route (an older one) declares nothing: no error to show
+        else if (answer.status === 404) setGroups([]);
+        else setFailed(answer.message);
+      },
+    );
+  }, [api, profile]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a key list change reloads the states
+  useEffect(load, [load, env.rows]);
+  return { groups, failed };
+}
+
+/** Tools & Keys › Keys: the variables our tools read, the other keys a person added for tools
+ * and skills, and the add form. */
 export function ToolKeysPage() {
   const t = useT();
   const { focusRow } = useSettings();
   const env = useEnv();
+  const tools = useToolKeys(env);
   const [newName, setNewName] = useState("");
   const [newValue, setNewValue] = useState("");
+  const declared = toolKeyRows(tools.groups ?? []);
+  const declaredNames = new Set(declared.flatMap((group) => group.rows.map((row) => row.name)));
   const entries = Object.entries(env.rows ?? {}).filter(
-    ([, row]) => row.is_password && row.category !== "provider",
+    ([name, row]) => row.is_password && row.category !== "provider" && !declaredNames.has(name),
   );
   const nameId = useId();
   return (
     <PageBody intro={t("settings.toolKeys.intro")}>
+      {declared.map((group) => (
+        <section
+          key={group.toolset}
+          className="sb-key-group"
+          aria-label={t("settings.toolKeys.group", { toolset: group.toolset })}
+          data-row={`tool-keys-${group.toolset}`}
+        >
+          <h3 className="sb-caps">{t("settings.toolKeys.group", { toolset: group.toolset })}</h3>
+          <KeyList
+            entries={group.rows.map(
+              (row) =>
+                [
+                  row.name,
+                  {
+                    category: "tool",
+                    description: "",
+                    advanced: false,
+                    is_password: row.kind === "key",
+                    is_set: row.is_set,
+                    redacted_value: null,
+                  },
+                ] as const,
+            )}
+            titleOf={(name) => name.replace(/_/g, " ")}
+            shownOf={(_, row) =>
+              t(row.is_set ? "settings.toolKeys.set" : "settings.toolKeys.unset")
+            }
+            captionOf={(name) => group.rows.find((row) => row.name === name)?.labels.join(", ")}
+            onSave={env.save}
+            onClear={env.clear}
+          />
+        </section>
+      ))}
+      <Note text={tools.failed} error />
+      {declared.length > 0 && entries.length > 0 && (
+        <h3 className="sb-caps sb-key-group">{t("settings.toolKeys.others")}</h3>
+      )}
       <div data-row="tool-keys" data-highlighted={focusRow === "tool-keys" ? "true" : undefined}>
         <KeyList
           entries={entries}
@@ -254,9 +384,15 @@ export function ToolKeysPage() {
           onClear={env.clear}
         />
       </div>
-      {env.rows !== null && entries.length === 0 && (
-        <SettingsEmpty title={t("settings.toolKeys.none")} body={t("settings.toolKeys.noneBody")} />
-      )}
+      {env.rows !== null &&
+        (tools.groups !== null || tools.failed !== null) &&
+        declared.length === 0 &&
+        entries.length === 0 && (
+          <SettingsEmpty
+            title={t("settings.toolKeys.none")}
+            body={t("settings.toolKeys.noneBody")}
+          />
+        )}
       <SettingRow
         title={t("settings.keys.other")}
         description={t("settings.keys.otherBody")}

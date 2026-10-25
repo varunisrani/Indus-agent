@@ -228,6 +228,8 @@ export function SettingsOverlay(props: SettingsOverlayProps) {
   else
     content = (
       <>
+        {/* a hand-built block above the schema rows (W60-L2-2: enabled toolsets) */}
+        {page.before !== undefined && <CustomSettingsPage page={page.before} />}
         <SchemaPage
           page={page}
           schema={schema}

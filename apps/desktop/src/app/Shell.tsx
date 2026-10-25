@@ -7,6 +7,7 @@ import {
   AppWindow,
   Ellipsis,
   Folder,
+  FolderCog,
   House,
   MessageSquare,
   Monitor,
@@ -747,14 +748,15 @@ export function Shell(props: {
         icon: PAGE_ICONS[page],
         run: () => navigate(pagePath(page)),
       })),
+      // W60-L2-3: the reference's order first (jobs, profiles, the agent tree, the memory map)
       ...(
         [
           "cron",
           "profiles",
           "agents",
+          "learning-map",
           "command-center",
           "webhooks",
-          "learning-map",
           "session-import",
         ] as const
       ).map((overlay) => ({
@@ -765,17 +767,32 @@ export function Shell(props: {
         run: () => openOverlay(overlay),
       })),
     ];
-    const projects: PaletteEntry[] = projectPrefs.projects.map((project) => ({
-      id: `app.project.${project.id}`,
-      title: project.name,
-      hint: t("palette.newChatIn", { name: project.name }),
-      group: "projects",
-      icon: <Folder aria-hidden="true" />,
-      run: () => {
-        beginNewChat(chrome.sidebar, profile, project);
-        navigate(NEW_CHAT_PATH);
+    const projects: PaletteEntry[] = [
+      ...projectPrefs.projects.map((project) => ({
+        id: `app.project.${project.id}`,
+        title: project.name,
+        hint: t("palette.newChatIn", { name: project.name }),
+        group: "projects" as const,
+        icon: <Folder aria-hidden="true" />,
+        run: () => {
+          beginNewChat(chrome.sidebar, profile, project);
+          navigate(NEW_CHAT_PATH);
+        },
+      })),
+      // W60-L2-3: the projects page we have (Settings › Workspace › Projects)
+      {
+        id: "app.projects.manage",
+        title: t("palette.manageProjects"),
+        keywords: "projects folders repositories",
+        group: "projects",
+        icon: <FolderCog aria-hidden="true" />,
+        deeper: true,
+        run: () =>
+          navigate(`${overlayPath("settings")}?view=workspace&page=projects`, {
+            state: overlayStateFrom(location.pathname, location.state),
+          }),
       },
-    }));
+    ];
     const chats: PaletteEntry[] = [
       ...listRows.rows.filter((row) => row.pinned),
       ...listRows.rows.filter((row) => !row.pinned),
@@ -789,7 +806,17 @@ export function Shell(props: {
       run: () => navigate(sessionPath(row.id)),
     }));
     return [...goto, ...projects, ...chats];
-  }, [t, navigate, chrome, profile, openOverlay, projectPrefs.projects, listRows.rows]);
+  }, [
+    t,
+    navigate,
+    chrome,
+    profile,
+    openOverlay,
+    projectPrefs.projects,
+    listRows.rows,
+    location.pathname,
+    location.state,
+  ]);
 
   const selectProfile = (next: string) => {
     if (switcher === null) return;

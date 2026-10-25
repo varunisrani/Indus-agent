@@ -121,11 +121,13 @@ def default_client(scope: Scope, timeout_s: float) -> httpx.AsyncClient:
 
 
 class CloudProvider:
-    """What every provider has: a name, a label, the secret names and the two calls."""
+    """What every provider has: a name, a label, the secret names (and any base-URL override it
+    reads) and the two calls."""
 
     name: str = ""
     label: str = ""
     secret_names: tuple[str, ...] = ()
+    url_names: tuple[str, ...] = ()
 
     def config(self, scope: Scope) -> dict[str, str] | None:
         """The keys and base URL, or ``None`` when a key is missing."""
@@ -234,6 +236,7 @@ class Browserbase(CloudProvider):
     name = "browserbase"
     label = "Browserbase"
     secret_names = ("BROWSERBASE_API_KEY", "BROWSERBASE_PROJECT_ID")
+    url_names = ("BROWSERBASE_BASE_URL",)
     base_url = "https://api.browserbase.com"
     # Dropped one at a time, in this order, when the plan does not include them (HTTP 402).
     paid_features = ("keepAlive", "proxies")
@@ -285,6 +288,7 @@ class Firecrawl(CloudProvider):
     name = "firecrawl"
     label = "Firecrawl"
     secret_names = ("FIRECRAWL_API_KEY",)
+    url_names = ("FIRECRAWL_API_URL",)
     base_url = "https://api.firecrawl.dev"
 
     def config(self, scope: Scope) -> dict[str, str] | None:

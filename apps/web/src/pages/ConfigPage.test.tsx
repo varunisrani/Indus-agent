@@ -66,6 +66,13 @@ describe("config form", () => {
     expect(turns.value).toBe("20");
   });
 
+  it("opens on the section ?section= names (W60-L1-2)", async () => {
+    renderPage(<ConfigPage />, "/config?section=agent");
+    expect((await screen.findByLabelText("agent.max_turns")).tagName).toBe("INPUT");
+    expect(screen.getByRole("heading", { level: 2 }).textContent).toBe("Agent");
+    expect(screen.queryByLabelText("model.provider")).toBeNull();
+  });
+
   it("saves the edited values in one write, with the apply note in the toast", async () => {
     renderPage(<ConfigPage />, "/config");
     const save = screen.getByRole("button", { name: "Save" }) as HTMLButtonElement;

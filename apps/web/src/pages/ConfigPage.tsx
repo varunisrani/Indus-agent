@@ -2,6 +2,7 @@
 // config schema, a search in the header, a toolbar (export / import JSON, reset a section to the
 // defaults, the YAML and Effective views, Save), an editable YAML view of what the file sets (Save
 // sends it whole, W58-J2-2), and the effective view naming where each value comes from.
+// `?section=<name>` opens on that section (W60-L1-2: the Models page's mixture-of-agents row).
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -22,6 +23,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import { useSearchParams } from "react-router";
 import { api } from "../lib/api.ts";
 import { saveJson } from "../lib/format.ts";
 import { getPath, setPath } from "../lib/nested.ts";
@@ -126,7 +128,8 @@ export function ConfigPage() {
   const [form, setForm] = useState<ConfigObject | null>(null);
   const [dirty, setDirty] = useState(false);
   const [query, setQuery] = useState("");
-  const [picked, setPicked] = useState<string | null>(null);
+  const [params] = useSearchParams();
+  const [picked, setPicked] = useState<string | null>(() => params.get("section"));
   const [resetting, setResetting] = useState(false);
   const config = useQuery({ queryKey: ["config", "file"], queryFn: () => api.config.get() });
   const schema = useQuery({ queryKey: ["config", "schema"], queryFn: () => api.config.schema() });

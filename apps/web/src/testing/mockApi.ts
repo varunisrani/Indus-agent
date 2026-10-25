@@ -32,6 +32,7 @@ import type {
   MessagingPlatform,
   ModelInfo,
   ModelOptions,
+  ModelUsageRow,
   MutationSnapshot,
   PairingResponse,
   PlatformTestResult,
@@ -74,6 +75,8 @@ export interface MockState {
   envValues: Record<string, string>;
   logs: Record<LogFile, string[]>;
   usage: UsageDay[];
+  /** What `/api/analytics/usage` answers as `by_model` (any period). */
+  usageByModel: ModelUsageRow[];
   /** Other tools' conversations `/api/session-import/candidates` lists (W54-W1-9). */
   importCandidates: ImportCandidate[];
   /** Candidate paths already imported (a second import is 409 `already_imported`). */
@@ -270,6 +273,7 @@ export function defaultMockState(): MockState {
     envValues: {},
     logs: { agent: [], errors: [], gateway: [] },
     usage: [],
+    usageByModel: [],
     importCandidates: [],
     imported: [],
     files: {},
@@ -698,7 +702,7 @@ function routes(state: MockState): Array<[string, RegExp, Handler]> {
           }),
           { input_tokens: 0, output_tokens: 0, cost: 0, sessions: 0 },
         );
-        return ok({ days, daily, totals });
+        return ok({ days, daily, totals, by_model: state.usageByModel });
       },
     ],
 

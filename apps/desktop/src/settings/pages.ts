@@ -45,6 +45,8 @@ export type CustomPage =
   | "gateways-updates"
   | "keyboard-global"
   | "tools-keys"
+  // W60-L2-2: the enabled toolsets row at the top of Advanced › Tool access
+  | "advanced-toolsets"
   | "sessions-archived-list"
   | "sessions-directory"
   | "about-uninstall";
@@ -65,6 +67,8 @@ export interface PageDef {
   readonly order?: readonly string[];
   /** A hand-built block rendered below this page's schema rows (W52-j: Voice, Sessions). */
   readonly after?: CustomPage;
+  /** A hand-built block rendered above this page's schema rows (W60-L2-2: Tool access). */
+  readonly before?: CustomPage;
 }
 
 export const VIEW_IDS = [
@@ -376,6 +380,7 @@ export const VIEWS: readonly ViewDef[] = [
       {
         id: "tools",
         label: "settings.page.advanced.tools",
+        before: "advanced-toolsets",
         fields: ["prompt.tool_use_enforcement"],
         prefixes: ["code_execution."],
         curated: [
@@ -1049,6 +1054,13 @@ export const MANIFEST: readonly ManifestRow[] = [
     page: "global",
     label: "settings.globalKeys.title",
     keywords: ["global", "hud", "quick entry", "system wide", "hotkey", "shortcut"],
+  },
+  {
+    id: "enabled-toolsets",
+    view: "advanced",
+    page: "tools",
+    label: "settings.toolsets.title",
+    keywords: ["toolset", "toolsets", "tools", "enabled", "platform", "indus-cli", "bundle"],
   },
   {
     id: "tool-keys",

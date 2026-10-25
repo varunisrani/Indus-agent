@@ -10,7 +10,13 @@
   A refusal is 400 ``skill_refused`` with the tool's reason; nothing is written then.
 - ``GET /api/tools/toolsets``: the plain toolsets (no bundles, postures or ``core``) with their
   tools, and whether the CLI's tool selection (``platform_toolsets.cli``, else its bundle) offers
-  every one of them.
+  every one of them; ``selection`` is that list as saved (``saved`` false: the bundle).
+- ``PUT /api/tools/toolsets {toolsets}`` (W60-L2-2): saves ``platform_toolsets.cli`` through the
+  config writer. Every name must be a toolset the resolver knows (a typo is 400
+  ``unknown_toolset`` naming it, nothing written); an empty list is 400 (``indus tools`` is the
+  place to switch every toolset off).
+- ``GET /api/tools/keys`` (W60-L2-1): the key and address variables our tools declare
+  (``indus.tools.key_needs``), per backend, each with ``is_set`` only; no value or preview.
 - Hub (P13-26/27): ``GET /api/skills/hub/search?q=`` (catalogue and taps, then the live fallbacks;
   a search downloads nothing, so ``verdict`` is null), ``GET /api/skills/hub/inspect?identifier=``
   (fetch into quarantine, scan, report, discard), ``POST /api/skills/hub/install
@@ -33,7 +39,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from indus.foundation import config as config_module
-from indus.foundation.errors import ConfigError
+from indus.foundation.errors import ConfigError, ConfigManaged
 from indus.foundation.redact import redact_text
 from indus.foundation.scope import Scope
 from indus.learning.skills import bundled_sync
@@ -44,6 +50,8 @@ from indus.learning.skills.manage_tool import skill_manage
 from indus.learning.skills.resolver import TIER_LOCAL, SkillRecord, load_catalog
 from indus.learning.skills.usage import hub_names
 from indus.tools import toolsets
+from indus.tools.key_needs import tool_key_needs
+from indus.web.routes.config_env import set_flags
 from indus.web.scope import read_scope, write_scope
 from indus.web.state import DashboardState, dashboard_state
 
@@ -56,6 +64,8 @@ ROUTE_LIST: Final[tuple[tuple[str, str, bool], ...]] = (
     ("POST", "/api/skills/toggle", True),
     ("POST", "/api/skills/create", True),
     ("GET", "/api/tools/toolsets", True),
+    ("PUT", "/api/tools/toolsets", True),
+    ("GET", "/api/tools/keys", True),
     ("GET", "/api/skills/hub/search", True),
     ("GET", "/api/skills/hub/inspect", True),
     ("POST", "/api/skills/hub/install", True),
@@ -190,18 +200,26 @@ def _plain_toolsets() -> list[str]:
     return rows
 
 
-def _cli_selection(scope: Scope) -> list[str]:
+def _saved_selection(scope: Scope) -> list[str] | None:
+    """``platform_toolsets.cli`` as saved; ``None`` when the CLI uses its bundle."""
     saved: object = config_module.load(scope).user_raw().get("platform_toolsets")
     if isinstance(saved, Mapping):
         chosen: object = saved.get(TOOLSET_PLATFORM)  # pyright: ignore[reportUnknownMemberType]
         if isinstance(chosen, list):
             return [str(n) for n in chosen]  # pyright: ignore[reportUnknownVariableType]
-    return [f"{toolsets.BUNDLE_PREFIX}{TOOLSET_PLATFORM}"]
+    return None
+
+
+def _cli_selection(scope: Scope) -> list[str]:
+    saved = _saved_selection(scope)
+    return saved if saved is not None else [f"{toolsets.BUNDLE_PREFIX}{TOOLSET_PLATFORM}"]
 
 
 @router.get("/api/tools/toolsets")
 def list_toolsets(scope: ReadScope) -> dict[str, Any]:
-    offered = toolsets.select(_cli_selection(scope), scope=scope, platform=TOOLSET_PLATFORM).tools
+    saved = _saved_selection(scope)
+    chosen = _cli_selection(scope)
+    offered = toolsets.select(chosen, scope=scope, platform=TOOLSET_PLATFORM).tools
     rows: list[dict[str, Any]] = []
     for name in _plain_toolsets():
         entry = toolsets.TOOLSETS[name]
@@ -215,7 +233,64 @@ def list_toolsets(scope: ReadScope) -> dict[str, Any]:
                 "tools": tools,
             }
         )
-    return {"toolsets": rows}
+    selection = {
+        "platform": TOOLSET_PLATFORM,
+        "toolsets": chosen,
+        "saved": saved is not None,
+    }
+    return {"toolsets": rows, "selection": selection}
+
+
+class ToolsetSelection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    toolsets: list[str] = Field(max_length=200)
+
+
+@router.put("/api/tools/toolsets")
+def save_toolsets(body: ToolsetSelection, scope: WriteScope) -> dict[str, Any]:
+    live = _configured(scope)
+    names = list(dict.fromkeys(n.strip() for n in body.toolsets if n.strip()))
+    if not names:
+        _fail(400, "empty_selection", "Name at least one toolset. Nothing was changed.")
+    unknown = [n for n in names if not toolsets.is_known(n, None, live)]
+    if unknown:
+        _fail(
+            400,
+            "unknown_toolset",
+            f"Not a toolset: {', '.join(unknown)}. Nothing was changed.",
+            names=unknown,
+        )
+    try:
+        config_module.save(live, {"platform_toolsets": {TOOLSET_PLATFORM: names}})
+    except ConfigManaged:
+        _fail(403, "config_managed", "This installation is managed; nothing was changed.")
+    except ConfigError as exc:
+        _fail(500, "config_unwritable", f"{exc.message}. Nothing was changed.")
+    return {"ok": True, "platform": TOOLSET_PLATFORM, "toolsets": names}
+
+
+# -- tool keys -------------------------------------------------------------------------------------
+
+
+@router.get("/api/tools/keys")
+def list_tool_keys(scope: ReadScope) -> dict[str, Any]:
+    groups = tool_key_needs(None, scope)
+    flags = set_flags(scope, {need.name for group in groups for need in group.needs})
+    return {
+        "tools": [
+            {
+                "toolset": group.toolset,
+                "backend": group.backend,
+                "label": group.label,
+                "vars": [
+                    {"name": need.name, "kind": need.kind, "is_set": flags[need.name]}
+                    for need in group.needs
+                ],
+            }
+            for group in groups
+        ]
+    }
 
 
 # -- hub -------------------------------------------------------------------------------------------
