@@ -1,0 +1,839 @@
+diff --git a/apps/web/e2e/dashboard.spec.ts b/apps/web/e2e/dashboard.spec.ts
+index 5cf379a..a0c528f 100644
+--- a/apps/web/e2e/dashboard.spec.ts
++++ b/apps/web/e2e/dashboard.spec.ts
+@@ -1,5 +1,6 @@
+ // Admin pages against a real `indus dashboard` and daemon (P18-30): Sessions search and delete,
+-// Config save (form and raw YAML), Skills create, the in-app Docs.
++// Config save (form and raw YAML), Skills create, the in-app Docs, Models (per-model usage and
++// the price table's model lists).
+ 
+ import { expect, test } from "./fixtures.ts";
+ 
+@@ -112,6 +113,35 @@ test("Skills: New skill saves SKILL.md into the profile's skills folder", async
+   await expect(page.getByText("release-notes", { exact: true }).first()).toBeVisible();
+ });
+ 
++test("Models: a run shows as a per-model card; a vendor lists the price table's models", async ({
++  launch,
++  page,
++}) => {
++  const stack = await launch({
++    turns: [[{ text: "Hello." }, { usage: { prompt: 1200, completion: 30 } }]],
++  });
++  const ran = await stack.ask("indus", { args: ["chat", "-q", "hello"] });
++  expect(ran.code, String(ran.stderr)).toBe(0);
++
++  await page.goto(`${stack.url}/models`);
++  const card = page
++    .getByRole("list", { name: "Usage by model" })
++    .getByTestId("model-usage-fake-model");
++  await expect(card).toContainText("#1");
++  await expect(card).toContainText("main");
++  await expect(page.getByTestId("moa-summary")).toHaveText("no presets");
++
++  await page.getByRole("button", { name: "Change", exact: true }).click();
++  const dialog = page.getByRole("dialog", { name: "Switch model" });
++  const openai = dialog
++    .getByRole("list", { name: "Providers" })
++    .getByRole("button", { name: /^OpenAI/ });
++  await expect(openai).toContainText(/openai · \d+ models/);
++  await openai.click();
++  await expect(dialog.getByTestId("model-list-hint")).toContainText("From our price table");
++  await expect(dialog.getByRole("list", { name: "Models" }).getByRole("button")).not.toHaveCount(0);
++});
++
+ test("Logs: the gateway log's tail as the daemon wrote it", async ({ launch, page }) => {
+   const stack = await launch({ turns: [[{ text: "Hello." }]] });
+   await page.goto(`${stack.url}/logs`);
+diff --git a/apps/web/src/lib/restTypes.ts b/apps/web/src/lib/restTypes.ts
+index 2f7b28e..8475a1d 100644
+--- a/apps/web/src/lib/restTypes.ts
++++ b/apps/web/src/lib/restTypes.ts
+@@ -234,6 +234,13 @@ export interface ProviderOption {
+   /** Any documented sign-in (browser or device) that `indus auth add --type oauth` runs. */
+   sign_in?: boolean;
+   supports_model_listing: boolean;
++  /** Model ids our price table lists for the vendor whose own host this provider talks to (in the
++   * table's order); empty for an aggregator, a proxy, a local or custom endpoint (W60-L1-1). */
++  models?: string[];
++  /** Where `models` comes from (`price_table`), or null when there is no list. */
++  models_source?: string | null;
++  /** The day the price table's block for that vendor was read. */
++  models_checked?: string | null;
+ }
+ 
+ export interface ModelOptions {
+@@ -624,10 +631,21 @@ export interface UsageDay {
+   sessions: number;
+ }
+ 
++/** One model's share of the window (`by_model`, W58-J1-1): main loop and side calls together. */
++export interface ModelUsageRow {
++  model: string;
++  input_tokens: number;
++  output_tokens: number;
++  api_calls: number;
++  cost: number;
++}
++
+ export interface UsageResponse {
+   days: number;
+   daily: UsageDay[];
+   totals: { input_tokens: number; output_tokens: number; cost: number; sessions: number };
++  /** The same window split by model, most tokens first. */
++  by_model?: ModelUsageRow[];
+ }
+ 
+ export interface FileEntry {
+diff --git a/apps/web/src/pages/ConfigPage.test.tsx b/apps/web/src/pages/ConfigPage.test.tsx
+index 78a0db8..8041488 100644
+--- a/apps/web/src/pages/ConfigPage.test.tsx
++++ b/apps/web/src/pages/ConfigPage.test.tsx
+@@ -66,6 +66,13 @@ describe("config form", () => {
+     expect(turns.value).toBe("20");
+   });
+ 
++  it("opens on the section ?section= names (W60-L1-2)", async () => {
++    renderPage(<ConfigPage />, "/config?section=agent");
++    expect((await screen.findByLabelText("agent.max_turns")).tagName).toBe("INPUT");
++    expect(screen.getByRole("heading", { level: 2 }).textContent).toBe("Agent");
++    expect(screen.queryByLabelText("model.provider")).toBeNull();
++  });
++
+   it("saves the edited values in one write, with the apply note in the toast", async () => {
+     renderPage(<ConfigPage />, "/config");
+     const save = screen.getByRole("button", { name: "Save" }) as HTMLButtonElement;
+diff --git a/apps/web/src/pages/ConfigPage.tsx b/apps/web/src/pages/ConfigPage.tsx
+index d8060b6..25debef 100644
+--- a/apps/web/src/pages/ConfigPage.tsx
++++ b/apps/web/src/pages/ConfigPage.tsx
+@@ -2,6 +2,7 @@
+ // config schema, a search in the header, a toolbar (export / import JSON, reset a section to the
+ // defaults, the YAML and Effective views, Save), an editable YAML view of what the file sets (Save
+ // sends it whole, W58-J2-2), and the effective view naming where each value comes from.
++// `?section=<name>` opens on that section (W60-L1-2: the Models page's mixture-of-agents row).
+ 
+ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+ import {
+@@ -22,6 +23,7 @@ import {
+   useMemo,
+   useState,
+ } from "react";
++import { useSearchParams } from "react-router";
+ import { api } from "../lib/api.ts";
+ import { saveJson } from "../lib/format.ts";
+ import { getPath, setPath } from "../lib/nested.ts";
+@@ -126,7 +128,8 @@ export function ConfigPage() {
+   const [form, setForm] = useState<ConfigObject | null>(null);
+   const [dirty, setDirty] = useState(false);
+   const [query, setQuery] = useState("");
+-  const [picked, setPicked] = useState<string | null>(null);
++  const [params] = useSearchParams();
++  const [picked, setPicked] = useState<string | null>(() => params.get("section"));
+   const [resetting, setResetting] = useState(false);
+   const config = useQuery({ queryKey: ["config", "file"], queryFn: () => api.config.get() });
+   const schema = useQuery({ queryKey: ["config", "schema"], queryFn: () => api.config.schema() });
+diff --git a/apps/web/src/pages/ModelsPage.test.tsx b/apps/web/src/pages/ModelsPage.test.tsx
+index d7c4231..98ffc4a 100644
+--- a/apps/web/src/pages/ModelsPage.test.tsx
++++ b/apps/web/src/pages/ModelsPage.test.tsx
+@@ -1,8 +1,8 @@
+ import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
+ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+ import { createMockApi, type MockApi } from "../testing/mockApi.ts";
+-import { renderPage } from "../testing/render.tsx";
+-import { ModelsPage } from "./ModelsPage.tsx";
++import { currentLocation, renderPage } from "../testing/render.tsx";
++import { ModelsPage, moaSummary } from "./ModelsPage.tsx";
+ 
+ let mock: MockApi;
+ let restore: () => void;
+@@ -187,6 +187,52 @@ describe("models page", () => {
+     expect(mock.callsTo("POST", "/api/model/test-endpoint")).toEqual([]);
+   });
+ 
++  it("lists a vendor provider's models from the price table (W60-L1-1)", async () => {
++    mock.state.modelOptions.providers.push({
++      name: "vendor",
++      label: "Vendor API",
++      description: "",
++      family: "vendor",
++      auth_type: "api_key",
++      configured: false,
++      device_login: false,
++      supports_model_listing: true,
++      models: ["vendor-large", "vendor-small"],
++      models_source: "price_table",
++      models_checked: "2026-10-18",
++    });
++    renderPage(<ModelsPage />, "/models");
++    await screen.findByTestId("provider-fake");
++    fireEvent.click(screen.getByRole("button", { name: "Change" }));
++    const dialog = within(await screen.findByRole("dialog", { name: "Switch model" }));
++    const providers = within(await dialog.findByRole("list", { name: "Providers" }));
++    // The row counts the listed models instead of the key state.
++    const row = await providers.findByRole("button", { name: /Vendor API/ });
++    expect(row.textContent).toContain("vendor · 2 models");
++    expect(providers.getByRole("button", { name: /Sign-in provider/ }).textContent).toContain(
++      "no key",
++    );
++    fireEvent.click(row);
++    const models = within(dialog.getByRole("list", { name: "Models" }));
++    expect(models.getAllByRole("button").map((b) => b.textContent)).toEqual([
++      "vendor-large",
++      "vendor-small",
++    ]);
++    expect(dialog.getByTestId("model-list-hint").textContent).toBe(
++      "From our price table (checked 2026-10-18). Pick a model, or type another id.",
++    );
++    fireEvent.click(models.getByRole("button", { name: "vendor-small" }));
++    fireEvent.click(dialog.getByRole("button", { name: "Switch" }));
++    await waitFor(() =>
++      expect(mock.callsTo("POST", "/api/model/set")[0]?.body).toEqual({
++        scope: "main",
++        provider: "vendor",
++        model: "vendor-small",
++      }),
++    );
++    expect(mock.callsTo("POST", "/api/model/test-endpoint")).toEqual([]);
++  });
++
+   it("picks another provider in the dialog and filters the list", async () => {
+     renderPage(<ModelsPage />, "/models");
+     await screen.findByTestId("provider-fake");
+@@ -290,6 +336,66 @@ describe("models page", () => {
+     expect(figures.textContent).toContain("$0.0050");
+   });
+ 
++  it("sums up the mixture-of-agents presets; Configure opens that Config section", async () => {
++    mock.state.config = {
++      ...mock.state.config,
++      moa: {
++        default_preset: "review",
++        presets: {
++          review: {
++            reference_models: [
++              { provider: "fake", model: "fake-a" },
++              { provider: "fake", model: "fake-b" },
++              { provider: "fake", model: "fake-c", enabled: false },
++            ],
++            aggregator: { provider: "fake", model: "fake-model" },
++          },
++        },
++      },
++    };
++    renderPage(<ModelsPage />, "/models");
++    await waitFor(() =>
++      expect(screen.getByTestId("moa-summary").textContent).toBe("2 references · fake:fake-model"),
++    );
++    fireEvent.click(screen.getByRole("button", { name: "Configure mixture of agents" }));
++    await screen.findByTestId("elsewhere");
++    expect(currentLocation()).toBe("/config?section=moa");
++  });
++
++  it("shows a card per model for the period, tokens only with the flag", async () => {
++    mock.state.usage = [
++      { day: "2026-10-24", input_tokens: 3400, output_tokens: 316, cost: 0.005, sessions: 3 },
++    ];
++    mock.state.usageByModel = [
++      { model: "fake-model", input_tokens: 3000, output_tokens: 300, api_calls: 7, cost: 0.004 },
++      { model: "fake-mini", input_tokens: 400, output_tokens: 16, api_calls: 1, cost: 0.001 },
++    ];
++    const view = renderPage(<ModelsPage />, "/models");
++    const cards = within(await screen.findByRole("list", { name: "Usage by model" }));
++    const first = within(cards.getByTestId("model-usage-fake-model"));
++    expect(first.getByText("#1")).toBeTruthy();
++    expect(first.getByText("main")).toBeTruthy();
++    expect(first.getByText("7")).toBeTruthy();
++    expect(first.getByText("API calls")).toBeTruthy();
++    const second = within(cards.getByTestId("model-usage-fake-mini"));
++    expect(second.getByText("#2")).toBeTruthy();
++    expect(second.queryByText("main")).toBeNull();
++    expect(second.getByText("API call")).toBeTruthy();
++    expect(cards.queryByText(/ in · /)).toBeNull();
++    view.unmount();
++
++    mock.state.config = { ...mock.state.config, dashboard: { show_token_analytics: true } };
++    renderPage(<ModelsPage />, "/models");
++    const shown = within(await screen.findByTestId("model-usage-fake-model"));
++    await waitFor(() => expect(shown.getByText("3.0K in · 300 out · $0.0040")).toBeTruthy());
++  });
++
++  it("says so when no model was called in the period", async () => {
++    renderPage(<ModelsPage />, "/models");
++    expect(await screen.findByText("No model calls in this period.")).toBeTruthy();
++    expect(screen.queryByRole("list", { name: "Usage by model" })).toBeNull();
++  });
++
+   it("polls at the server's interval and stops when approved", async () => {
+     mock.state.loginPolls = ["pending", "approved"];
+     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+@@ -354,3 +460,19 @@ describe("models page", () => {
+     expect((await row.findByRole("alert")).textContent).toContain("no device sign-in");
+   });
+ });
++
++describe("moaSummary", () => {
++  it("reads the preset /moa would use", () => {
++    expect(moaSummary(undefined)).toBe("no presets");
++    expect(moaSummary({ moa: { presets: {} } })).toBe("no presets");
++    const one = { reference_models: [{ provider: "p", model: "m" }] };
++    expect(moaSummary({ moa: { presets: { solo: one } } })).toBe("1 reference · no aggregator");
++    const two = { reference_models: [], aggregator: { model: "agg" } };
++    expect(moaSummary({ moa: { presets: { solo: one, duo: two } } })).toBe(
++      "2 presets · no default",
++    );
++    expect(moaSummary({ moa: { default_preset: "duo", presets: { solo: one, duo: two } } })).toBe(
++      "duo · 0 references · agg",
++    );
++  });
++});
+diff --git a/apps/web/src/pages/ModelsPage.tsx b/apps/web/src/pages/ModelsPage.tsx
+index d3ba4ad..fc067ab 100644
+--- a/apps/web/src/pages/ModelsPage.tsx
++++ b/apps/web/src/pages/ModelsPage.tsx
+@@ -3,14 +3,25 @@
+ // a card per provider with its key state and device-code sign-in: Start shows the code and the page
+ // to enter it on, then the session is polled at the interval the provider asked for until it is
+ // approved, refused, expired or cancelled. No token ever reaches the browser.
++// W60-L1-2: the settings card also sums up the mixture-of-agents presets (`moa` in the config; its
++// Configure opens that Config section), and a card per model shows the period's share of
++// `by_model` from `/api/analytics/usage` (calls always, tokens and cost behind the same flag as
++// the totals).
+ 
+ import { useIsFetching, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+-import { Cpu, SlidersHorizontal, Star } from "lucide-react";
++import { Cpu, Layers, SlidersHorizontal, Star } from "lucide-react";
+ import { type ComponentType, type ReactNode, useEffect, useId, useRef, useState } from "react";
+-import { Link } from "react-router";
++import { Link, useNavigate } from "react-router";
+ import { api } from "../lib/api.ts";
+ import { formatCost, formatCount, formatTokens } from "../lib/format.ts";
+-import type { AuxiliaryTask, LoginStarted, LoginStatus, ProviderOption } from "../lib/restTypes.ts";
++import type {
++  AuxiliaryTask,
++  ConfigObject,
++  LoginStarted,
++  LoginStatus,
++  ModelUsageRow,
++  ProviderOption,
++} from "../lib/restTypes.ts";
+ import { useTokenAnalyticsFlag } from "../lib/useTokenAnalyticsFlag.ts";
+ import { HeaderAfterTitle } from "../shell/PageHeader.tsx";
+ import { errorText, useToast } from "../shell/Toasts.tsx";
+@@ -181,6 +192,45 @@ export function auxSummary(tasks: readonly AuxiliaryTask[]): string {
+   return `${overrides} override${overrides === 1 ? "" : "s"} · ${tasks.length - overrides} auto`;
+ }
+ 
++function record(value: unknown): Record<string, unknown> | null {
++  return value !== null && typeof value === "object" && !Array.isArray(value)
++    ? (value as Record<string, unknown>)
++    : null;
++}
++
++function slotLabel(value: unknown): string | null {
++  const slot = record(value);
++  const provider = typeof slot?.provider === "string" ? slot.provider.trim() : "";
++  const model = typeof slot?.model === "string" ? slot.model.trim() : "";
++  if (!model) return null;
++  return provider ? `${provider}:${model}` : model;
++}
++
++/** The `moa` section in one line: the preset /moa uses (the default one, or the only one), its
++ * turned-on reference models and its aggregator; the preset count when there are several. */
++export function moaSummary(config: ConfigObject | undefined): string {
++  const moa = record(config?.moa);
++  const presets = Object.entries(record(moa?.presets) ?? {}).filter(
++    (entry): entry is [string, Record<string, unknown>] => record(entry[1]) !== null,
++  );
++  if (presets.length === 0) return "no presets";
++  const wanted = typeof moa?.default_preset === "string" ? moa.default_preset.trim() : "";
++  const picked =
++    presets.find(([name]) => name === wanted) ?? (presets.length === 1 ? presets[0] : undefined);
++  const many = `${presets.length} presets`;
++  if (!picked) return `${many} · no default`;
++  const [name, preset] = picked;
++  const refs = Array.isArray(preset.reference_models)
++    ? preset.reference_models.filter((r) => slotLabel(r) !== null && record(r)?.enabled !== false)
++    : [];
++  const parts = [
++    `${refs.length} ${refs.length === 1 ? "reference" : "references"}`,
++    slotLabel(preset.aggregator) ?? "no aggregator",
++  ];
++  if (presets.length > 1) parts.unshift(name);
++  return parts.join(" · ");
++}
++
+ function routeText(task: AuxiliaryTask): string {
+   if (!isOverride(task)) return "auto (main model)";
+   const provider = task.provider.trim() || "auto";
+@@ -374,8 +424,10 @@ function AuxDialog({
+ function ModelSettings() {
+   const toast = useToast();
+   const changed = useModelsChanged();
++  const navigate = useNavigate();
+   const info = useQuery({ queryKey: ["models", "info"], queryFn: () => api.model.info() });
+   const aux = useQuery({ queryKey: ["models", "auxiliary"], queryFn: () => api.model.auxiliary() });
++  const config = useQuery({ queryKey: ["config", "file"], queryFn: () => api.config.get() });
+   const [picking, setPicking] = useState(false);
+   const [configuring, setConfiguring] = useState(false);
+   const save = useMutation({
+@@ -445,6 +497,27 @@ function ModelSettings() {
+             }
+           />
+         )}
++        {config.error ? (
++          <ErrorState message={errorText(config.error)} onRetry={() => void config.refetch()} />
++        ) : (
++          <SettingRow
++            icon={Layers}
++            iconClass="text-ink-soft"
++            label="Mixture of agents"
++            value={config.isPending ? "…" : moaSummary(config.data)}
++            valueTestId="moa-summary"
++            action={
++              <Button
++                size="sm"
++                className="uppercase"
++                aria-label="Configure mixture of agents"
++                onClick={() => void navigate("/config?section=moa")}
++              >
++                Configure
++              </Button>
++            }
++          />
++        )}
+       </div>
+       <ModelPickerDialog
+         open={picking}
+@@ -504,6 +577,90 @@ function UsageFigures({ days }: { days: Period }) {
+   );
+ }
+ 
++function ModelUsageCard({
++  row,
++  rank,
++  main,
++  tokens,
++}: {
++  row: ModelUsageRow;
++  rank: number;
++  main: boolean;
++  tokens: boolean;
++}) {
++  return (
++    <li
++      data-testid={`model-usage-${row.model}`}
++      className={cx("flex flex-col border border-line", main && "ring-1 ring-ink/40")}
++    >
++      <div className="flex items-start gap-3 px-4 pt-4 pb-3">
++        <div className="flex min-w-0 flex-1 items-center gap-2">
++          <span className="shrink-0 font-mono text-[0.75rem] text-ink-faint">#{rank}</span>
++          <h3 className="m-0 truncate font-mono text-[0.8125rem] font-bold tracking-[0.12em] text-ink uppercase">
++            {row.model}
++          </h3>
++          {main ? (
++            <span className="inline-flex shrink-0 items-center gap-1 bg-ink/15 px-1.5 py-0.5 font-mono text-[0.6875rem] text-ink">
++              <Star aria-hidden="true" className="size-2.5" />
++              main
++            </span>
++          ) : null}
++        </div>
++        <div className="shrink-0 text-right">
++          <p className="m-0 font-mono text-[0.8125rem] font-bold text-ink">
++            {formatCount(row.api_calls)}
++          </p>
++          <p className="m-0 text-[0.75rem] text-ink-muted">
++            {row.api_calls === 1 ? "API call" : "API calls"}
++          </p>
++        </div>
++      </div>
++      {tokens ? (
++        <p className="m-0 mx-4 border-t border-line/60 py-2 text-right font-mono text-[0.75rem] text-ink-muted">
++          {`${formatTokens(row.input_tokens)} in · ${formatTokens(row.output_tokens)} out · ${formatCost(row.cost)}`}
++        </p>
++      ) : null}
++    </li>
++  );
++}
++
++/** One card per model the period's calls used (`by_model`), most tokens first. */
++function ModelUsageCards({ days }: { days: Period }) {
++  const flag = useTokenAnalyticsFlag();
++  const usage = useQuery({
++    queryKey: ["analytics", days],
++    queryFn: () => api.analytics.usage(days),
++  });
++  const info = useQuery({ queryKey: ["models", "info"], queryFn: () => api.model.info() });
++  // The figures card above shows the loading and error states of the same request.
++  if (!usage.data) return null;
++  const rows = usage.data.by_model ?? [];
++  if (rows.length === 0) {
++    return (
++      <Card padded={false}>
++        <EmptyState icon={Cpu}>No model calls in this period.</EmptyState>
++      </Card>
++    );
++  }
++  const main = info.data?.model ?? null;
++  return (
++    <ul
++      aria-label="Usage by model"
++      className="m-0 grid list-none grid-cols-1 gap-4 p-0 md:grid-cols-2 xl:grid-cols-3"
++    >
++      {rows.map((row, at) => (
++        <ModelUsageCard
++          key={row.model}
++          row={row}
++          rank={at + 1}
++          main={row.model === main}
++          tokens={flag.enabled}
++        />
++      ))}
++    </ul>
++  );
++}
++
+ function ProviderCard({
+   provider,
+   main,
+@@ -615,6 +772,7 @@ export function ModelsPage() {
+   const refresh = () => {
+     void client.invalidateQueries({ queryKey: ["models"] });
+     void client.invalidateQueries({ queryKey: ["analytics", days] });
++    void client.invalidateQueries({ queryKey: ["config", "file"] });
+   };
+   return (
+     <div className="flex flex-col gap-[1.4375rem] px-4 py-[1.4375rem] lg:px-[1.4375rem]">
+@@ -626,6 +784,7 @@ export function ModelsPage() {
+         <ModelSettings />
+         <UsageFigures days={days} />
+       </div>
++      <ModelUsageCards days={days} />
+       <Providers />
+     </div>
+   );
+diff --git a/apps/web/src/testing/mockApi.ts b/apps/web/src/testing/mockApi.ts
+index 1d494ed..3e62b8b 100644
+--- a/apps/web/src/testing/mockApi.ts
++++ b/apps/web/src/testing/mockApi.ts
+@@ -32,6 +32,7 @@ import type {
+   MessagingPlatform,
+   ModelInfo,
+   ModelOptions,
++  ModelUsageRow,
+   MutationSnapshot,
+   PairingResponse,
+   PlatformTestResult,
+@@ -74,6 +75,8 @@ export interface MockState {
+   envValues: Record<string, string>;
+   logs: Record<LogFile, string[]>;
+   usage: UsageDay[];
++  /** What `/api/analytics/usage` answers as `by_model` (any period). */
++  usageByModel: ModelUsageRow[];
+   /** Other tools' conversations `/api/session-import/candidates` lists (W54-W1-9). */
+   importCandidates: ImportCandidate[];
+   /** Candidate paths already imported (a second import is 409 `already_imported`). */
+@@ -270,6 +273,7 @@ export function defaultMockState(): MockState {
+     envValues: {},
+     logs: { agent: [], errors: [], gateway: [] },
+     usage: [],
++    usageByModel: [],
+     importCandidates: [],
+     imported: [],
+     files: {},
+@@ -698,7 +702,7 @@ function routes(state: MockState): Array<[string, RegExp, Handler]> {
+           }),
+           { input_tokens: 0, output_tokens: 0, cost: 0, sessions: 0 },
+         );
+-        return ok({ days, daily, totals });
++        return ok({ days, daily, totals, by_model: state.usageByModel });
+       },
+     ],
+ 
+diff --git a/apps/web/src/ui/ModelPickerDialog.tsx b/apps/web/src/ui/ModelPickerDialog.tsx
+index 0857477..67884e2 100644
+--- a/apps/web/src/ui/ModelPickerDialog.tsx
++++ b/apps/web/src/ui/ModelPickerDialog.tsx
+@@ -1,12 +1,14 @@
+ // "Switch model" dialog, shared by the chat rail and the Models page (W52-a / W52-b, one picker
+ // since the wave 53 integration). Providers on the left, models on the right, a fuzzy filter over
+-// both, the provider and model in use tagged CURRENT. Our server lists providers but not each
+-// vendor's models; it can ask an OpenAI-compatible endpoint for its own list
+-// (`POST /api/model/test-endpoint`). W57-H1-5: so a custom or local endpoint (a saved
+-// `providers.<name>` entry with a base URL, or the main model's own `model.base_url`) lists its
+-// models, with the entry's saved models; every other provider shows the model in use. The typed
+-// model id field stays as the fallback. The caller decides what applying means (`onApply`), and
+-// owns the request.
++// both, the provider and model in use tagged CURRENT. Where the models come from:
++// - a custom or local endpoint (a saved `providers.<name>` entry with a base URL, or the main
++//   model's own `model.base_url`): its own `/models`, asked by our server
++//   (`POST /api/model/test-endpoint`, W57-H1-5), plus the entry's saved models;
++// - a vendor provider: the ids our price table lists for its own host (`models` on its
++//   `/api/model/options` row, W60-L1-1);
++// - any other provider: only the model in use.
++// The typed model id field stays as the fallback. The caller decides what applying means
++// (`onApply`), and owns the request.
+ 
+ import { useQuery } from "@tanstack/react-query";
+ import { Check, LoaderCircle, RefreshCw, Search } from "lucide-react";
+@@ -87,6 +89,10 @@ export function endpointSource(
+   return null;
+ }
+ 
++function countText(n: number): string {
++  return `${n} ${n === 1 ? "model" : "models"}`;
++}
++
+ function CurrentTag() {
+   return <span className="type-heading shrink-0 text-[0.75rem] text-ink">CURRENT</span>;
+ }
+@@ -149,6 +155,8 @@ export function ModelPickerDialog({
+     enabled: open,
+   });
+   const source = endpointSource(config.data, shownProvider, current.provider);
++  const shownRow = options.data?.providers.find((p) => p.name === shownProvider);
++  const catalogue = shownRow?.models ?? [];
+   const listed = useQuery({
+     queryKey: ["models", "endpoint", source?.query.base_url ?? "", source?.query.key_env ?? ""],
+     queryFn: () => api.model.testEndpoint(source?.query ?? { base_url: "" }),
+@@ -165,12 +173,15 @@ export function ModelPickerDialog({
+         : []),
+       ...listedModels,
+       ...(source?.saved ?? []),
++      ...catalogue,
+     ]),
+   ];
+   const models = known.filter((m) => fuzzyHits(m, filter) !== null);
+   const listHint =
+     source === null
+-      ? "Type the model id as the provider names it; this install cannot list them."
++      ? catalogue.length > 0
++        ? `From our price table${shownRow?.models_checked ? ` (checked ${shownRow.models_checked})` : ""}. Pick a model, or type another id.`
++        : "Type the model id as the provider names it; this install cannot list them."
+       : listed.isFetching && !listed.data
+         ? "Asking the endpoint for its models…"
+         : listed.error
+@@ -269,12 +280,14 @@ export function ModelPickerDialog({
+                     <span className="truncate text-ink-muted">
+                       {p.name}
+                       {picked && known.length > 0
+-                        ? ` · ${known.length} ${known.length === 1 ? "model" : "models"}`
+-                        : inUse && current.model
+-                          ? " · 1 model"
+-                          : p.configured
+-                            ? " · configured"
+-                            : " · no key"}
++                        ? ` · ${countText(known.length)}`
++                        : (p.models?.length ?? 0) > 0
++                          ? ` · ${countText(p.models?.length ?? 0)}`
++                          : inUse && current.model
++                            ? " · 1 model"
++                            : p.configured
++                              ? " · configured"
++                              : " · no key"}
+                     </span>
+                   </button>
+                 </li>
+diff --git a/docs/notes/ui-parity/w60-l1-web-models.md b/docs/notes/ui-parity/w60-l1-web-models.md
+new file mode 100644
+index 0000000..2964d49
+--- /dev/null
++++ b/docs/notes/ui-parity/w60-l1-web-models.md
+@@ -0,0 +1,74 @@
++# Task: Web model picker lists vendor models; Models page MoA row and per-model usage (W60-L1) Phase: ui-parity Owner: builder w60l1
++
++Status: Done (2026-10-25) for both items, only as far as our backend has the data. Uncommitted in
++the w60l1 worktree for the lead.
++
++Read (reference @ `ab3fe9dffb0a89d534cb795e2a2940e5f6542056`): no reference source opened; the
++third compare's gap list and screenshots were the input.
++Evidence: reference screenshots of the third compare (never in the repo), web `model-picker` and
++`models`, light and dark (`$S/compare3/deliver/gaps.md`, "Web models").
++
++What it does (own words):
++- Model lists (W60-L1-1). What our backend knows per vendor provider: the provider profiles carry
++  no model list (only reasoning / fast model hints), the daemon's `model.options` lists models live
++  only for a custom or local endpoint, and the price table (`providers/pricing_table.yaml`) lists
++  the model ids it prices for three vendors (OpenAI, Anthropic, Google), keyed by the vendor's own
++  host. `GET /api/model/options` (already auth-gated and read-only) now adds to each provider row
++  `models` (that table's ids for the vendor whose own host the provider's base URL names, HTTPS on
++  443, the same rule pricing uses; table order), `models_source` (`price_table`) and
++  `models_checked` (the day that block was read). An aggregator, a vendor the table does not price,
++  a provider pointed at another host (a proxy, `override: true`) and the local / custom endpoints
++  get an empty list and nulls: nothing is borrowed. No request leaves the machine.
++- The web "Switch model" dialog shows those ids for the picked vendor (after the model in use and
++  any endpoint list), counts them on the provider row ("openai · 26 models") in place of the key
++  state, and says where the list is from ("From our price table (checked …)"). Custom endpoints
++  still ask the endpoint (W57-H1-5); the typed model id stays as the fallback for every provider.
++- Models page (W60-L1-2): the Model settings card gains a "Mixture of agents" row summing up the
++  `moa` section from the config (the preset /moa uses: the default one, or the only one; its
++  turned-on reference models and its aggregator as `provider:model`; the preset name when there
++  are several; "N presets · no default" or "no presets" otherwise). Its Configure opens the Config
++  page on the `moa` section: the Config page now honours `?section=<name>`. The web has no preset
++  editor of its own (the desktop and `indus moa configure` have one).
++- A card per model for the chosen period from `by_model` of `/api/analytics/usage` (W58-J1-1): rank,
++  model id, a "main" tag on the main model, API calls; tokens in / out and cost only when
++  `dashboard.show_token_analytics` is on (the totals card's rule). No usage: "No model calls in
++  this period." The figures card above keeps the loading and error states of the same request.
++
++Inputs → outputs: options rows → picker rows and model list; config `moa` → one summary line;
++`by_model` → cards.
++
++Files: src/indus/web/routes/models.py; tests/contract/web/test_profiles_models_routes.py;
++apps/web/src/ui/ModelPickerDialog.tsx, pages/{ModelsPage,ConfigPage}.tsx (+ tests),
++lib/restTypes.ts, testing/mockApi.ts, e2e/dashboard.spec.ts.
++
++Edge cases / failure modes:
++- A price table that fails to load gives every row an empty list (the picker falls back to the
++  typed id), never an error.
++- A model id typed in by hand for a vendor is still accepted; the list is a help, not a gate.
++- `by_model` missing (an older backend) reads as no rows; a gateway that reports cumulative
++  totals writes no per-model rows (W58-J1-1), so its sessions show in the totals only.
++- A malformed preset (not a mapping, a slot without a model) is skipped in the count, as the
++  tolerant reader does; disabled references are not counted.
++
++## Decisions for the lead
++- W60-L1-1: the list rides on the existing `/api/model/options` rows (new fields only) instead of
++  a new route: one request, no route-list change, desktop unaffected. Only three vendors have a
++  list (the price table's); the rest keep the typed id. No live `/models` call for vendors with a
++  stored key (that would send the key out from a page view).
++- W60-L1-2: MoA Configure is a link to Config › Moa rather than a web editor; the per-model card
++  has no "Use as" (by_model names no provider, and setting a model without its provider would be a
++  guess) and no "last used" (the store's per-model rows carry no time).
++
++## Status
++- [x] Price-table lists on options rows, aggregator / custom / proxy without (tests:
++  `tests/contract/web/test_profiles_models_routes.py::test_options_list_the_price_table_s_models_per_vendor`)
++- [x] Picker lists and counts them, hint, switch (tests: `ModelsPage.test.tsx` "lists a vendor
++  provider's models from the price table"; e2e `dashboard.spec.ts::Models`)
++- [x] MoA row and Config deep link (tests: `ModelsPage.test.tsx`, `moaSummary`,
++  `ConfigPage.test.tsx` "opens on the section ?section= names")
++- [x] Per-model cards, flag, empty state (tests: `ModelsPage.test.tsx`; e2e `dashboard.spec.ts::Models`)
++
++## Compare checklist
++- [x] model-picker: vendor rows show model counts; the right pane is a list with the typed id below
++- [x] models: Mixture of agents row; per-model cards (rank, id, main tag, calls)
++- [ ] Not matched on purpose: provider badge, "Use as" and "last used" on the model card (no data)
+diff --git a/src/indus/web/routes/models.py b/src/indus/web/routes/models.py
+index 789f1d7..d1f1941 100644
+--- a/src/indus/web/routes/models.py
++++ b/src/indus/web/routes/models.py
+@@ -7,7 +7,13 @@
+   providers) with ``configured`` (a key in the pool, the secret store or the environment, or a
+   sign-in), ``device_login`` (a device flow this page can run) and ``sign_in`` (any documented
+   sign-in flow in ``providers.auth.flows``, browser or device, that ``indus auth add <name> --type
+-  oauth`` runs), and the current main choice.
++  oauth`` runs), and the current main choice. Each row also carries ``models``: the model ids
++  our price table (``providers.pricing``) lists for the vendor whose own host the provider's base
++  URL names (HTTPS on 443, the rule pricing itself uses), in the table's order, with
++  ``models_source`` (``price_table``) and ``models_checked`` (the day that block was read); a
++  provider the table does not cover (an aggregator, a proxy, a local or custom endpoint) has an
++  empty list and ``null`` for both (W60-L1-1). Read-only, from the shipped table: no request leaves
++  the machine.
+ - ``POST /api/model/set {scope: main|auxiliary, task?, provider, model, base_url?}``: through the
+   config writer; a side task must be one the schema knows.
+ - ``GET /api/model/auxiliary``: each side task's provider, model and base URL, and the main model.
+@@ -54,6 +60,8 @@ from indus.providers.auth.pool_model import PoolEntry, env_entries, load_pool, n
+ from indus.providers.auth.store import AuthStore
+ from indus.providers.context_length import family_length
+ from indus.providers.model_list import LIST_TIMEOUT_SECONDS, parse_models
++from indus.providers.pricing import PriceTableError, VendorPrices, default_table
++from indus.providers.profile import ProviderProfile
+ from indus.providers.registry import Registry
+ from indus.web.routes.system import add_pool_secret, provider_profile
+ from indus.web.scope import read_scope, write_scope
+@@ -131,12 +139,26 @@ def _configured(scope: Scope, store: AuthStore, name: str, env_vars: tuple[str,
+     return False
+ 
+ 
++MODELS_SOURCE: Final = "price_table"
++
++
++def _price_vendor(profile: ProviderProfile) -> VendorPrices | None:
++    """The price table's block for the vendor whose own host ``profile`` talks to, if any."""
++    if not profile.base_url:
++        return None
++    try:
++        return default_table().vendor_for(profile.base_url)
++    except (PriceTableError, OSError):
++        return None
++
++
+ @router.get("/api/model/options")
+ def model_options(scope: ReadScope) -> dict[str, Any]:
+     store = AuthStore(scope.home, env=scope.env)
+     rows: list[dict[str, Any]] = []
+     for profile in Registry(scope).list_providers():
+         flows = flows_for(profile.name)
++        vendor = _price_vendor(profile)
+         rows.append(
+             {
+                 "name": profile.name,
+@@ -148,6 +170,9 @@ def model_options(scope: ReadScope) -> dict[str, Any]:
+                 "device_login": flows.device is not None,
+                 "sign_in": flows.any,
+                 "supports_model_listing": profile.supports_model_listing,
++                "models": list(vendor.models) if vendor is not None else [],
++                "models_source": MODELS_SOURCE if vendor is not None else None,
++                "models_checked": vendor.checked if vendor is not None else None,
+             }
+         )
+     model = _section(scope, "model")
+diff --git a/tests/contract/web/test_profiles_models_routes.py b/tests/contract/web/test_profiles_models_routes.py
+index d4deca3..83a74de 100644
+--- a/tests/contract/web/test_profiles_models_routes.py
++++ b/tests/contract/web/test_profiles_models_routes.py
+@@ -13,6 +13,7 @@ from typing import Any, cast
+ import httpx
+ import pytest
+ 
++from indus.foundation import config as config_module
+ from indus.foundation.config import loader as config_loader
+ from indus.foundation.profiles import is_tombstoned, read_active, tombstone_path
+ from indus.foundation.scope import Scope
+@@ -20,6 +21,7 @@ from indus.foundation.secrets import SecretStore
+ from indus.providers.auth.device_code import DeviceFlowSpec
+ from indus.providers.auth.pool_model import secret_name
+ from indus.providers.auth.store import AuthStore
++from indus.providers.pricing import default_table
+ from indus.web.routes import models, profiles
+ from tests.contract.web.rest_app import (
+     RestApp,
+@@ -257,6 +259,35 @@ def test_model_set_info_and_options(rest: RestApp) -> None:
+     assert unknown.status_code == 400
+ 
+ 
++def test_options_list_the_price_table_s_models_per_vendor(rest: RestApp, scope: Scope) -> None:
++    # W60-L1-1: a vendor provider's models are the ids our price table lists for its own host.
++    assert rest.anonymous().get("/api/model/options", params=WRITE).status_code == 401
++    rows = {p["name"]: p for p in rest.client.get("/api/model/options").json()["providers"]}
++    table = default_table()
++    for name, url in (
++        ("openai", "https://api.openai.com/v1"),
++        ("anthropic", "https://api.anthropic.com"),
++        ("gemini", "https://generativelanguage.googleapis.com/v1beta"),
++    ):
++        vendor = table.vendor_for(url)
++        assert vendor is not None and vendor.models
++        assert rows[name]["models"] == list(vendor.models)
++        assert rows[name]["models_source"] == "price_table"
++        assert rows[name]["models_checked"] == vendor.checked
++    # An aggregator, a vendor the table does not price and the custom endpoint list nothing.
++    for name in ("openrouter", "deepseek", "custom"):
++        assert rows[name]["models"] == []
++        assert rows[name]["models_source"] is None and rows[name]["models_checked"] is None
++    # A provider pointed at another host is not that vendor: no borrowed list.
++    config_module.save(
++        scope,
++        {"providers": {"openai": {"base_url": "https://proxy.example.test/v1", "override": True}}},
++    )
++    rows = {p["name"]: p for p in rest.client.get("/api/model/options").json()["providers"]}
++    assert rows["openai"]["models"] == [] and rows["openai"]["models_source"] is None
++    assert rows["anthropic"]["models"]
++
++
+ def test_auxiliary_tasks(rest: RestApp) -> None:
+     put = rest.client.post(
+         "/api/model/set",
