@@ -67,3 +67,13 @@ export {
   type TypeStepName,
   typeScale,
 } from "./tokens/type.ts";
+export {
+  BRAND_COLORS,
+  BRAND_GRADIENT,
+  BRAND_NAME,
+  BRAND_SHORT,
+  BRAND_WORDMARK,
+  MARK_PATH,
+  MARK_VIEWBOX,
+  markSvg,
+} from "./brand.ts";
